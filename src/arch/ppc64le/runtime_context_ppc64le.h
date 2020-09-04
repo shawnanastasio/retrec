@@ -15,8 +15,11 @@ struct runtime_context_ppc64le {
     // Storage used for communication between translated and native code
     //
 
-    // If the translated code wishes to call into native code, it will set the address here
-    void (*native_function_call_target)(runtime_context_ppc64le *);
+    // If the translated code wishes to call into native code, it will set the target here
+    enum class NativeTarget : uint16_t /* fit in an instruction immediate field */ {
+        INVALID,
+        SYSCALL, // Execute a syscall
+    } native_function_call_target;
 
     // Target CPU emulated context
     Architecture arch;

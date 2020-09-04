@@ -22,10 +22,13 @@ status_code ppc64le::runtime_context_execute(runtime_context_ppc64le *ctx) {
     for (;;) {
         arch_enter_translated_code(nullptr, ctx);
 
-        if (ctx->native_function_call_target) {
+        if (ctx->native_function_call_target != runtime_context_ppc64le::NativeTarget::INVALID) {
             // If the translated code wanted to call a native function, do so and resume
-            ctx->native_function_call_target(ctx);
-            ctx->native_function_call_target = nullptr;
+            switch (ctx->native_function_call_target) {
+                case runtime_context_ppc64le::NativeTarget::SYSCALL: syscall_native_callback(ctx); break;
+                default: TODO();
+            }
+            ctx->native_function_call_target = runtime_context_ppc64le::NativeTarget::INVALID;
 
             if (ctx->should_exit) {
                 log(LOGL_INFO, "Emulation halted after native function call.\n");

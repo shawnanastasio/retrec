@@ -227,7 +227,7 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
     assert(scratch != GPR_INVALID);
 
     // Store address of callback
-    macro$load_imm(assembler, scratch, (uint64_t)syscall_native_callback);
+    macro$load_imm(assembler, scratch, (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL);
     assembler.std(scratch, 11, offsetof(runtime_context_ppc64le, native_function_call_target));
 
     // Load arch_leave_translated_code
