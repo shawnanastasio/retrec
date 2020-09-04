@@ -188,6 +188,8 @@ int64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
     switch (insn.branch.target) {
         case llir::Branch::Target::RELATIVE:
             return insn.address + insn.src[0].imm;
+        case llir::Branch::Target::ABSOLUTE:
+            return insn.src[0].imm;
         default:
             TODO();
     }
@@ -202,15 +204,9 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
     if (insn.src[0].type == llir::Operand::Type::IMM) {
         int64_t target = resolve_branch_target(insn);
 
-        auto target_local = ctx.local_branch_targets.find(target);
-        if (target_local != ctx.local_branch_targets.end()) {
-            // If we already generated the code for this target locally, emit a branch
-            macro$branch$unconditional(ctx.assembler, ctx.code_buffer.pos_addr(), target_local->second);
-        } else {
-            // If the target hasn't been translated, emit a nop w/ a relocation
-            ctx.relocations.push_back({ctx.code_buffer.pos(), Relocation::Type::BRANCH_REL24, target});
-            ctx.assembler.nop();
-        }
+        // Experiment: always emit a relocation. This could make optimizations in later passes easier
+        ctx.relocations.push_back({ctx.code_buffer.pos(), Relocation::Type::BRANCH_REL24, target});
+        ctx.assembler.nop();
     } else {
         TODO();
     }
