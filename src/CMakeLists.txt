@@ -30,6 +30,7 @@ add_executable(retrec
     arch/ppc64le/codegen/codegen_ppc64le.h
     arch/ppc64le/codegen/assembler.cpp
     arch/ppc64le/codegen/assembler.h
+    arch/ppc64le/codegen/register_allocator.h
     arch/x86_64/cpu_context_x86_64.h
     process_memory_map.cpp
     process_memory_map.h
@@ -46,6 +47,7 @@ add_executable(retrec
     platform/syscall_emulation.cpp
     platform/syscall_emulation.h
     platform/generic_syscalls.h)
+
 target_link_libraries(retrec PUBLIC ${LIBELF_LIBRARIES} ${CAPSTONE_LIBRARIES})
 target_include_directories(retrec PUBLIC ${LIBELF_INCLUDE_DIRS} ${CAPSTONE_INCLUDE_DIRS})
 target_include_directories(retrec PRIVATE .)

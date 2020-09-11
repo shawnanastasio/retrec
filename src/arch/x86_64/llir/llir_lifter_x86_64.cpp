@@ -1,7 +1,6 @@
 #include <arch/x86_64/llir/llir_lifter_x86_64.h>
 
-#include <vector>
-#include <cassert>
+#include <cstring>
 
 using namespace retrec;
 
@@ -13,26 +12,83 @@ static bool contains_group(cs_detail *detail, x86_insn_group group) {
     return false;
 }
 
+static inline void relative_jump_fixup(llir::Insn &llinsn) {
+    if (llinsn.src[0].type == llir::Operand::Type::IMM && llinsn.branch.target == llir::Branch::Target::RELATIVE) {
+        // Annoyingly, capstone will automatically calculate the absolute address for immediate
+        // relative jumps, so we have to subtract the instruction's address to undo this and
+        // get the original relative offset.
+        llinsn.src[0].imm -= llinsn.address;
+    }
+}
+
 status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out) {
     cs_detail *detail = insn->detail;
     llir::Insn llinsn;
+
+    memset(&llinsn, 0, sizeof(llinsn));
     llinsn.address = insn->address;
+
     switch (insn->id) {
         case X86_INS_JMP:
             assert(detail->groups_count > 0);
 
             llinsn.iclass = llir::Insn::Class::BRANCH;
             llinsn.branch.op = llir::Branch::Op::UNCONDITIONAL;
+            llinsn.branch.target = contains_group(detail, X86_GRP_BRANCH_RELATIVE)
+                                    ? llir::Branch::Target::RELATIVE
+                                    : llir::Branch::Target::ABSOLUTE;
+            llinsn.dest_cnt = 0;
+            llinsn.src_cnt = 1;
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+            relative_jump_fixup(llinsn);
 
-            if (contains_group(detail, X86_GRP_BRANCH_RELATIVE)) {
-                llinsn.branch.target = llir::Branch::Target::RELATIVE;
-                llinsn.dest_cnt = 0;
-                llinsn.src_cnt = 1;
-                llinsn.src[0].type = llir::Operand::Type::IMM;
-                llinsn.src[0].imm = detail->x86.operands[0].imm - insn->address;
-            } else {
-                TODO();
-            }
+            break;
+
+        case X86_INS_JAE:   { TODO(); }
+        case X86_INS_JA:    { TODO(); }
+        case X86_INS_JBE:   { TODO(); }
+        case X86_INS_JB:    { TODO(); }
+        case X86_INS_JCXZ:  { TODO(); }
+        case X86_INS_JECXZ: { TODO(); }
+        case X86_INS_JE:    { llinsn.branch.op = llir::Branch::Op::JZ; goto jcc_common; }
+        case X86_INS_JGE:   { TODO(); }
+        case X86_INS_JG:    { TODO(); }
+        case X86_INS_JLE:   { TODO(); }
+        case X86_INS_JL:    { TODO(); }
+        case X86_INS_JNE:   { llinsn.branch.op = llir::Branch::Op::JNZ; goto jcc_common; }
+        case X86_INS_JNO:   { TODO(); }
+        case X86_INS_JNP:   { TODO(); }
+        case X86_INS_JNS:   { TODO(); }
+        case X86_INS_JO:    { TODO(); }
+        case X86_INS_JP:    { TODO(); }
+        case X86_INS_JRCXZ: { TODO(); }
+        case X86_INS_JS:    { TODO(); }
+        jcc_common:
+            assert(detail->groups_count > 0);
+
+            llinsn.iclass = llir::Insn::Class::BRANCH;
+            llinsn.branch.target = contains_group(detail, X86_GRP_BRANCH_RELATIVE)
+                        ? llir::Branch::Target::RELATIVE
+                        : llir::Branch::Target::ABSOLUTE;
+            llinsn.dest_cnt = 0;
+            llinsn.src_cnt = 1;
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+            relative_jump_fixup(llinsn);
+
+            break;
+
+        case X86_INS_CMP:
+            assert(detail->x86.op_count == 2);
+            llinsn.iclass = llir::Insn::Class::ALU;
+            llinsn.alu.op = llir::Alu::Op::SUB;
+            llinsn.dest_cnt = 0;
+            llinsn.src_cnt = 2;
+            llinsn.alu.flags_affected = llir::Alu::Flags::CARRY
+                                        | llir::Alu::Flags::ZERO
+                                        | llir::Alu::Flags::SIGN
+                                        | llir::Alu::Flags::OVERFLOW;
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+            fill_operand(detail->x86.operands[1], llinsn.src[1]);
             break;
 
         case X86_INS_MOVABS:

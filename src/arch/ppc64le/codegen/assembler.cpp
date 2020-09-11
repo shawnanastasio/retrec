@@ -1,3 +1,4 @@
+#define KEEP_MASK_MACROS
 #include <arch/ppc64le/codegen/assembler.h>
 
 using namespace retrec;
@@ -6,18 +7,36 @@ using namespace retrec::ppc64le;
 #define PO_MASK  (0b111111U)
 #define REG_MASK (0b11111U)
 
-#define CHECK_MASK(val, mask) do { assert(((val) & (mask)) == (val)); } while(0)
-#define CHECK_MASK_SIGNED(val, mask) \
-    do { assert((static_cast<decltype(val)>((val) & (mask)) == (val)) || ((val) < 0 && static_cast<decltype(val)>((val) | ~(mask)) == (val)) ); } while(0)
+assembler::~assembler() { 
+    if (temp)
+        code_buf.set_pos(old_pos);
+}
+
+status_code assembler::b_form(uint8_t po, uint8_t bo, uint8_t bi, uint16_t bd, uint8_t aa, uint8_t lk) {
+    constexpr uint16_t BD_MASK = 0b11111111111111U;
+    CHECK_MASK(po, PO_MASK);
+    CHECK_MASK(bo, REG_MASK);
+    CHECK_MASK(bi, REG_MASK);
+    CHECK_MASK_SIGNED(bd, BD_MASK);
+    CHECK_MASK(aa, 1U);
+    CHECK_MASK(lk, 1U);
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (bo & REG_MASK) << (32-11U)
+                    | (bi & REG_MASK) << (32-16U)
+                    | (bd & BD_MASK) << (32-30U)
+                    | (aa & 1U) << (32-31U)
+                    | (lk & 1U);
+    return write32(insn);
+}
 
 status_code assembler::d_form(uint8_t po, uint8_t rt, uint8_t ra, uint16_t i) {
     CHECK_MASK(po, PO_MASK);
     CHECK_MASK(rt, REG_MASK);
     CHECK_MASK(ra, REG_MASK);
     uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
-                    | (uint32_t)(rt & REG_MASK) << (32-11U)
-                    | (uint32_t)(ra & REG_MASK) << (32-16U)
-                    | (uint32_t)(i & 0xFFFFU);
+                    | (rt & REG_MASK) << (32-11U)
+                    | (ra & REG_MASK) << (32-16U)
+                    | (i & 0xFFFFU);
     return write32(insn);
 }
 
@@ -107,5 +126,41 @@ status_code assembler::xl_form(uint8_t po, uint8_t bt, uint8_t ba, uint8_t bb, u
                     | (bb & REG_MASK) << (32-21U)
                     | (xo & XO_MASK) << (32-31U)
                     | (lk & 1U);
+    return write32(insn);
+}
+
+status_code assembler::xo_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t oe, uint16_t xo, uint8_t rc) {
+    constexpr uint16_t XO_MASK = 0b111111111U;
+    CHECK_MASK(po, PO_MASK);
+    CHECK_MASK(rt, REG_MASK);
+    CHECK_MASK(ra, REG_MASK);
+    CHECK_MASK(rb, REG_MASK);
+    CHECK_MASK(oe, 1U);
+    CHECK_MASK(xo, XO_MASK);
+    CHECK_MASK(rc, 1U);
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (rt & REG_MASK) << (32-11U)
+                    | (ra & REG_MASK) << (32-16U)
+                    | (rb & REG_MASK) << (32-21U)
+                    | (oe & 1U) << (32-22U)
+                    | (xo & XO_MASK) << (32-31U)
+                    | (rc & 1U);
+    return write32(insn);
+}
+
+status_code assembler::x_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t rb, uint16_t xo, uint8_t rc) {
+    constexpr uint16_t XO_MASK = 0b1111111111U;
+    CHECK_MASK(po, PO_MASK);
+    CHECK_MASK(rs, REG_MASK);
+    CHECK_MASK(ra, REG_MASK);
+    CHECK_MASK(rb, REG_MASK);
+    CHECK_MASK(xo, XO_MASK);
+    CHECK_MASK(rc, 1U);
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (rs & REG_MASK) << (32-11U)
+                    | (ra & REG_MASK) << (32-16U)
+                    | (rb & REG_MASK) << (32-21U)
+                    | (xo & XO_MASK) <<  (32-31U)
+                    | (rc & 1U);
     return write32(insn);
 }

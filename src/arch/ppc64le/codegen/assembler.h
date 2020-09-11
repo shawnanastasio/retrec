@@ -7,6 +7,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#define CHECK_MASK(val, mask) do { assert(((val) & (mask)) == (val)); } while(0)
+#define CHECK_MASK_SIGNED(val, mask) \
+    do { assert((static_cast<decltype(val)>((val) & (mask)) == (val)) || ((val) < 0 && static_cast<decltype(val)>((val) | ~(mask)) == (val)) ); } while(0)
+
 namespace retrec {
 
 namespace ppc64le {
@@ -14,19 +18,36 @@ namespace ppc64le {
 class assembler {
     simple_region_writer &code_buf;
 
+    // Only used for temporary assembler objects with different offsets
+    bool temp;
+    size_t old_pos;
+
     status_code write32(uint32_t val) { return code_buf.write32(val); }
 
+    status_code b_form(uint8_t po, uint8_t bo, uint8_t bi, uint16_t bd, uint8_t aa, uint8_t lk);
     status_code d_form(uint8_t po, uint8_t rt, uint8_t ra, uint16_t i);
     status_code ds_form(uint8_t po, uint8_t rs, uint8_t ra, uint16_t ds, uint8_t xo);
     status_code i_form(uint8_t po, int32_t li, uint8_t aa, uint8_t lk);
     status_code md_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint8_t mb, uint8_t xo, uint8_t rc);
     status_code sc_form(uint8_t po, uint8_t lev);
+    status_code x_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t rb, uint16_t xo, uint8_t rc);
     status_code xfx_form(uint8_t po, uint8_t rt, uint16_t spr, uint16_t xo);
     status_code xl_form(uint8_t po, uint8_t bt, uint8_t ba, uint8_t bb, uint16_t xo, uint8_t lk);
+    status_code xo_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t oe, uint16_t xo, uint8_t rc);
+
+    assembler(assembler &other, size_t pos) : code_buf(other.code_buf), temp(true) {
+        old_pos = code_buf.pos();
+        code_buf.set_pos(pos);
+    }
 
     // Extended mnemonics on p802
 public:
-    explicit assembler(simple_region_writer &code_buf_) : code_buf(code_buf_) {}
+    explicit assembler(simple_region_writer &code_buf_) : code_buf(code_buf_), temp(false) {}
+    ~assembler();
+
+    assembler create_temporary(size_t temp_pos) {
+        return assembler(*this, temp_pos);
+    }
 
     //
     // Book I
@@ -34,19 +55,36 @@ public:
 
     // 2.4 Branch Instructions
     enum class BO : uint8_t {
-        ALWAYS = 0b10100
+        ALWAYS = 0b10100,    // Branch unconditionally
+        FIELD_CLR = 0b00100, // Branch if given CR field is clear (0)
+        FIELD_SET = 0b01100  // Branch if given CR Field is set (1)
     };
+
+    static constexpr uint8_t CR_LT = 0;
+    static constexpr uint8_t CR_GT = 1;
+    static constexpr uint8_t CR_EQ = 2;
+    static constexpr uint8_t CR_SO = 3;
 
     status_code b_internal(int32_t li, uint8_t aa, uint8_t lk) {
         assert((li & 0b11U) == 0);
-        log(LOGL_DEBUG, "Emitting b%s%s 0x%llx to 0x%lx\n",
-            lk?"l":"", aa?"a":"", li, code_buf.pos_addr());
+        log(LOGL_DEBUG, "Emitting b%s%s 0x%llx to 0x%lx\n", lk?"l":"", aa?"a":"", li, code_buf.pos_addr());
         return i_form(18, li>>2, aa, lk);
     }
     status_code b(int32_t li)   { return b_internal(li, 0, 0); }
     status_code ba(int32_t li)  { return b_internal(li, 1, 0); }
     status_code bl(int32_t li)  { return b_internal(li, 0, 1); }
     status_code bla(int32_t li) { return b_internal(li, 1, 1); }
+
+    status_code bc_internal(BO bo, uint8_t bi, uint16_t target, uint8_t aa, uint8_t lk) {
+        assert((target & 0b11U) == 0);
+        log(LOGL_DEBUG, "Emitting bc%s%s %u %u 0x%x to 0x%lx\n", lk?"l":"", aa?"a":"", (uint8_t)bo, bi, target,
+            code_buf.pos_addr());
+        return b_form(16, (uint8_t)bo, bi, target>>2, aa, lk);
+    }
+    status_code bc(BO bo, uint8_t bi, uint16_t target)   { return bc_internal(bo, bi, target, 0, 0); }
+    status_code bca(BO bo, uint8_t bi, uint16_t target)  { return bc_internal(bo, bi, target, 1, 0); }
+    status_code bcl(BO bo, uint8_t bi, uint16_t target)  { return bc_internal(bo, bi, target, 0, 1); }
+    status_code bcla(BO bo, uint8_t bi, uint16_t target) { return bc_internal(bo, bi, target, 1, 1); }
 
     status_code bcctr_internal(BO bo, uint8_t bi, uint8_t bh, uint8_t lk) {
         log(LOGL_DEBUG, "Emitting bcctr%s %d %d %d to 0x%lx\n", lk?"l":"", (uint8_t)bo, bi, bh, code_buf.pos_addr());
@@ -73,6 +111,24 @@ public:
         log(LOGL_DEBUG, "Emitting addis r%u, r%u, 0x%x to 0x%lx\n", rt, ra, si, code_buf.pos_addr());
         return d_form(15, rt, ra, si);
     };
+
+    status_code sub_internal(uint8_t rt, uint8_t rb, uint8_t ra, uint8_t modify_ov, uint8_t modify_cr) {
+        log(LOGL_DEBUG, "Emitting sub%s%s r%u, r%u, r%u to 0x%lu\n", modify_ov?"o":"", modify_cr?".":"", rt, rb, ra, code_buf.pos_addr());
+        return xo_form(31, rt, ra, rb, modify_ov, 40, modify_cr);
+    }
+    status_code sub(uint8_t rt, uint8_t rb, uint8_t ra)   { return sub_internal(rt, rb, ra, 0, 0); }
+    status_code sub_(uint8_t rt, uint8_t rb, uint8_t ra)  { return sub_internal(rt, rb, ra, 0, 1); }
+    status_code subo(uint8_t rt, uint8_t rb, uint8_t ra)  { return sub_internal(rt, rb, ra, 1, 0); }
+    status_code subo_(uint8_t rt, uint8_t rb, uint8_t ra) { return sub_internal(rt, rb, ra, 1, 1); }
+
+    // 3.3.10 Fixed-Point Compare Instructions
+    status_code cmp(uint8_t bf, uint8_t l, uint8_t ra, uint8_t rb) {
+        CHECK_MASK(l, 1U);
+        CHECK_MASK(bf, 0b111U);
+        uint8_t rs = (bf << (uint8_t)2U) | (l & (uint8_t)1U);
+        log(LOGL_DEBUG, "Emitting cmp %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 0, 0);
+    }
 
     // 3.3.13 Fixed-Point Logical Instructions
     status_code ori(uint8_t ra, uint8_t rs, uint16_t ui) {
@@ -121,6 +177,11 @@ public:
         return sc_form(17, 0);
     }
 };
+
+#ifndef KEEP_MASK_MACROS
+#undef CHECK_MASK
+#undef CHECK_MASK_SIGNED
+#endif
 
 }
 }

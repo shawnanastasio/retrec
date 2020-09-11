@@ -5,6 +5,8 @@
 #endif
 
 enum class X86_64Register {
+    // Used to indicate failure for functions that return an X86_64Register, OR to indicate
+    // that this field should be discarded.
     INVALID,
 
     RAX, RBX, RCX, RDX,

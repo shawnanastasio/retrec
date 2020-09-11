@@ -69,7 +69,15 @@ struct Alu {
         MULT,
         LOAD_IMM,
     } op;
+
+    enum class Flags : uint8_t {
+        CARRY = 1 << 0,
+        ZERO = 1 << 1,
+        SIGN = 1 << 2,
+        OVERFLOW = 1 << 3,
+    } flags_affected;
 };
+DECLARE_SCOPED_ENUM_BITWISE_OPERATORS(Alu::Flags)
 
 //
 // Branch
@@ -77,10 +85,13 @@ struct Alu {
 struct Branch {
     enum class Op {
         UNCONDITIONAL,
+        JNZ, // Not Zero
+        JZ,  // Zero
     } op;
 
     enum class Target {
         RELATIVE,
+        ABSOLUTE,
     } target;
 };
 
@@ -182,12 +193,15 @@ inline std::string to_string(const Branch &branch) {
     std::string ret = "";
     switch (branch.op) {
         case Branch::Op::UNCONDITIONAL: ret += "UNCONDITIONAL,"; break;
+        case Branch::Op::JNZ: ret += "JNZ,"; break;
+        case Branch::Op::JZ: ret += "JZ,"; break;
         default:
             TODO();
     }
 
     switch (branch.target) {
         case Branch::Target::RELATIVE: ret += "RELATIVE"; break;
+        case Branch::Target::ABSOLUTE: ret += "ABSOLUTE"; break;
         default:
             TODO();
     }

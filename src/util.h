@@ -1,11 +1,12 @@
 #pragma once
 
+#include <type_traits>
 #include <cstdint>
 #include <cassert>
 
 #include <unistd.h>
 
-#define log(level, fmt, ...) retrec::log_impl(level, __FILE__ + SOURCE_PATH_SIZE, __LINE__, fmt, ##__VA_ARGS__)
+#define log(level, fmt, ...) retrec::log_impl(level, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
 
 #define __weak __attribute__((weak))
 
@@ -42,11 +43,33 @@ enum class Architecture {
 
 #define ARRAY_SIZE(x) (sizeof((x)) / sizeof(*(x)))
 
+// C++ is a great language
+#define DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, op) \
+static inline T operator op (T a, T b) { \
+    return static_cast<T>( \
+            static_cast<std::underlying_type<T>::type>(a) op \
+            static_cast<std::underlying_type<T>::type>(b)); \
+}
+
+#define DECLARE_SCOPED_ENUM_UNARY_OPERATOR(T, op) \
+static inline T operator op (T a) { \
+    return static_cast<T>(op static_cast<std::underlying_type<T>::type>(a)); \
+}
+
+#define DECLARE_SCOPED_ENUM_BITWISE_OPERATORS(T) \
+    DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, |) \
+    DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, &) \
+    DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, ^) \
+    DECLARE_SCOPED_ENUM_UNARY_OPERATOR(T, ~)
+
 #define DISABLE_COPY_AND_MOVE(classname) \
     classname(const classname &other) = delete; \
     classname& operator=(const classname &other) = delete; \
     classname(const classname &&other) = delete; \
     classname& operator=(const classname &&other) = delete;
+
+template<class... Ts> struct Overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
 
 //
 // Logging

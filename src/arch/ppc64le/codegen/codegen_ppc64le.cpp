@@ -1,7 +1,5 @@
 #include <arch/ppc64le/codegen/codegen_ppc64le.h>
 
-#include <capstone.h>
-#include <disassembler.h>
 #include <cstring>
 
 using namespace retrec;
@@ -91,11 +89,16 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
 
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
+    ctx.local_branch_targets.insert({ insn.address, ctx.code_buffer.pos_addr() });
     switch (insn.iclass) {
         case llir::Insn::Class::ALU:
             switch (insn.alu.op) {
                 case llir::Alu::Op::LOAD_IMM:
                     llir$alu$load_imm(ctx, insn);
+                    break;
+
+                case llir::Alu::Op::SUB:
+                    llir$alu$sub(ctx, insn);
                     break;
 
                 default:
@@ -106,6 +109,11 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             switch (insn.branch.op) {
                 case llir::Branch::Op::UNCONDITIONAL:
                     llir$branch$unconditional(ctx, insn);
+                    break;
+
+                case llir::Branch::Op::JNZ:
+                case llir::Branch::Op::JZ:
+                    llir$branch$conditional(ctx, insn);
                     break;
 
                 default:
@@ -130,28 +138,43 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
 template <typename T>
 status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_context &ctx) {
     for (auto &relocation : ctx.relocations) {
-        switch (relocation.type) {
-            case Relocation::Type::BRANCH_REL24:
-            {
-                // Resolve branch target
-                auto target = ctx.local_branch_targets.find(relocation.data);
-                if (target == ctx.local_branch_targets.end())
-                    return status_code::BADBRANCH;
+        auto res = std::visit(
+            Overloaded {
+                [&](const Relocation::BranchImmUnconditional &data) -> status_code {
+                    // Resolve branch target
+                    auto target = ctx.local_branch_targets.find(data.abs_vaddr);
+                    if (target == ctx.local_branch_targets.end())
+                        return status_code::BADBRANCH;
 
-                size_t old_pos = ctx.code_buffer.pos();
-                ctx.code_buffer.set_pos(relocation.offset);
+                    {
+                        uint64_t my_address = (uint64_t) ctx.code_buffer.start() + relocation.offset;
+                        auto temp_assembler = ctx.assembler.create_temporary(relocation.offset);
+                        macro$branch$unconditional(temp_assembler, my_address, target->second, relocation.insn_cnt);
+                    }
 
-                uint64_t my_address = (uint64_t) ctx.code_buffer.start() + relocation.offset;
-                macro$branch$unconditional(ctx.assembler, my_address, target->second);
+                    return status_code::SUCCESS;
+                },
 
-                ctx.code_buffer.set_pos(old_pos);
+                [&](const Relocation::BranchImmConditional &data) -> status_code {
+                    auto target = ctx.local_branch_targets.find(data.abs_vaddr);
+                    if (target == ctx.local_branch_targets.end())
+                        return status_code::BADBRANCH;
 
-                break;
-            }
+                    {
+                        uint64_t my_address = (uint64_t) ctx.code_buffer.start() + relocation.offset;
+                        auto temp_assembler = ctx.assembler.create_temporary(relocation.offset);
+                        macro$branch$conditional(temp_assembler, my_address, target->second, data.bo, data.cr_field,
+                                                 relocation.insn_cnt);
+                    }
 
-            default:
-                TODO();
-        }
+                    return status_code::SUCCESS;
+                }
+            },
+            relocation.data
+        );
+
+        if (res != status_code::SUCCESS)
+            return res;
     }
 
     return status_code::SUCCESS;
@@ -163,11 +186,11 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
 
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn) {
+    log(LOGL_DEBUG, "alu$load_imm\n");
     assert(insn.dest_cnt == 1);
     assert(insn.dest[0].type == llir::Operand::Type::REG);
     assert(insn.src_cnt == 1);
     assert(insn.src[0].type == llir::Operand::Type::IMM);
-    ctx.local_branch_targets.insert({ insn.address, ctx.code_buffer.pos_addr() });
 
     gpr_t rt = reg_allocator.allocate_gpr(insn.dest[0].reg);
     assert(rt != GPR_INVALID);
@@ -180,11 +203,53 @@ void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &i
     }
 }
 
+template<typename T>
+void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) {
+    log(LOGL_DEBUG, "alu$sub\n");
+    assert (insn.src_cnt == 2);
+
+    // Ensure all operands are in registers
+    auto load_operand_into_gpr = [&](const auto &op) {
+        gpr_t gpr;
+        if (op.type == llir::Operand::Type::REG) {
+            gpr = reg_allocator.allocate_gpr(op.reg);
+        } else if (op.type == llir::Operand::Type::IMM) {
+            gpr = reg_allocator.allocate_gpr();
+            macro$load_imm(ctx.assembler, gpr, op.imm);
+        } else { TODO(); }
+
+        return gpr;
+    };
+    gpr_t a = load_operand_into_gpr(insn.src[0]);
+    gpr_t b = load_operand_into_gpr(insn.src[1]);
+
+    // Emit actual operation
+    if (insn.dest_cnt == 0) {
+        // No destination, just a compare instruction
+        assert(insn.alu.flags_affected != (llir::Alu::Flags)0);
+        ctx.assembler.cmp(0, 1, a, b);
+    } else if (insn.dest_cnt == 1) {
+        // Emit sub
+        TODO();
+    } else {
+        TODO();
+    }
+
+    // Store operation in runtime_ctx for future lazy evaluation
+    ctx.assembler.std(a, 11, offsetof(struct runtime_context_ppc64le, last_flag_operands[0]));
+    ctx.assembler.std(b, 11, offsetof(struct runtime_context_ppc64le, last_flag_operands[1]));
+    macro$load_imm(ctx.assembler, a, (uint16_t)runtime_context_ppc64le::LastFlagOp::SUB);
+    ctx.assembler.std(a, 11, offsetof(struct runtime_context_ppc64le, last_flag_operation));
+
+    reg_allocator.free_gpr(a);
+    reg_allocator.free_gpr(b);
+}
+
 /**
  * Return target virtual address for given branch
  */
 template <typename T>
-int64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
+uint64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
     switch (insn.branch.target) {
         case llir::Branch::Target::RELATIVE:
             return insn.address + insn.src[0].imm;
@@ -197,25 +262,48 @@ int64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
 
 template <typename T>
 void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn) {
+    log(LOGL_DEBUG, "branch$unconditional\n");
     assert(insn.dest_cnt == 0);
     assert(insn.src_cnt == 1);
-    ctx.local_branch_targets.insert({ insn.address, ctx.code_buffer.pos_addr() });
 
     if (insn.src[0].type == llir::Operand::Type::IMM) {
-        int64_t target = resolve_branch_target(insn);
+        uint64_t target = resolve_branch_target(insn);
 
         // Experiment: always emit a relocation. This could make optimizations in later passes easier
-        ctx.relocations.push_back({ctx.code_buffer.pos(), Relocation::Type::BRANCH_REL24, target});
+        ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmUnconditional{target} });
         ctx.assembler.nop();
-    } else {
-        TODO();
+    } else { TODO(); }
+}
+
+template<typename T>
+void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
+    log(LOGL_DEBUG, "branch$conditional\n");
+    assert(insn.src_cnt == 1);
+
+    uint64_t target = resolve_branch_target(insn);
+    assembler::BO bo;
+    switch (insn.branch.op) {
+        case llir::Branch::Op::JNZ: bo = assembler::BO::FIELD_CLR; goto eq_common;
+        case llir::Branch::Op::JZ:  bo = assembler::BO::FIELD_SET; goto eq_common;
+        eq_common:
+            // For operations that cleanly map to Power (EQ), emit the appropriate conditional branch
+            if (insn.src[0].type == llir::Operand::Type::IMM) {
+                uint8_t cr_field = assembler::CR_EQ;
+                ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmConditional{bo, cr_field, target} });
+                ctx.assembler.nop();
+            } else { TODO(); }
+
+            break;
+
+        default:
+            TODO();
     }
 }
 
 template <typename T>
 void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::Insn &insn) {
+    log(LOGL_DEBUG, "interrupt$syscall\n");
     assert(insn.dest_cnt == 0 && insn.src_cnt == 0);
-    ctx.local_branch_targets.insert({ insn.address, ctx.code_buffer.pos_addr() });
     ppc64le::assembler &assembler = ctx.assembler;
 
     // To handle a syscall, we have to re-enter native code, so emit a branch to arch_leave_translated_code.
@@ -266,23 +354,33 @@ void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$branch$unconditional(assembler &assembler, uint64_t my_address, uint64_t target) {
-    constexpr int32_t LI_FIELD_MAX =  0x1ffffff; // 2**(26-1) - 1
-    constexpr int32_t LI_FIELD_MIN = -LI_FIELD_MAX - 1;
+void codegen_ppc64le<T>::macro$branch$unconditional(assembler &assembler, uint64_t my_address, uint64_t target, size_t insn_cnt) {
+    int64_t diff = target - my_address;
+    if (rel26_in_range(my_address, target)) {
+        assert(insn_cnt >= 1); // Enough space for a single branch insn
 
-    int64_t diff = (int64_t)target - (int64_t)my_address;
-    if (diff <= LI_FIELD_MAX && diff >= LI_FIELD_MIN) {
         // Target is close enough to emit a relative branch
         log(LOGL_INFO, "REL: %lld (0x%llx - 0x%llx)\n", diff, target, my_address);
         assembler.b(diff);
-    } else if (target <= LI_FIELD_MAX) {
-        // Target is in the first 26-bits of the address space
+    } else if (target <= UINT26_MAX) {
+        // Target is in the first 24-bits of the address space
         log(LOGL_INFO, "ABS: 0x%lx\n", target);
         assembler.ba(target);
     } else {
         // Far branch. TODO.
         TODO();
     }
+}
+
+template<typename T>
+void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t my_address, uint64_t target,
+                                                       assembler::BO bo, uint8_t cr_field, size_t insn_cnt) {
+    int64_t diff = target - my_address;
+    if (rel16_in_range(my_address, target)) {
+        assert(insn_cnt >= 1); // Enough space for a single branch insn
+
+        assembler.bc(bo, cr_field, diff);
+    } else { TODO(); }
 }
 
 // Explicitly instantiate for all supported traits
