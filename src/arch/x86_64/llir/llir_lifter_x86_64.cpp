@@ -50,26 +50,26 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_JB:    { TODO(); }
         case X86_INS_JCXZ:  { TODO(); }
         case X86_INS_JECXZ: { TODO(); }
-        case X86_INS_JE:    { llinsn.branch.op = llir::Branch::Op::JZ; goto jcc_common; }
+        case X86_INS_JE:    { llinsn.branch.op = llir::Branch::Op::EQ; goto jcc_common; }
         case X86_INS_JGE:   { TODO(); }
         case X86_INS_JG:    { TODO(); }
         case X86_INS_JLE:   { TODO(); }
         case X86_INS_JL:    { TODO(); }
-        case X86_INS_JNE:   { llinsn.branch.op = llir::Branch::Op::JNZ; goto jcc_common; }
+        case X86_INS_JNE:   { llinsn.branch.op = llir::Branch::Op::NOT_EQ; goto jcc_common; }
         case X86_INS_JNO:   { TODO(); }
-        case X86_INS_JNP:   { TODO(); }
-        case X86_INS_JNS:   { TODO(); }
+        case X86_INS_JNP:   { TODO(); /* does anybody even use PF?? */ }
+        case X86_INS_JNS:   { llinsn.branch.op = llir::Branch::Op::NOT_NEGATIVE; goto jcc_common; }
         case X86_INS_JO:    { TODO(); }
-        case X86_INS_JP:    { TODO(); }
+        case X86_INS_JP:    { TODO(); /* does anybody even use PF?? */ }
         case X86_INS_JRCXZ: { TODO(); }
-        case X86_INS_JS:    { TODO(); }
+        case X86_INS_JS:    { llinsn.branch.op = llir::Branch::Op::NEGATIVE; goto jcc_common; }
         jcc_common:
             assert(detail->groups_count > 0);
 
             llinsn.iclass = llir::Insn::Class::BRANCH;
             llinsn.branch.target = contains_group(detail, X86_GRP_BRANCH_RELATIVE)
-                        ? llir::Branch::Target::RELATIVE
-                        : llir::Branch::Target::ABSOLUTE;
+                                    ? llir::Branch::Target::RELATIVE
+                                    : llir::Branch::Target::ABSOLUTE;
             llinsn.dest_cnt = 0;
             llinsn.src_cnt = 1;
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
@@ -83,10 +83,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.alu.op = llir::Alu::Op::SUB;
             llinsn.dest_cnt = 0;
             llinsn.src_cnt = 2;
-            llinsn.alu.flags_affected = llir::Alu::Flags::CARRY
-                                        | llir::Alu::Flags::ZERO
-                                        | llir::Alu::Flags::SIGN
-                                        | llir::Alu::Flags::OVERFLOW;
+            llinsn.alu.modifies_flags = true;
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
             fill_operand(detail->x86.operands[1], llinsn.src[1]);
             break;

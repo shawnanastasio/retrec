@@ -111,8 +111,11 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                     llir$branch$unconditional(ctx, insn);
                     break;
 
-                case llir::Branch::Op::JNZ:
-                case llir::Branch::Op::JZ:
+                case llir::Branch::Op::EQ:
+                case llir::Branch::Op::NOT_EQ:
+                case llir::Branch::Op::NEGATIVE:
+                case llir::Branch::Op::NOT_NEGATIVE:
+                case llir::Branch::Op::POSITIVE:
                     llir$branch$conditional(ctx, insn);
                     break;
 
@@ -141,7 +144,6 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
         auto res = std::visit(
             Overloaded {
                 [&](const Relocation::BranchImmUnconditional &data) -> status_code {
-                    // Resolve branch target
                     auto target = ctx.local_branch_targets.find(data.abs_vaddr);
                     if (target == ctx.local_branch_targets.end())
                         return status_code::BADBRANCH;
@@ -192,57 +194,43 @@ void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &i
     assert(insn.src_cnt == 1);
     assert(insn.src[0].type == llir::Operand::Type::IMM);
 
-    gpr_t rt = reg_allocator.allocate_gpr(insn.dest[0].reg);
-    assert(rt != GPR_INVALID);
+    gpr_t rt = ctx.reg_allocator(insn)->get_fixed_gpr(insn.dest[0].reg);
 
-    macro$load_imm(ctx.assembler, rt, insn.src[0].imm);
-
-    if (insn.dest[0].reg.mask != llir::Register::Mask::Full64 && !insn.dest[0].reg.zero_others) {
-        // The llir specifies that bits outside mask should be kept. Implement this.
-        TODO();
-    }
+    macro$load_imm(ctx.assembler, rt, insn.src[0].imm, insn.dest[0].reg.mask);
 }
 
 template<typename T>
 void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) {
     log(LOGL_DEBUG, "alu$sub\n");
-    assert (insn.src_cnt == 2);
+    assert(insn.src_cnt == 2);
+    assert(insn.src[0].type == llir::Operand::Type::REG);
+
+    auto mask = insn.src[0].reg.mask;
+    auto &reg_allocator = *ctx.reg_allocator(insn);
 
     // Ensure all operands are in registers
-    auto load_operand_into_gpr = [&](const auto &op) {
-        gpr_t gpr;
+    auto load_operand_into_gpr = [&](const auto &op, uint8_t op_count) {
+        gpr_t target = op_count == 0 ? GPR_FIXED_FLAG_OP1 : GPR_FIXED_FLAG_OP2; // See JIT Flag ABI notes in codegen_ppc64le.h
         if (op.type == llir::Operand::Type::REG) {
-            gpr = reg_allocator.allocate_gpr(op.reg);
+            // Operand is in a register, move it to the appropriate FLAG_OP reg and mask it
+            gpr_t gpr = reg_allocator.get_fixed_gpr(op.reg);
+            ctx.assembler.mr(target, gpr);
+            macro$mask_register(ctx.assembler, GPR_FIXED_FLAG_OP1, insn.src[0].reg.mask);
+
         } else if (op.type == llir::Operand::Type::IMM) {
-            gpr = reg_allocator.allocate_gpr();
-            macro$load_imm(ctx.assembler, gpr, op.imm);
+            // Operand is an immediate, load it into the appropriate FLAG_OP reg
+            macro$load_imm(ctx.assembler, target, op.imm, mask);
+
         } else { TODO(); }
-
-        return gpr;
     };
-    gpr_t a = load_operand_into_gpr(insn.src[0]);
-    gpr_t b = load_operand_into_gpr(insn.src[1]);
+    load_operand_into_gpr(insn.src[0], 0);
+    load_operand_into_gpr(insn.src[1], 1);
+    gpr_t dest = insn.dest_cnt ? reg_allocator.get_fixed_gpr(insn.dest[0].reg) : 0 /* scratch */ ;
 
-    // Emit actual operation
-    if (insn.dest_cnt == 0) {
-        // No destination, just a compare instruction
-        assert(insn.alu.flags_affected != (llir::Alu::Flags)0);
-        ctx.assembler.cmp(0, 1, a, b);
-    } else if (insn.dest_cnt == 1) {
-        // Emit sub
-        TODO();
-    } else {
-        TODO();
-    }
-
-    // Store operation in runtime_ctx for future lazy evaluation
-    ctx.assembler.std(a, 11, offsetof(struct runtime_context_ppc64le, last_flag_operands[0]));
-    ctx.assembler.std(b, 11, offsetof(struct runtime_context_ppc64le, last_flag_operands[1]));
-    macro$load_imm(ctx.assembler, a, (uint16_t)runtime_context_ppc64le::LastFlagOp::SUB);
-    ctx.assembler.std(a, 11, offsetof(struct runtime_context_ppc64le, last_flag_operation));
-
-    reg_allocator.free_gpr(a);
-    reg_allocator.free_gpr(b);
+    if (insn.alu.modifies_flags)
+        ctx.assembler.subo_(dest, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+    else
+        ctx.assembler.subo(dest, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
 }
 
 /**
@@ -273,6 +261,9 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
         ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmUnconditional{target} });
         ctx.assembler.nop();
     } else { TODO(); }
+
+    // Invalidate the current register allocator after each indirect branch
+    ctx.invalidate_reg_allocator(insn);
 }
 
 template<typename T>
@@ -281,23 +272,56 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     assert(insn.src_cnt == 1);
 
     uint64_t target = resolve_branch_target(insn);
-    assembler::BO bo;
-    switch (insn.branch.op) {
-        case llir::Branch::Op::JNZ: bo = assembler::BO::FIELD_CLR; goto eq_common;
-        case llir::Branch::Op::JZ:  bo = assembler::BO::FIELD_SET; goto eq_common;
-        eq_common:
-            // For operations that cleanly map to Power (EQ), emit the appropriate conditional branch
-            if (insn.src[0].type == llir::Operand::Type::IMM) {
-                uint8_t cr_field = assembler::CR_EQ;
-                ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmConditional{bo, cr_field, target} });
-                ctx.assembler.nop();
-            } else { TODO(); }
 
-            break;
+    assembler::BO bo;
+    uint8_t cr_field;
+
+    switch(insn.branch.op) {
+        case llir::Branch::Op::EQ:
+            // beq
+            bo = assembler::BO::FIELD_SET;
+            cr_field = assembler::CR_EQ;
+            goto clean_map_common;
+
+        case llir::Branch::Op::NOT_EQ:
+            // bne
+            bo = assembler::BO::FIELD_CLR;
+            cr_field = assembler::CR_EQ;
+            goto clean_map_common;
+
+        case llir::Branch::Op::POSITIVE:
+            // bgt
+            bo = assembler::BO::FIELD_SET;
+            cr_field = assembler::CR_GT;
+            goto clean_map_common;
+
+        case llir::Branch::Op::NOT_NEGATIVE:
+            // bnlt
+            bo = assembler::BO::FIELD_CLR;
+            cr_field = assembler::CR_LT;
+            goto clean_map_common;
+
+        case llir::Branch::Op::NEGATIVE:
+            // blt
+            bo = assembler::BO::FIELD_SET;
+            cr_field = assembler::CR_LT;
+            goto clean_map_common;
 
         default:
             TODO();
     }
+
+
+clean_map_common:
+    // For operations that cleanly map to Power ISA flags, directly emit a cond branch relocation
+    if (insn.src[0].type == llir::Operand::Type::IMM) {
+        ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmConditional{bo, cr_field, target} });
+        ctx.assembler.nop();
+    } else { TODO(); }
+
+[[maybe_unused]] out:
+    // Invalidate the current register allocator after each indirect branch
+    ctx.invalidate_reg_allocator(insn);
 }
 
 template <typename T>
@@ -311,15 +335,15 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
     // * arch_leave_translated code won't save LR for us, so we have to do it
     // * we need to store the callback in runtime_context(r11).host_native_context.native_function_call_target
 
-    gpr_t scratch = reg_allocator.allocate_gpr();
+    gpr_t scratch = ctx.reg_allocator(insn)->allocate_gpr();
     assert(scratch != GPR_INVALID);
 
     // Store address of callback
-    macro$load_imm(assembler, scratch, (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL);
+    macro$load_imm(assembler, scratch, (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL, llir::Register::Mask::Full64);
     assembler.std(scratch, 11, offsetof(runtime_context_ppc64le, native_function_call_target));
 
     // Load arch_leave_translated_code
-    macro$load_imm(assembler, scratch, (uint64_t)arch_leave_translated_code);
+    macro$load_imm(assembler, scratch, (uint64_t)arch_leave_translated_code, llir::Register::Mask::Full64);
     assembler.mtspr(assembler::SPR::CTR, scratch);
 
     // Save LR
@@ -335,14 +359,22 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
 //
 
 template <typename T>
-void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm) {
+void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm, llir::Register::Mask mask) {
+    bool need_mask = false;
+
     if (imm <= INT16_MAX && imm >= INT16_MIN) {
         // If the immediate fits in an int16_t, we can just emit an addi
         assembler.addi(dest, 0, imm);
+
+        if ((int)mask < (int)llir::Register::Mask::LowLow16)
+            need_mask = true;
     } else if (imm <= INT32_MAX && imm >= INT32_MIN) {
         // If the immediate fits in an int32_t, emit addis and ori
         assembler.addis(dest, 0, (imm >> 16) & 0xFFFF);
         assembler.ori(dest, dest, imm & 0xFFFFU);
+
+        if ((int)mask < (int)llir::Register::Mask::Low32)
+            need_mask = true;
     } else {
         // Do the full song and dance for a 64-bit immediate load. Eventually we should use a TOC.
         assembler.addis(dest, 0, (imm >> 48) & 0xFFFF);
@@ -350,7 +382,12 @@ void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_
         assembler.rldicr(dest, dest, 32, 31, false);
         assembler.oris(dest, dest, (imm >> 16) & 0xFFFF);
         assembler.ori(dest, dest, imm & 0xFFFF);
+        if (mask != llir::Register::Mask::Full64)
+            need_mask = true;
     }
+
+    if (need_mask)
+        macro$mask_register(assembler, dest, mask);
 }
 
 template <typename T>
@@ -360,11 +397,11 @@ void codegen_ppc64le<T>::macro$branch$unconditional(assembler &assembler, uint64
         assert(insn_cnt >= 1); // Enough space for a single branch insn
 
         // Target is close enough to emit a relative branch
-        log(LOGL_INFO, "REL: %lld (0x%llx - 0x%llx)\n", diff, target, my_address);
         assembler.b(diff);
     } else if (target <= UINT26_MAX) {
+        assert(insn_cnt >= 1);
+
         // Target is in the first 24-bits of the address space
-        log(LOGL_INFO, "ABS: 0x%lx\n", target);
         assembler.ba(target);
     } else {
         // Far branch. TODO.
@@ -372,15 +409,36 @@ void codegen_ppc64le<T>::macro$branch$unconditional(assembler &assembler, uint64
     }
 }
 
-template<typename T>
+template <typename T>
 void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t my_address, uint64_t target,
-                                                       assembler::BO bo, uint8_t cr_field, size_t insn_cnt) {
+                                                  assembler::BO bo, uint8_t cr_field, size_t insn_cnt) {
     int64_t diff = target - my_address;
     if (rel16_in_range(my_address, target)) {
         assert(insn_cnt >= 1); // Enough space for a single branch insn
 
         assembler.bc(bo, cr_field, diff);
     } else { TODO(); }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::macro$mask_register(ppc64le::assembler &assembler, ppc64le::gpr_t reg, llir::Register::Mask mask) {
+    switch(mask) {
+        case llir::Register::Mask::Full64:
+            break;
+        case llir::Register::Mask::Low32:
+            assembler.rldicl(reg, reg, 0, 32, false);
+            break;
+        case llir::Register::Mask::LowLow16:
+            assembler.rldicl(reg, reg, 0, 48, false);
+            break;
+        case llir::Register::Mask::LowLowHigh8:
+            TODO();
+        case llir::Register::Mask::LowLowLow8:
+            TODO();
+            break;
+        default:
+            TODO();
+    }
 }
 
 // Explicitly instantiate for all supported traits

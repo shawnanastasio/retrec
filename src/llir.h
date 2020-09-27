@@ -25,11 +25,11 @@ struct Register {
     };
 
     enum class Mask {
-        Full64,      // 63 downto 0
-        Low32,       // 31 downto 0
-        LowLow16,    // 15 downto 0
-        LowLowHigh8, // 15 downto 8
         LowLowLow8,  // 7 downto 0
+        LowLowHigh8, // 15 downto 8
+        LowLow16,    // 15 downto 0
+        Low32,       // 31 downto 0
+        Full64,      // 63 downto 0
 
         Special
     } mask;
@@ -70,14 +70,8 @@ struct Alu {
         LOAD_IMM,
     } op;
 
-    enum class Flags : uint8_t {
-        CARRY = 1 << 0,
-        ZERO = 1 << 1,
-        SIGN = 1 << 2,
-        OVERFLOW = 1 << 3,
-    } flags_affected;
+    bool modifies_flags;
 };
-DECLARE_SCOPED_ENUM_BITWISE_OPERATORS(Alu::Flags)
 
 //
 // Branch
@@ -85,9 +79,18 @@ DECLARE_SCOPED_ENUM_BITWISE_OPERATORS(Alu::Flags)
 struct Branch {
     enum class Op {
         UNCONDITIONAL,
-        JNZ, // Not Zero
-        JZ,  // Zero
+        GREATER,
+        GREATER_EQ,
+        EQ,
+        NOT_EQ,
+        LESS_EQ,
+        LESS,
+        NEGATIVE,
+        NOT_NEGATIVE,
+        POSITIVE
     } op;
+
+    bool signed_comparison;
 
     enum class Target {
         RELATIVE,
@@ -193,11 +196,21 @@ inline std::string to_string(const Branch &branch) {
     std::string ret = "";
     switch (branch.op) {
         case Branch::Op::UNCONDITIONAL: ret += "UNCONDITIONAL,"; break;
-        case Branch::Op::JNZ: ret += "JNZ,"; break;
-        case Branch::Op::JZ: ret += "JZ,"; break;
+        case Branch::Op::GREATER: ret += "GREATER,"; break;
+        case Branch::Op::GREATER_EQ: ret += "GREATER_EQ,"; break;
+        case Branch::Op::EQ: ret += "EQ,"; break;
+        case Branch::Op::NOT_EQ: ret += "!EQ,"; break;
+        case Branch::Op::LESS_EQ: ret += "LESS_EQ,"; break;
+        case Branch::Op::LESS: ret += "LESS,"; break;
+        case Branch::Op::NEGATIVE: ret += "NEGATIVE,"; break;
+        case Branch::Op::NOT_NEGATIVE: ret += "!NEGATIVE,"; break;
+        case Branch::Op::POSITIVE: ret += "POSITIVE,"; break;
         default:
             TODO();
     }
+
+    if (branch.signed_comparison)
+        ret += "SIGNED,";
 
     switch (branch.target) {
         case Branch::Target::RELATIVE: ret += "RELATIVE"; break;

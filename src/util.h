@@ -45,14 +45,14 @@ enum class Architecture {
 
 // C++ is a great language
 #define DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, op) \
-static inline T operator op (T a, T b) { \
+[[maybe_unused]] static inline T operator op (T a, T b) { \
     return static_cast<T>( \
             static_cast<std::underlying_type<T>::type>(a) op \
             static_cast<std::underlying_type<T>::type>(b)); \
 }
 
 #define DECLARE_SCOPED_ENUM_UNARY_OPERATOR(T, op) \
-static inline T operator op (T a) { \
+[[maybe_unused]] static inline T operator op (T a) { \
     return static_cast<T>(op static_cast<std::underlying_type<T>::type>(a)); \
 }
 

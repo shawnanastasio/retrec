@@ -191,11 +191,12 @@ __asm__(
     "mtctr 5\n"
     "ld 3," REG_ARR_OFF(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_GPRS_OFFSET, 3) "(4)\n"
     "ld 4," REG_ARR_OFF(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_GPRS_OFFSET, 4) "(4)\n"
-    "bctr\n"
+
+    "translated_code_entrypoint: bctr\n"
 
     ".cfi_endproc\n"
     ".size arch_enter_translated_code, .-arch_enter_translated_code\n"
-
+    ".global translated_code_entrypoint\n"
 
 
     ////////////////////////////////

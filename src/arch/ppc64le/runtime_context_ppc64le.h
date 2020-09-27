@@ -27,13 +27,6 @@ struct runtime_context_ppc64le {
         cpu_context_x86_64 x86_64_ucontext;
     };
 
-    // Last executed operation that may have modified native flags. Used for lazy evaluation of
-    // flag types that don't natively map to the Power ISA.
-    int64_t last_flag_operands[2];
-    enum class LastFlagOp {
-        SUB,
-    } last_flag_operation;
-
     bool should_exit;
     int exit_code;
 };
@@ -49,6 +42,8 @@ static inline int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, lli
     // For statically allocated registers, return the corresponding ppc64 register from the translated context.
     // Otherwise, return the register from the x86_64_ucontext
     switch (reg) {
+        case llir::X86_64Register::RSP:
+            return &ctx->host_translated_context.gprs[1];
         case llir::X86_64Register::RDI:
             return &ctx->host_translated_context.gprs[3];
         case llir::X86_64Register::RSI:
@@ -63,6 +58,22 @@ static inline int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, lli
             return &ctx->host_translated_context.gprs[8];
         case llir::X86_64Register::RAX:
             return &ctx->host_translated_context.gprs[9];
+        case llir::X86_64Register::R10:
+            return &ctx->host_translated_context.gprs[15];
+        case llir::X86_64Register::R11:
+            return &ctx->host_translated_context.gprs[16];
+        case llir::X86_64Register::R12:
+            return &ctx->host_translated_context.gprs[17];
+        case llir::X86_64Register::R13:
+            return &ctx->host_translated_context.gprs[18];
+        case llir::X86_64Register::R14:
+            return &ctx->host_translated_context.gprs[19];
+        case llir::X86_64Register::R15:
+            return &ctx->host_translated_context.gprs[20];
+        case llir::X86_64Register::RBX:
+            return &ctx->host_translated_context.gprs[21];
+        case llir::X86_64Register::RBP:
+            return &ctx->host_translated_context.gprs[22];
 
         default:
             return ctx->x86_64_ucontext.get_reg(reg);

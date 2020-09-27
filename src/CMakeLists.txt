@@ -31,6 +31,7 @@ add_executable(retrec
     arch/ppc64le/codegen/assembler.cpp
     arch/ppc64le/codegen/assembler.h
     arch/ppc64le/codegen/register_allocator.h
+    arch/ppc64le/codegen/register_allocator.cpp
     arch/x86_64/cpu_context_x86_64.h
     process_memory_map.cpp
     process_memory_map.h
