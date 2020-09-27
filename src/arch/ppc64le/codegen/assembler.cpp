@@ -90,6 +90,28 @@ status_code assembler::md_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, u
     return write32(insn);
 }
 
+
+status_code assembler::m_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint8_t mb, uint8_t me, uint8_t rc) {
+    constexpr uint8_t SH_MASK = 0b11111U;
+    constexpr uint8_t MB_MASK = 0b11111U;
+    constexpr uint8_t ME_MASK = 0b11111U;
+    CHECK_MASK(po, PO_MASK);
+    CHECK_MASK(rs, REG_MASK);
+    CHECK_MASK(ra, REG_MASK);
+    CHECK_MASK(sh, SH_MASK);
+    CHECK_MASK(mb, MB_MASK);
+    CHECK_MASK(me, ME_MASK);
+    CHECK_MASK(rc, 1U);
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (rs & REG_MASK) << (32-11U)
+                    | (ra & REG_MASK) << (32-16U)
+                    | (sh & SH_MASK) << (32-21U)
+                    | (mb & MB_MASK) << (32-26U)
+                    | (me & ME_MASK) << (32-31U)
+                    | (rc & 1U);
+    return write32(insn);
+}
+
 status_code assembler::sc_form(uint8_t po, uint8_t lev) {
     CHECK_MASK(po, PO_MASK);
     uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
