@@ -133,7 +133,7 @@ public:
     status_code cmp(uint8_t bf, uint8_t l, uint8_t ra, uint8_t rb) {
         CHECK_MASK(l, 1U);
         CHECK_MASK(bf, 0b111U);
-        uint8_t rs = (bf << (uint8_t)2U) | (l & (uint8_t)1U);
+        uint8_t rs = (uint8_t) (bf << (uint8_t)2U) | (l & (uint8_t)1U);
         ASM_LOG("Emitting cmp %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, rb, code_buf.pos_addr());
         return x_form(31, rs, ra, rb, 0, 0);
     }
@@ -187,13 +187,13 @@ public:
     };
     status_code mtspr(SPR spr, uint8_t rs) {
         ASM_LOG("Emitting mtspr r%u, %u to 0x%lx\n", rs, (uint16_t)spr, code_buf.pos_addr());
-        uint16_t n = (((uint16_t)spr & 0b11111U) << 5) | (((uint16_t)spr >> 5) & 0b11111U);
+        uint16_t n = (uint16_t) (((uint16_t)spr & 0b11111U) << 5) | (((uint16_t)spr >> 5) & 0b11111U);
         return xfx_form(31, rs, n, 467);
     }
 
     status_code mfspr(uint8_t rt, SPR spr) {
         ASM_LOG("Emitting mfspr r%u, %u to 0x%lx\n", rt, (uint16_t)spr, code_buf.pos_addr());
-        uint16_t n = (((uint16_t)spr & 0b11111U) << 5) | (((uint16_t)spr >> 5) & 0b11111U);
+        uint16_t n = (uint16_t) (((uint16_t)spr & 0b11111U) << 5) | (((uint16_t)spr >> 5) & 0b11111U);
         return xfx_form(31, rt, n, 339);
     }
 

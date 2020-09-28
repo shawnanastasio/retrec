@@ -10,7 +10,7 @@ message(STATUS "Detected host arch: ${HOST_ARCH}")
 # Flags
 #
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "-fPIE -fno-exceptions -Wall -Wimplicit-fallthrough")
+set(CMAKE_CXX_FLAGS "-fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wconversion -Wextra -Werror=conversion")
 set(CMAKE_SOURCE_DIR "src")
 # static
 #SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")

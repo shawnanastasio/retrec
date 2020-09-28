@@ -76,7 +76,17 @@ class codegen_ppc64le final : public codegen {
         simple_region_writer &code_buffer;
         ppc64le::assembler assembler;
 
+        // Map of (target binary vaddr) : (generated code vaddr) for branch targets
+        std::unordered_map<uint64_t, uint64_t> local_branch_targets;
+        // Relocations that get resolved in second pass
+        std::vector<ppc64le::Relocation> relocations;
+        // Register allocation contexts used throughout this code block
         std::vector<typename Traits::RegisterAllocatorT> reg_allocators;
+
+        gen_context(const lifted_llir_block &llir_, simple_region_writer &code_buffer_, ppc64le::assembler assembler_) :
+            llir(llir_), code_buffer(code_buffer_), assembler(std::move(assembler_)) {}
+
+        // Obtain a register allocator pointer for a givein insn
         typename Traits::RegisterAllocatorT *reg_allocator(const llir::Insn &insn, bool make_new) {
             // Return a register allocator instance that can be used for the given insn
             for (auto &allocator : reg_allocators) {
@@ -99,12 +109,6 @@ class codegen_ppc64le final : public codegen {
             if (allocator && !allocator->end())
                 allocator->set_end(insn.address);
         }
-
-        // Map of (target binary vaddr) : (generated code vaddr) for
-        // branch targets
-        std::unordered_map<uint64_t, uint64_t> local_branch_targets;
-
-        std::vector<ppc64le::Relocation> relocations;
     };
 
 

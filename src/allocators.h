@@ -35,7 +35,7 @@ public:
     void *allocate(size_t size);
     void *reallocate(void *ptr, size_t size);
 
-    void free(void *buffer) { /* Placement allocators can't free */ }
+    void free([[maybe_unused]] void *buffer) { /* Placement allocators can't free */ }
 };
 
 class simple_region_writer {
@@ -50,9 +50,9 @@ public:
         : allocator(allocator_), region(region_), region_size(size_) {}
 
     void *start() const { return region; }
-    const size_t size() const { return region_size; }
-    const size_t pos() const { return region_pos; }
-    const size_t pos_addr() const { return (size_t)region + region_pos; }
+    size_t size() const { return region_size; }
+    size_t pos() const { return region_pos; }
+    size_t pos_addr() const { return (size_t)region + region_pos; }
     void set_pos(size_t off) { assert(off <= region_size); region_pos = off; }
 
     status_code write32(uint32_t val);

@@ -45,7 +45,7 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
     simple_region_writer code_buffer(econtext.get_code_allocator(), code, initial_code_size);
 
     // First pass: emit instructions
-    gen_context context = {llir, code_buffer, assembler(code_buffer), {}};
+    gen_context context(llir, code_buffer, assembler(code_buffer));
     for (const llir::Insn &insn : llir.get_insns()) {
         dispatch(context, insn);
     }
@@ -364,24 +364,24 @@ void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_
 
     if (imm <= INT16_MAX && imm >= INT16_MIN) {
         // If the immediate fits in an int16_t, we can just emit an addi
-        assembler.addi(dest, 0, imm);
+        assembler.addi(dest, 0, (int16_t)imm);
 
         if ((int)mask < (int)llir::Register::Mask::LowLow16)
             need_mask = true;
     } else if (imm <= INT32_MAX && imm >= INT32_MIN) {
         // If the immediate fits in an int32_t, emit addis and ori
-        assembler.addis(dest, 0, (imm >> 16) & 0xFFFF);
-        assembler.ori(dest, dest, imm & 0xFFFFU);
+        assembler.addis(dest, 0, (int16_t)(imm >> 16));
+        assembler.ori(dest, dest, (int16_t)imm);
 
         if ((int)mask < (int)llir::Register::Mask::Low32)
             need_mask = true;
     } else {
         // Do the full song and dance for a 64-bit immediate load. Eventually we should use a TOC.
-        assembler.addis(dest, 0, (imm >> 48) & 0xFFFF);
-        assembler.ori(dest, dest, (imm >> 32) & 0xFFFF);
+        assembler.addis(dest, 0, (int16_t)(imm >> 48));
+        assembler.ori(dest, dest, (int16_t)(imm >> 32));
         assembler.rldicr(dest, dest, 32, 31, false);
-        assembler.oris(dest, dest, (imm >> 16) & 0xFFFF);
-        assembler.ori(dest, dest, imm & 0xFFFF);
+        assembler.oris(dest, dest, (int16_t)(imm >> 16));
+        assembler.ori(dest, dest, (int16_t)imm);
         if (mask != llir::Register::Mask::Full64)
             need_mask = true;
     }
@@ -397,12 +397,12 @@ void codegen_ppc64le<T>::macro$branch$unconditional(assembler &assembler, uint64
         assert(insn_cnt >= 1); // Enough space for a single branch insn
 
         // Target is close enough to emit a relative branch
-        assembler.b(diff);
+        assembler.b((int32_t)diff);
     } else if (target <= UINT26_MAX) {
         assert(insn_cnt >= 1);
 
         // Target is in the first 24-bits of the address space
-        assembler.ba(target);
+        assembler.ba((int32_t)target);
     } else {
         // Far branch. TODO.
         TODO();
@@ -416,7 +416,7 @@ void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t
     if (rel16_in_range(my_address, target)) {
         assert(insn_cnt >= 1); // Enough space for a single branch insn
 
-        assembler.bc(bo, cr_field, diff);
+        assembler.bc(bo, cr_field, (uint16_t)diff);
     } else { TODO(); }
 }
 

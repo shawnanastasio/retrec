@@ -93,7 +93,7 @@ status_code elf_loader::init() {
     Elf_Data *elfdata = elf_getdata(symtab_scn, nullptr);
     for (size_t i=0; i<num_symbols; i++) {
         GElf_Sym cur;
-        if (gelf_getsym(elfdata, i, &cur) != &cur)
+        if (gelf_getsym(elfdata, (int)i, &cur) != &cur)
             return status_code::BADELF;
 
         char *name = elf_strptr(elf, stridx, cur.st_name);
@@ -129,7 +129,7 @@ status_code elf_loader::load_all() {
         return status_code::BADELF;
 
     for (size_t i=0; i<num_phdr; i++) {
-        if (gelf_getphdr(elf, i, &phdr) != &phdr) {
+        if (gelf_getphdr(elf, (int)i, &phdr) != &phdr) {
             log(LOGL_ERROR, "Failed to get program headers: %s\n", elf_errmsg(-1));
             return status_code::BADELF;
         }
