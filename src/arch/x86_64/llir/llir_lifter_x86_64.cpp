@@ -44,10 +44,10 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
             break;
 
-        case X86_INS_JAE:   { TODO(); }
+        case X86_INS_JAE:   { llinsn.branch.op = llir::Branch::Op::NOT_CARRY; goto jcc_common; }
         case X86_INS_JA:    { TODO(); }
         case X86_INS_JBE:   { TODO(); }
-        case X86_INS_JB:    { TODO(); }
+        case X86_INS_JB:    { llinsn.branch.op = llir::Branch::Op::CARRY; goto jcc_common; }
         case X86_INS_JCXZ:  { TODO(); }
         case X86_INS_JECXZ: { TODO(); }
         case X86_INS_JE:    { llinsn.branch.op = llir::Branch::Op::EQ; goto jcc_common; }
@@ -183,6 +183,26 @@ llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
         case X86_REG_EBP: ret.x86_64 = llir::X86_64Register::RBP; ret.mask = llir::Register::Mask::Low32; break;
         case X86_REG_ESI: ret.x86_64 = llir::X86_64Register::RSI; ret.mask = llir::Register::Mask::Low32; break;
         case X86_REG_EDI: ret.x86_64 = llir::X86_64Register::RDI; ret.mask = llir::Register::Mask::Low32; break;
+
+        // 16-bit registers
+        case X86_REG_AX: ret.x86_64 = llir::X86_64Register::RAX; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_BX: ret.x86_64 = llir::X86_64Register::RBX; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_CX: ret.x86_64 = llir::X86_64Register::RCX; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_DX: ret.x86_64 = llir::X86_64Register::RDX; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_SP: ret.x86_64 = llir::X86_64Register::RSP; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_BP: ret.x86_64 = llir::X86_64Register::RBP; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_SI: ret.x86_64 = llir::X86_64Register::RSI; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+        case X86_REG_DI: ret.x86_64 = llir::X86_64Register::RDI; ret.mask = llir::Register::Mask::LowLow16; ret.zero_others = false; break;
+
+        // 8-bit registers
+        case X86_REG_AH: ret.x86_64 = llir::X86_64Register::RAX; ret.mask = llir::Register::Mask::LowLowHigh8; ret.zero_others = false; break;
+        case X86_REG_BH: ret.x86_64 = llir::X86_64Register::RBX; ret.mask = llir::Register::Mask::LowLowHigh8; ret.zero_others = false; break;
+        case X86_REG_CH: ret.x86_64 = llir::X86_64Register::RCX; ret.mask = llir::Register::Mask::LowLowHigh8; ret.zero_others = false; break;
+        case X86_REG_DH: ret.x86_64 = llir::X86_64Register::RDX; ret.mask = llir::Register::Mask::LowLowHigh8; ret.zero_others = false; break;
+        case X86_REG_AL: ret.x86_64 = llir::X86_64Register::RAX; ret.mask = llir::Register::Mask::LowLowLow8; ret.zero_others = false; break;
+        case X86_REG_BL: ret.x86_64 = llir::X86_64Register::RBX; ret.mask = llir::Register::Mask::LowLowLow8; ret.zero_others = false; break;
+        case X86_REG_CL: ret.x86_64 = llir::X86_64Register::RCX; ret.mask = llir::Register::Mask::LowLowLow8; ret.zero_others = false; break;
+        case X86_REG_DL: ret.x86_64 = llir::X86_64Register::RDX; ret.mask = llir::Register::Mask::LowLowLow8; ret.zero_others = false; break;
 
         // Segment Registers
         case X86_REG_FS: ret.x86_64 = llir::X86_64Register::FS; ret.mask = llir::Register::Mask::Special; break;

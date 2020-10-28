@@ -79,15 +79,13 @@ struct Alu {
 struct Branch {
     enum class Op {
         UNCONDITIONAL,
-        GREATER,
-        GREATER_EQ,
         EQ,
         NOT_EQ,
-        LESS_EQ,
-        LESS,
         NEGATIVE,
         NOT_NEGATIVE,
-        POSITIVE
+        POSITIVE,
+        CARRY,
+        NOT_CARRY,
     } op;
 
     bool signed_comparison;
@@ -196,15 +194,13 @@ inline std::string to_string(const Branch &branch) {
     std::string ret = "";
     switch (branch.op) {
         case Branch::Op::UNCONDITIONAL: ret += "UNCONDITIONAL,"; break;
-        case Branch::Op::GREATER: ret += "GREATER,"; break;
-        case Branch::Op::GREATER_EQ: ret += "GREATER_EQ,"; break;
         case Branch::Op::EQ: ret += "EQ,"; break;
         case Branch::Op::NOT_EQ: ret += "!EQ,"; break;
-        case Branch::Op::LESS_EQ: ret += "LESS_EQ,"; break;
-        case Branch::Op::LESS: ret += "LESS,"; break;
         case Branch::Op::NEGATIVE: ret += "NEGATIVE,"; break;
         case Branch::Op::NOT_NEGATIVE: ret += "!NEGATIVE,"; break;
         case Branch::Op::POSITIVE: ret += "POSITIVE,"; break;
+        case Branch::Op::CARRY: ret += "CARRY,"; break;
+        case Branch::Op::NOT_CARRY: ret += "NOT_CARRY,"; break;
         default:
             TODO();
     }

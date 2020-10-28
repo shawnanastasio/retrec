@@ -59,21 +59,21 @@ static inline int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, lli
         case llir::X86_64Register::RAX:
             return &ctx->host_translated_context.gprs[9];
         case llir::X86_64Register::R10:
-            return &ctx->host_translated_context.gprs[15];
-        case llir::X86_64Register::R11:
             return &ctx->host_translated_context.gprs[16];
-        case llir::X86_64Register::R12:
+        case llir::X86_64Register::R11:
             return &ctx->host_translated_context.gprs[17];
-        case llir::X86_64Register::R13:
+        case llir::X86_64Register::R12:
             return &ctx->host_translated_context.gprs[18];
-        case llir::X86_64Register::R14:
+        case llir::X86_64Register::R13:
             return &ctx->host_translated_context.gprs[19];
-        case llir::X86_64Register::R15:
+        case llir::X86_64Register::R14:
             return &ctx->host_translated_context.gprs[20];
-        case llir::X86_64Register::RBX:
+        case llir::X86_64Register::R15:
             return &ctx->host_translated_context.gprs[21];
-        case llir::X86_64Register::RBP:
+        case llir::X86_64Register::RBX:
             return &ctx->host_translated_context.gprs[22];
+        case llir::X86_64Register::RBP:
+            return &ctx->host_translated_context.gprs[23];
 
         default:
             return ctx->x86_64_ucontext.get_reg(reg);

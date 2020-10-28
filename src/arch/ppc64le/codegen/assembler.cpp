@@ -7,7 +7,7 @@ using namespace retrec::ppc64le;
 #define PO_MASK  (0b111111U)
 #define REG_MASK (0b11111U)
 
-assembler::~assembler() { 
+assembler::~assembler() {
     if (temp)
         code_buf.set_pos(old_pos);
 }
@@ -52,6 +52,25 @@ status_code assembler::ds_form(uint8_t po, uint8_t rs, uint8_t ra, uint16_t ds, 
                     | (ra & REG_MASK) << (32-16U)
                     | ((ds >> 2U) & DS_MASK) << (32-30U)
                     | (xo & 0b11U);
+    return write32(insn);
+}
+
+status_code assembler::dx_form(uint8_t po, uint8_t rt, int16_t d, uint8_t xo) {
+    constexpr uint32_t XO_MASK = 0b11111U;
+    CHECK_MASK(po, PO_MASK);
+    CHECK_MASK(rt, REG_MASK);
+    CHECK_MASK(xo, XO_MASK);
+
+    uint32_t d0 = d >> 6 & 0b1111111111;
+    uint32_t d1 = (d >> 1) & 0b11111U;
+    uint32_t d2 = d & 1U;
+
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (rt & REG_MASK) << (32-11U)
+                    | d1 << (32-16U)
+                    | d0 << (32-26U)
+                    | (xo & XO_MASK) << (32-31U)
+                    | d2;
     return write32(insn);
 }
 

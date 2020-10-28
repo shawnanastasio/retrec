@@ -28,14 +28,14 @@ register_allocator_x86_64::static_allocation_set::static_allocation_set() {
     allocations[reserved_index(llir::X86_64Register::R9)]  = 8;
     allocations[reserved_index(llir::X86_64Register::RAX)] = 9;
 
-    allocations[reserved_index(llir::X86_64Register::R10)] = 15;
-    allocations[reserved_index(llir::X86_64Register::R11)] = 16;
-    allocations[reserved_index(llir::X86_64Register::R12)] = 17;
-    allocations[reserved_index(llir::X86_64Register::R13)] = 18;
-    allocations[reserved_index(llir::X86_64Register::R14)] = 19;
-    allocations[reserved_index(llir::X86_64Register::R15)] = 20;
-    allocations[reserved_index(llir::X86_64Register::RBX)] = 21;
-    allocations[reserved_index(llir::X86_64Register::RBP)] = 22;
+    allocations[reserved_index(llir::X86_64Register::R10)] = 16;
+    allocations[reserved_index(llir::X86_64Register::R11)] = 17;
+    allocations[reserved_index(llir::X86_64Register::R12)] = 18;
+    allocations[reserved_index(llir::X86_64Register::R13)] = 19;
+    allocations[reserved_index(llir::X86_64Register::R14)] = 20;
+    allocations[reserved_index(llir::X86_64Register::R15)] = 21;
+    allocations[reserved_index(llir::X86_64Register::RBX)] = 22;
+    allocations[reserved_index(llir::X86_64Register::RBP)] = 23;
 }
 
 //
@@ -55,7 +55,6 @@ register_allocator_x86_64::register_allocator_x86_64(uint64_t start_vaddr_) : st
     gprs[7]  = {RegisterInfo::State::RESERVED};
     gprs[8]  = {RegisterInfo::State::RESERVED};
     gprs[9]  = {RegisterInfo::State::RESERVED};
-    gprs[15] = {RegisterInfo::State::RESERVED};
     gprs[16] = {RegisterInfo::State::RESERVED};
     gprs[17] = {RegisterInfo::State::RESERVED};
     gprs[18] = {RegisterInfo::State::RESERVED};
@@ -63,6 +62,7 @@ register_allocator_x86_64::register_allocator_x86_64(uint64_t start_vaddr_) : st
     gprs[20] = {RegisterInfo::State::RESERVED};
     gprs[21] = {RegisterInfo::State::RESERVED};
     gprs[22] = {RegisterInfo::State::RESERVED};
+    gprs[23] = {RegisterInfo::State::RESERVED};
 
     // Store pointer to runtime_context in R11
     gprs[11] = {RegisterInfo::State::RESERVED};
