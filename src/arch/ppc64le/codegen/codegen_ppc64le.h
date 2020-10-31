@@ -152,6 +152,8 @@ class codegen_ppc64le final : public codegen {
     void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op,
                                       llir::Register::Mask mask);
     llir::Register::Mask llir$alu$helper$determine_immediate_mask(const llir::Insn &insn);
+    void llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn, const llir::Operand &op,
+                                               ppc64le::gpr_t target, llir::Register::Mask default_mask);
     void llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn);
     void llir$branch$conditional(gen_context &ctx, const llir::Insn &insn);
     void llir$interrupt$syscall(gen_context &ctx, const llir::Insn &insn);
@@ -206,8 +208,6 @@ class codegen_ppc64le final : public codegen {
     //
     void macro$load_imm(ppc64le::assembler &assembler, ppc64le::gpr_t dest, int64_t imm, llir::Register::Mask mask,
                         bool zero_others);
-    void macro$alu$load_operand_into_gpr(typename Traits::RegisterAllocatorT &reg_allocator, ppc64le::assembler &assembler,
-                                         const llir::Operand &op, ppc64le::gpr_t target, llir::Register::Mask default_mask);
     void macro$branch$unconditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target, size_t insn_cnt);
     void macro$branch$conditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target,
                                   ppc64le::assembler::BO bo, uint8_t cr_field, size_t insn_cnt);

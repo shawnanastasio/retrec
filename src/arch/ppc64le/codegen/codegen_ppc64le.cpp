@@ -227,7 +227,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
     macro$load_imm(ctx.assembler, GPR_FIXED_FLAG_OP_TYPE, flag_data, llir::Register::Mask::Low32, true);
 
     // Set lazy flag status according to operation type
-    switch(op) {
+    switch (op) {
         case LastFlagOp::SUB:
             // SUB needs carry+sign+parity+? to be lazily evaluated
             ctx.assembler.mcrf(CR_LAZYVALID, CR_ZEROS);
@@ -241,7 +241,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
 template <typename T>
 llir::Register::Mask codegen_ppc64le<T>::llir$alu$helper$determine_immediate_mask(const llir::Insn &insn) {
     assert(insn.src[0].type == llir::Operand::Type::REG);
-    switch(insn.src[0].reg.mask) {
+    switch (insn.src[0].reg.mask) {
         case llir::Register::Mask::Full64:
         case llir::Register::Mask::Low32:
         case llir::Register::Mask::LowLow16:
@@ -253,6 +253,28 @@ llir::Register::Mask codegen_ppc64le<T>::llir$alu$helper$determine_immediate_mas
             TODO();
     }
 }
+
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn, const llir::Operand &op,
+                                                              gpr_t target, llir::Register::Mask default_mask) {
+    if (op.type == llir::Operand::Type::REG) {
+        // Operand is in a register, move it to the appropriate FLAG_OP reg and mask it
+        gpr_t gpr = ctx.reg_allocator(insn)->get_fixed_gpr(op.reg);
+
+        if (op.reg.mask != llir::Register::Mask::LowLowHigh8) {
+            // Directly load operand into FLAG_OP register with mask
+            macro$mask_register(ctx.assembler, target, gpr, default_mask, false);
+        } else {
+            // Load operand into FLAG_OP register with mask and shift
+            ctx.assembler.rldicl(target, gpr, 64-8, 64-8, false);
+        }
+    } else if (op.type == llir::Operand::Type::IMM) {
+        // Operand is an immediate, load it into the appropriate FLAG_OP reg
+        macro$load_imm(ctx.assembler, target, op.imm, default_mask, true);
+        //assert(0);
+    } else { TODO(); }
+}
+
 
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn) {
@@ -273,12 +295,11 @@ void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) 
     assert(insn.src_cnt == 2);
     assert(insn.src[0].type == llir::Operand::Type::REG);
 
-    auto &reg_allocator = *ctx.reg_allocator(insn);
     auto mask = llir$alu$helper$determine_immediate_mask(insn);
 
     // Ensure all operands are in registers
-    macro$alu$load_operand_into_gpr(reg_allocator, ctx.assembler, insn.src[0], GPR_FIXED_FLAG_OP1, mask);
-    macro$alu$load_operand_into_gpr(reg_allocator, ctx.assembler, insn.src[1], GPR_FIXED_FLAG_OP2, mask);
+    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1, mask);
+    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2, mask);
 
     if (insn.alu.modifies_flags)
         ctx.assembler.subo_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
@@ -339,7 +360,7 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     assembler::BO bo;
     uint8_t cr_field;
 
-    switch(insn.branch.op) {
+    switch (insn.branch.op) {
         case llir::Branch::Op::EQ:
             // beq
             bo = assembler::BO::FIELD_SET;
@@ -637,7 +658,7 @@ template <typename T>
 void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, gpr_t src, llir::Register::Mask mask, bool invert) {
     if (invert) {
         // Mask out all requested bits
-        switch(mask) {
+        switch (mask) {
             case llir::Register::Mask::Full64:
             case llir::Register::Mask::Low32:
                 TODO();
