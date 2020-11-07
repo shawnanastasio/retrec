@@ -125,9 +125,23 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
     switch (op.type) {
         case X86_OP_IMM:
+        {
             out.type = llir::Operand::Type::IMM;
-            out.imm = op.imm;
+            int64_t imm = op.imm;
+
+            // Sign extend immediate. This at least allows prettier printing for the llir immediate as an int64_t.
+            // Architecture-specific backend code will ignore the extra bits as long as the appropriate register
+            // mask is set, so it shouldn't have any effect there.
+            if (op.size == 4)
+                imm = (int32_t)imm;
+            else if (op.size == 2)
+                imm = (int16_t)imm;
+            else if (op.size == 1)
+                imm = (int8_t)imm;
+
+            out.imm = imm;
             break;
+        }
         case X86_OP_MEM:
             out.type = llir::Operand::Type::MEM;
             out.memory.arch = Architecture::X86_64;

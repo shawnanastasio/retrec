@@ -300,7 +300,7 @@ inline std::string to_string(const MemOp &memop) {
 template<>
 inline std::string to_string(const Operand &operand) {
     switch (operand.type) {
-        case Operand::Type::IMM: return std::string("Immediate=") + std::to_string(operand.imm);
+        case Operand::Type::IMM: return std::string("Immediate=") + std::to_string((int64_t)operand.imm);
         case Operand::Type::MEM: return std::string("Memory=") + to_string(operand.memory);
         case Operand::Type::REG: return std::string("Reg=") + to_string(operand.reg);
         default:
