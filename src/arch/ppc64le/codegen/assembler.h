@@ -291,6 +291,12 @@ public:
         return rldicr(rx, ry, n, 63-n, modify_cr);
     }
 
+    status_code rldimi(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, bool modify_cr) {
+        ASM_LOG("Emitting rldimi%s r%u, r%u, %u, %u to 0x%lx\n", modify_cr?".":"", ra, rs, sh, mb, code_buf.pos_addr());
+        return md_form(30, rs, ra, sh, mb, 3, modify_cr);
+    }
+    status_code insrdi(uint8_t rt, uint8_t ra, uint8_t n, uint8_t b, bool modify_cr) { return rldimi(rt, ra, (uint8_t)(64-(b+n)), b, modify_cr); }
+
 
     // 3.3.17 Move To/From System Register Instructions
     enum class SPR : uint16_t {

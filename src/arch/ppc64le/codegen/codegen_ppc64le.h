@@ -214,6 +214,8 @@ class codegen_ppc64le final : public codegen {
     void macro$branch$conditional$carry(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator,
                                         bool set, uint64_t target);
     void macro$mask_register(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src, llir::Register::Mask mask, bool invert);
+    void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
+                                    llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others);
 
 public:
     codegen_ppc64le(Architecture target_, execution_context &econtext_)

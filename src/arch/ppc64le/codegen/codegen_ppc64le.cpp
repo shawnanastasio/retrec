@@ -212,9 +212,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
 
     if (insn.dest_cnt) {
         // Instruction has a destination register - copy it there
-        //auto &reg_allocator = *ctx.reg_allocator(insn);
-        //gpr_t dest = reg_allocator.get_fixed_gpr(insn.dest[0].reg);
-        TODO();
+        TODO(); // Use macro$move_register_masked
     }
 
     if (!insn.alu.modifies_flags) {
@@ -452,87 +450,114 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
 // Macro assembler
 //
 
+/**
+ * Small helper to determine if a given int64_t immediate can be losslessly converted
+ * into integral type `T`.
+ */
 template <typename T>
-void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm, llir::Register::Mask mask,
-                                        bool zero_others) {
-    // Negative numbers will always need to be masked if possible.
-    bool need_mask = !zero_others && (imm < 0);
-
-    // If we're not zero'ing others, mask out all but the target bits and use ori(s) instructions
-    // to fill them in after.
-    if (!zero_others)
-        macro$mask_register(assembler, dest, dest, mask, true);
-
-    // Special handling for LowLowHigh8. TODO: make this less ugly
-    if (mask == llir::Register::Mask::LowLowHigh8) {
-        assert(imm <= UINT8_MAX);
-        assembler.ori(dest, dest, (uint16_t)(imm << 8));
-
-        return;
-    }
-
-    if (imm <= INT16_MAX && imm >= INT16_MIN) {
-        // If the immediate fits in an int16_t, we can just emit a single insn
-        if (zero_others)
-            assembler.addi(dest, 0, (int16_t)imm);
-        else
-            assembler.ori(dest, dest, (uint16_t)imm);
-
-        if ((int)mask < (int)llir::Register::Mask::LowLow16)
-            need_mask = true;
-    } else if (imm <= INT32_MAX && imm >= INT32_MIN) {
-        // If the immediate fits in an int32_t, emit addis and ori
-        if (zero_others)
-            assembler.addis(dest, 0, (int16_t)(imm >> 16));
-        else
-            assembler.oris(dest, dest, (uint16_t)(imm >> 16));
-
-        if ((int16_t)imm)
-            assembler.ori(dest, dest, (uint16_t)imm);
-
-        if ((int)mask < (int)llir::Register::Mask::Low32)
-            need_mask = true;
-    } else {
-        // Do the full song and dance for a 64-bit immediate load. Eventually we should use a TOC.
-
-        if (zero_others)
-            assembler.addis(dest, 0, (int16_t)(imm >> 48));
-        else
-            assembler.oris(dest, dest, (uint16_t)(imm >> 48));
-
-        if ((int16_t)(imm >> 32))
-            assembler.ori(dest, dest, (uint16_t)(imm >> 32));
-
-        assembler.rldicr(dest, dest, 32, 31, false);
-
-        if ((int16_t)(imm >> 16))
-            assembler.oris(dest, dest, (int16_t)(imm >> 16));
-        if ((int16_t)imm)
-            assembler.ori(dest, dest, (int16_t)imm);
-    }
-
-    if (need_mask)
-        macro$mask_register(assembler, dest, dest, mask, false);
+bool imm_fits_in(int64_t imm) {
+    return (T)imm == imm;
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$alu$load_operand_into_gpr(typename T::RegisterAllocatorT &reg_allocator, assembler &assembler,
-                                                         const llir::Operand &op, gpr_t target, llir::Register::Mask default_mask) {
-    if (op.type == llir::Operand::Type::REG) {
-        // Operand is in a register, move it to the appropriate FLAG_OP reg and mask it
-        gpr_t gpr = reg_allocator.get_fixed_gpr(op.reg);
+void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm, llir::Register::Mask mask,
+                                        bool zero_others) {
+    auto ori = [&](auto a, uint16_t b) { if (b) assembler.ori(a, a, b); };
+    auto oris = [&](auto a, uint16_t b) { if (b) assembler.oris(a, a, b); };
 
-        if (op.reg.mask != llir::Register::Mask::LowLowHigh8) {
-            // Directly load operand into FLAG_OP register with mask
-            macro$mask_register(assembler, target, gpr, default_mask, false);
-        } else {
-            // Load operand into FLAG_OP register with mask and shift
-            assembler.rldicl(target, gpr, 64-8, 63-8, false);
+    if (!zero_others)
+        macro$mask_register(assembler, dest, dest, mask, true);
+
+    if (mask == llir::Register::Mask::LowLowLow8) {
+        if (!zero_others)
+            ori(dest, (uint16_t)(imm & 0xFF));
+        else
+            assembler.addi(dest, 0, (int16_t)(imm & 0xFF));
+    } else if (mask == llir::Register::Mask::LowLowHigh8) {
+        uint16_t i = (uint16_t)((imm << 8) & 0xFF00U);
+        if (!zero_others)
+            ori(dest, i);
+        else {
+            assembler.addi(dest, 0, i);
+            if (i & (1 << 15))
+                // If i has MSBit set, mask out top 48 bits to remove sign extension.
+                assembler.rldicl(dest, dest, 0, 64-16, false);
         }
-    } else if (op.type == llir::Operand::Type::IMM) {
-        // Operand is an immediate, load it into the appropriate FLAG_OP reg
-        macro$load_imm(assembler, target, op.imm, default_mask, true);
-    } else { TODO(); }
+    } else if (mask == llir::Register::Mask::LowLow16) {
+        uint16_t i = (uint16_t)imm;
+        if (!zero_others)
+            ori(dest, i);
+        else {
+            assembler.addi(dest, 0, i);
+            if (i & (1 << 15))
+                // If i has MSBit set, mask out top 48 bits to remove sign extension.
+                assembler.rldicl(dest, dest, 0, 64-16, false);
+        }
+    } else if (mask == llir::Register::Mask::Low32) {
+        uint32_t i = (uint32_t)imm;
+        if (!zero_others) {
+            oris(dest, (uint16_t)(i >> 16));
+            ori(dest, (uint16_t)i);
+        } else {
+            if (imm < 0) {
+                if (imm_fits_in<int16_t>(imm))
+                    assembler.addi(dest, 0, (int16_t)imm);
+                else {
+                    assembler.addis(dest, 0, (int16_t)(i >> 16));
+                    ori(dest, (uint16_t)i);
+                }
+            } else {
+                if (imm_fits_in<uint16_t>(imm) && !(imm & (1 << 15)))
+                    assembler.addi(dest, 0, (int16_t)imm);
+                else {
+                    assembler.addis(dest, 0, (int16_t)(i >> 16));
+                    ori(dest, (uint16_t)i);
+                }
+            }
+
+            if (i & (1 << 31)) {
+                // If i has MSBit set, mask out top 32 bits to remove sign extension.
+                assembler.rldicl(dest, dest, 0, 64-32, false);
+            }
+        }
+    } else /* llir::Register::Mask::Full64 */ {
+        assert(zero_others); // Can't perform a 64-bit load without touching all 64-bits in the register
+        if (imm < 0) {
+            // For negative numbers we can take advantage of sign extension
+            if (imm_fits_in<int16_t>(imm)) {
+                assembler.addi(dest, 0, (int16_t)imm);
+            } else if (imm_fits_in<int32_t>(imm)) {
+                assembler.addis(dest, 0, (int16_t)(imm >> 16));
+                ori(dest, (uint16_t)imm);
+            } else {
+                assembler.addis(dest, 0, (int16_t)(imm >> 48));
+                ori(dest, (uint16_t)(imm >> 32));
+                assembler.rldicr(dest, dest, 32, 31, false);
+                oris(dest, (uint16_t)(imm >> 16));
+                ori(dest, (uint16_t)imm);
+            }
+        } else {
+            // For positive numbers, we have to take care to avoid sign extension
+            if (imm_fits_in<uint16_t>(imm)) {
+                assembler.addi(dest, 0, (int16_t)imm);
+                if (imm & (1 << 15))
+                    // If imm has MSBit set, mask out top 48 bits to remove sign extension.
+                    assembler.rldicl(dest, dest, 0, 64-16, false);
+            } else if (imm_fits_in<uint32_t>(imm)) {
+                assembler.addis(dest, 0, (int16_t)(imm >> 16));
+                ori(dest, (uint16_t)imm);
+                if (imm & (1 << 31))
+                    // If imm has MSBit set, mask out top 32 bits to remove sign extension.
+                    assembler.rldicl(dest, dest, 0, 64-32, false);
+            } else {
+                assembler.addis(dest, 0, (int16_t)(imm >> 48));
+                ori(dest, (uint16_t)(imm >> 32));
+                assembler.rldicr(dest, dest, 32, 31, false);
+                oris(dest, (uint16_t)(imm >> 16));
+                ori(dest, (uint16_t)imm);
+            }
+        }
+    }
 }
 
 template <typename T>
@@ -696,6 +721,67 @@ void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, g
             default:
                 TODO();
         }
+    }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t dest, gpr_t src, llir::Register::Mask src_mask,
+                                                    llir::Register::Mask dest_mask, bool zero_others) {
+
+    auto get_width_from_mask = [](auto mask) -> uint8_t {
+        switch (mask) {
+            case llir::Register::Mask::Full64: return 64;
+            case llir::Register::Mask::Low32: return 32;
+            case llir::Register::Mask::LowLow16: return 16;
+            case llir::Register::Mask::LowLowHigh8: return 8;
+            case llir::Register::Mask::LowLowLow8: return 8;
+            default: TODO();
+        }
+    };
+
+    auto get_shift_from_mask = [](auto mask) -> uint8_t {
+        switch (mask) {
+            case llir::Register::Mask::Full64:
+            case llir::Register::Mask::Low32:
+            case llir::Register::Mask::LowLow16:
+            case llir::Register::Mask::LowLowLow8:
+                return 0;
+            case llir::Register::Mask::LowLowHigh8:
+                return 8;
+            default: TODO();
+        }
+    };
+    uint8_t src_width = get_width_from_mask(src_mask);
+    uint8_t src_shift = get_shift_from_mask(src_mask);
+    uint8_t dest_width = get_width_from_mask(dest_mask);
+    uint8_t dest_shift = get_shift_from_mask(dest_mask);
+
+    if (zero_others) {
+        // If we don't care about preserving others, we can get away with an rldicl
+        uint8_t sh = (uint8_t)(64 - src_shift + dest_shift) % 64;
+        uint8_t me = (uint8_t)(64 - std::min(dest_width, src_width) - dest_shift);
+
+        assembler.rldicl(dest, src, sh, me, false);
+
+        // If the destination isn't right-justified, clear the extra right bits
+        if (dest_shift)
+            assembler.rldicr(dest, dest, 0, 64-dest_shift, false);
+
+        // If the source is smaller than the destination, clear the difference
+        if (src_width < dest_width)
+            assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), false);
+    } else {
+        if (!src_shift) {
+            // If the source isn't shifted, this can be accomplished with rldimi
+            assembler.insrdi(dest, src, dest_width, 64-dest_shift, false);
+
+            if (dest_width > src_width) {
+                // Extra bits were copied, clear high order
+                // Test: 8 moved into 16
+                assembler.rldicl(dest, dest, (uint8_t)(64-(dest_width+dest_shift)), src_width, false);
+                assembler.rldicl(dest, dest, (uint8_t)(64-(64-(dest_width+dest_shift))), 0, false);
+            }
+        } else { TODO(); }
     }
 }
 
