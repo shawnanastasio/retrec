@@ -38,6 +38,7 @@ class assembler {
     status_code i_form(uint8_t po, int32_t li, uint8_t aa, uint8_t lk);
     status_code m_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint8_t mb, uint8_t me, uint8_t rc);
     status_code md_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint8_t mb, uint8_t xo, uint8_t rc);
+    status_code mds_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t rb, uint8_t mb, uint8_t xo, uint8_t rc);
     status_code sc_form(uint8_t po, uint8_t lev);
     status_code x_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t rb, uint16_t xo, uint8_t rc);
     status_code xfx_form(uint8_t po, uint8_t rt, uint16_t spr, uint16_t xo);
@@ -231,6 +232,16 @@ public:
         return x_form(31, rs, ra, rb, 0, 0);
     }
 
+    status_code cmpli(uint8_t bf, uint8_t l, uint8_t ra, uint16_t ui) {
+        CHECK_MASK(l, 1U);
+        CHECK_MASK(bf, 0b111U);
+        uint8_t rs = (uint8_t) (bf << (uint8_t)2U) | (l & (uint8_t)1U);
+        ASM_LOG("Emitting cmpli %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, ui, code_buf.pos_addr());
+        return d_form(10, rs, ra, ui);
+    }
+    status_code cmpldi(uint8_t bf, uint8_t ra, uint16_t ui) { return cmpli(bf, 1, ra, ui); }
+    status_code cmplwi(uint8_t bf, uint8_t ra, uint16_t ui) { return cmpli(bf, 0, ra, ui); }
+
     status_code cmpl(uint8_t bf, uint8_t l, uint8_t ra, uint8_t rb) {
         CHECK_MASK(l, 1U);
         CHECK_MASK(bf, 0b111U);
@@ -256,6 +267,24 @@ public:
         return d_form(25, rs, ra, ui);
     }
 
+    status_code _and(uint8_t ra, uint8_t rs, uint8_t rb) {
+        ASM_LOG("Emitting and r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 28, 0);
+    }
+    status_code _and_(uint8_t ra, uint8_t rs, uint8_t rb) {
+        ASM_LOG("Emitting and. r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 28, 1);
+    }
+
+    status_code _xor(uint8_t ra, uint8_t rs, uint8_t rb) {
+        ASM_LOG("Emitting xor r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 316, 0);
+    }
+    status_code _xor_(uint8_t ra, uint8_t rs, uint8_t rb) {
+        ASM_LOG("Emitting xor. r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 316, 1);
+    }
+
     status_code _or(uint8_t ra, uint8_t rs, uint8_t rb) {
         ASM_LOG("Emitting or r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
         return x_form(31, rs, ra, rb, 444, 0);
@@ -266,6 +295,14 @@ public:
     }
     status_code mr(uint8_t rx, uint8_t ry) { return _or(rx, ry, ry); }
 
+    status_code eqv(uint8_t ra, uint8_t rs, uint8_t rb) {
+        ASM_LOG("Emitting eqv r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 284, 0);
+    }
+    status_code eqv_(uint8_t ra, uint8_t rs, uint8_t rb) {
+        ASM_LOG("Emitting eqv. r%u, r%u, r%u to 0x%lx\n", ra, rs, rb, code_buf.pos_addr());
+        return x_form(31, rs, ra, rb, 284, 1);
+    }
 
     // 3.3.14 Fixed-Point Rotate and Shift Instruction
     status_code rlwinm(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, uint8_t me, bool modify_cr) {
@@ -289,6 +326,11 @@ public:
     status_code sldi(uint8_t rx, uint8_t ry, uint8_t n, bool modify_cr) {
         CHECK_MASK(n, 0b11111U);
         return rldicr(rx, ry, n, 63-n, modify_cr);
+    }
+
+    status_code rldcl(uint8_t ra, uint8_t rs, uint8_t rb, uint8_t mb, bool modify_cr) {
+        ASM_LOG("Emitting rldcl%s r%u, r%u, r%u, %u to 0x%lx\n", modify_cr?".":"", ra, rs, rb, mb, code_buf.pos_addr());
+        return mds_form(30, rs, ra, rb, mb, 8, modify_cr);
     }
 
     status_code rldimi(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, bool modify_cr) {
@@ -334,6 +376,11 @@ public:
     }
     status_code mtcr(uint8_t rs) { return mtcrf(0xFF, rs); }
 
+    status_code mfocrf(uint8_t rt, uint8_t fxm) {
+        ASM_LOG("Emitting mfocrf 0x%x, r%u, to 0x%lx\n", rt, fxm, code_buf.pos_addr());
+        return xfx_form(31, rt, (uint16_t)((1 << 9) | (fxm << 1)), 19);
+    }
+
     status_code mfcr(uint8_t rt) {
         ASM_LOG("Emitting mfcr r%u to 0x%lx\n", rt, code_buf.pos_addr());
         return xfx_form(31, rt, 0, 19);
@@ -347,6 +394,12 @@ public:
     status_code sc() {
         ASM_LOG("Emitting sc to 0x%lx\n", code_buf.pos_addr());
         return sc_form(17, 0);
+    }
+
+    // Guaranteed invalid instruction
+    status_code invalid() {
+        ASM_LOG("Emitting invalid instruction to 0x%lx\n", code_buf.pos_addr());
+        return write32(0x00000000);
     }
 };
 
