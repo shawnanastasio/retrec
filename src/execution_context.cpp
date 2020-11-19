@@ -14,7 +14,7 @@ status_code simple_execution_context::init() {
     uint64_t code_start = vaddr_map.allocate_high_vaddr(CODE_REGION_MAX_SIZE);
     if (!code_start)
         return status_code::NOMEM;
-    log(LOGL_INFO, "code space: 0x%llx\n", code_start);
+    pr_info("code space: 0x%llx\n", code_start);
 
     code_allocator.init((void *)code_start, 0, CODE_REGION_MAX_SIZE);
 
@@ -28,14 +28,14 @@ status_code simple_execution_context::allocate_region(uint64_t start, size_t len
     if (vaddr_map.contains(start, len))
         return status_code::OVERLAP;
 
-    log(LOGL_INFO, "allocated region at 0x%zx\n", start);
+    pr_info("allocated region at 0x%zx\n", start);
     // Just try to map the region with mmap
     void *region = mmap((void *)start, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (region == (void *)-1)
         return status_code::NOMEM;
 
     if ((uint64_t)region != start) {
-        log(LOGL_INFO, "Kernel didn't map pages at requested address!\n");
+        pr_info("Kernel didn't map pages at requested address!\n");
         munmap(region, len);
         return status_code::NOMEM;
     }

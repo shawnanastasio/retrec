@@ -49,7 +49,7 @@ status_code dynamic_recompiler::execute() {
     // Lookup entrypoint's symbol
     auto *entry_symbol = loader.lookup(loader.entrypoint(), loader.text_section_index());
     if (!entry_symbol) {
-        log(LOGL_ERROR, "Failed to find entrypoint symbol!\n");
+        pr_error("Failed to find entrypoint symbol!\n");
         return status_code::BADELF;
     }
 
@@ -60,10 +60,10 @@ status_code dynamic_recompiler::execute() {
     auto code = std::get<translated_code_region>(code_op);
 
     // Enter the code!
-    log(LOGL_INFO, "entering code at %p, len: %zu\n", code.code(), code.size());
+    pr_info("entering code at %p, len: %zu\n", code.code(), code.size());
     auto ret = econtext->initialize_runtime_context(loader.target_arch(), &code);
     if (ret != status_code::SUCCESS) {
-        log(LOGL_ERROR, "Failed to initialize runtime context for translated code!\n");
+        pr_error("Failed to initialize runtime context for translated code!\n");
         return ret;
     }
     econtext->enter_translated_code();
@@ -74,17 +74,17 @@ status_code dynamic_recompiler::execute() {
 std::variant<status_code, translated_code_region> dynamic_recompiler::translate_elf_function(const elf_loader::symbol &symbol) {
     // Determine length of entrypoint routine
     uint64_t entry_len = loader.get_symbol_size(symbol);
-    log(LOGL_DEBUG, "entrypoint length: %zu\n", entry_len);
+    pr_debug("entrypoint length: %zu\n", entry_len);
     const void *entry_data_ptr = loader.get_symbol_data_ptr(symbol);
     if (!entry_data_ptr) {
-        log(LOGL_ERROR, "Failed to get symbol data ptr!\n");
+        pr_error("Failed to get symbol data ptr!\n");
         return status_code::NOMEM;
     }
 
     // Disassemble
     std::vector<llir::Insn> lifted_insns;
     if (disasm.disassemble_region(entry_data_ptr, entry_len, symbol.value, lifted_insns) != status_code::SUCCESS) {
-        log(LOGL_ERROR, "Failed to disassemble region!\n");
+        pr_error("Failed to disassemble region!\n");
         return status_code::BADELF;
     }
 
@@ -94,7 +94,7 @@ std::variant<status_code, translated_code_region> dynamic_recompiler::translate_
     std::optional<translated_code_region> translated_code;
     auto ret = gen->translate(block, translated_code);
     if (ret != status_code::SUCCESS) {
-        log(LOGL_ERROR, "Failed to translate routine!\n");
+        pr_error("Failed to translate routine!\n");
         return ret;
     }
 

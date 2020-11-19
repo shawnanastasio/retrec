@@ -31,8 +31,8 @@ status_code ppc64le::runtime_context_execute(runtime_context_ppc64le *ctx) {
             ctx->native_function_call_target = runtime_context_ppc64le::NativeTarget::INVALID;
 
             if (ctx->should_exit) {
-                log(LOGL_INFO, "Emulation halted after native function call.\n");
-                log(LOGL_INFO, "Exit code: %d\n", ctx->exit_code);
+                pr_info("Emulation halted after native function call.\n");
+                pr_info("Exit code: %d\n", ctx->exit_code);
                 break;
             }
         } else {

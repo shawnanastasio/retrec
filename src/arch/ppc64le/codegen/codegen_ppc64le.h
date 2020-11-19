@@ -141,7 +141,7 @@ class codegen_ppc64le final : public codegen {
 
             if (make_new) {
                 // No suitable allocator, create a new one
-                log(LOGL_DEBUG, "Creating new register allocator for code at: 0x%llx\n", insn.address);
+                pr_debug("Creating new register allocator for code at: 0x%llx\n", insn.address);
                 reg_allocators.emplace_back((uint64_t)insn.address);
                 return &(*(reg_allocators.end() - 1));
             } else

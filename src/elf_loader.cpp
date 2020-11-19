@@ -16,31 +16,31 @@ elf_loader::~elf_loader() {
 
 status_code elf_loader::init() {
     if (elf_version(EV_CURRENT) == EV_NONE) {
-        log(LOGL_ERROR, "Failed to set ELF version: %s\n", elf_errmsg(-1));
+        pr_error("Failed to set ELF version: %s\n", elf_errmsg(-1));
         return status_code::BADELF;
     }
 
     elf = elf_memory(file.data<char *>(), file.length());
     if (!elf) {
-        log(LOGL_ERROR, "Failed to open ELF file: %s\n", elf_errmsg(-1));
+        pr_error("Failed to open ELF file: %s\n", elf_errmsg(-1));
         return status_code::BADELF;
     }
 
     if (gelf_getehdr(elf, &ehdr) == nullptr) {
-        log(LOGL_ERROR, "Failed to get ELF header: %s\n", elf_errmsg(-1));
+        pr_error("Failed to get ELF header: %s\n", elf_errmsg(-1));
         return status_code::BADELF;
     }
 
     // Validate kind
     Elf_Kind ek = elf_kind(elf);
     if (ek != ELF_K_ELF) {
-        log(LOGL_ERROR, "Unknown ELF kind: %d\n", ek);
+        pr_error("Unknown ELF kind: %d\n", ek);
         return status_code::BADELF;
     }
 
     // Validate architecture
     if (ehdr.e_ident[EI_CLASS] != ELFCLASS64) {
-        log(LOGL_ERROR, "Only 64-bit binaries are supported!\n");
+        pr_error("Only 64-bit binaries are supported!\n");
         return status_code::BADELF;
     }
     switch (ehdr.e_machine) {
@@ -48,7 +48,7 @@ status_code elf_loader::init() {
             arch = Architecture::X86_64;
             break;
         default:
-            log(LOGL_ERROR, "Unsupported target architecture!\n");
+            pr_error("Unsupported target architecture!\n");
             return status_code::BADELF;
     }
 
@@ -79,13 +79,13 @@ status_code elf_loader::init() {
             text_shdr = shdr;
         }
 
-        log(LOGL_INFO, "Got section: %s\n", name);
+        pr_info("Got section: %s\n", name);
         i++;
     }
 
     // Build internal symbol table
     if (!symtab_scn || stridx == (size_t)-1) {
-        log(LOGL_ERROR, "Failed to find symbol/string table(s)!\n");
+        pr_error("Failed to find symbol/string table(s)!\n");
         return status_code::BADELF;
     }
 
@@ -97,7 +97,7 @@ status_code elf_loader::init() {
             return status_code::BADELF;
 
         char *name = elf_strptr(elf, stridx, cur.st_name);
-        //log(LOGL_INFO, "Got sym: %s : 0x%x\n", name, cur.st_value);
+        //pr_info("Got sym: %s : 0x%x\n", name, cur.st_value);
 
         // Add to symbol table
         symbols.push_back({
@@ -116,7 +116,7 @@ status_code elf_loader::init() {
     });
 
     for (auto &e : symbols) {
-        log(LOGL_INFO, "%s: %zu (shn: %zu)\n", e.name.c_str(), e.value, e.shndx);
+        pr_info("%s: %zu (shn: %zu)\n", e.name.c_str(), e.value, e.shndx);
     }
 
     return status_code::SUCCESS;
@@ -130,7 +130,7 @@ status_code elf_loader::load_all() {
 
     for (size_t i=0; i<num_phdr; i++) {
         if (gelf_getphdr(elf, (int)i, &phdr) != &phdr) {
-            log(LOGL_ERROR, "Failed to get program headers: %s\n", elf_errmsg(-1));
+            pr_error("Failed to get program headers: %s\n", elf_errmsg(-1));
             return status_code::BADELF;
         }
 
@@ -147,12 +147,12 @@ status_code elf_loader::load_all() {
                 void *region;
                 auto res = econtext.allocate_region(aligned_start, phdr.p_memsz + alignment, PROT_READ | PROT_WRITE, &region);
                 if (res == status_code::OVERLAP) {
-                    log(LOGL_ERROR, "ELF PT_LOAD overlaps existing region.\n"
+                    pr_error("ELF PT_LOAD overlaps existing region.\n"
                                    "  The target binary was probably compiled with a different\n"
                                    "  max page size from the host system. This won't work\n");
                     return status_code::BADELF;
                 } else if (res != status_code::SUCCESS) {
-                    log(LOGL_ERROR, "Failed to allocate region: %s\n", status_code_str(res));
+                    pr_error("Failed to allocate region: %s\n", status_code_str(res));
                     return status_code::BADELF;
                 }
 
@@ -166,12 +166,12 @@ status_code elf_loader::load_all() {
                 //           | (phdr.p_flags & PF_X) ? PROT_EXEC : 0 /* ignore execute permission for now */
                 assert(econtext.protect_region(aligned_start, phdr.p_memsz + alignment, flags) == status_code::SUCCESS);
 
-                log(LOGL_INFO, "Loaded PT_LOAD segment at 0x%zx!\n", (uint64_t)region);
+                pr_info("Loaded PT_LOAD segment at 0x%zx!\n", (uint64_t)region);
 
                 break;
             }
             default:
-                log(LOGL_ERROR, "Don't know how to handle phdr type %d\n", phdr.p_type);
+                pr_error("Don't know how to handle phdr type %d\n", phdr.p_type);
                 return status_code::BADELF;
         }
     }

@@ -12,7 +12,7 @@
     do { assert((static_cast<decltype(val)>((val) & (mask)) == (val)) || ((val) < 0 && static_cast<decltype(val)>((val) | ~(mask)) == (val)) ); } while(0)
 
 // Comment out to disable log spam
-#define ASM_LOG(...) log(LOGL_DEBUG, __VA_ARGS__)
+#define ASM_LOG(...) pr_debug(__VA_ARGS__)
 
 #ifndef ASM_LOG
 #define ASM_LOG(...)

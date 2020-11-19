@@ -6,8 +6,6 @@
 
 #include <unistd.h>
 
-#define log(level, fmt, ...) retrec::log_impl(level, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
-
 #define __weak __attribute__((weak))
 
 namespace retrec {
@@ -76,17 +74,52 @@ template<class... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
 //
 
 enum log_level {
-    LOGL_DEBUG,
-    LOGL_INFO,
-    LOGL_WARN,
-    LOGL_ERROR,
+#define _LOGL_DEBUG 0
+    LOGL_DEBUG = _LOGL_DEBUG,
+#define _LOGL_INFO 1
+    LOGL_INFO = _LOGL_INFO,
+#define _LOGL_WARN 2
+    LOGL_WARN = _LOGL_WARN,
+#define _LOGL_ERROR 3
+    LOGL_ERROR = _LOGL_ERROR,
 };
 
 void log_impl(log_level level, const char *file, int line, const char *fmt, ...);
+//#define log(level, fmt, ...) retrec::log_impl(level, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
 
 #define TODO() do { \
-    log(LOGL_ERROR, "Unimplemented code path hit!\n"); \
+    pr_error("Unimplemented code path hit!\n"); \
     assert(0); \
 } while(0)
 
-}
+} // namespace retrec
+
+#ifndef RETREC_MINIMUM_LOG_LEVEL
+#error "RETREC_MINIMUM_LOG_LEVEL not defined! Broken build system?"
+#elif (RETREC_MINIMUM_LOG_LEVEL < _LOGL_DEBUG) || (RETREC_MINIMUM_LOG_LEVEL > _LOGL_ERROR)
+#error "Invalid MINIMUM_LOG_LEVEL specified!"
+#endif
+
+/**
+ * Only define logging macros if the minimum log level is <= to it.
+ */
+#if RETREC_MINIMUM_LOG_LEVEL <= _LOGL_DEBUG
+#define pr_debug(fmt, ...) retrec::log_impl(LOGL_DEBUG, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
+#else
+#define pr_debug(...)
+#endif
+
+#if RETREC_MINIMUM_LOG_LEVEL <= _LOGL_INFO
+#define pr_info(fmt, ...) retrec::log_impl(LOGL_INFO, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
+#else
+#define pr_info(...)
+#endif
+
+#if RETREC_MINIMUM_LOG_LEVEL <= _LOGL_WARN
+#define pr_warn(fmt, ...) retrec::log_impl(LOGL_WARN, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
+#else
+#define pr_warn(...)
+#endif
+
+// Always define PR_ERROR
+#define pr_error(fmt, ...) retrec::log_impl(LOGL_ERROR, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)

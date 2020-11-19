@@ -17,7 +17,7 @@ status_code codegen_ppc64le<T>::init() {
     uint64_t branch_table_vaddr = econtext.map().allocate_low_vaddr(0x10000);
     assert(branch_table_vaddr);
     assert(branch_table_vaddr <= 0b11111111111111111111111111); // I-form branches only have 26-bit wide immediates
-    log(LOGL_INFO, "Allocated branch table at 0x%lx\n", branch_table_vaddr);
+    pr_info("Allocated branch table at 0x%lx\n", branch_table_vaddr);
     branch_table = (uint32_t *)mmap((void *)branch_table_vaddr, 0x10000, PROT_READ | PROT_WRITE | PROT_EXEC,
                                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (branch_table == (uint32_t *)-1) {
@@ -30,8 +30,8 @@ status_code codegen_ppc64le<T>::init() {
 template <typename T>
 status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) {
 
-    log(LOGL_DEBUG, "vmx offset: %zu\n", offsetof(cpu_context_ppc64le, vmx));
-    log(LOGL_DEBUG, "host_translated_context offset: %zu\n",
+    pr_debug("vmx offset: %zu\n", offsetof(cpu_context_ppc64le, vmx));
+    pr_debug("host_translated_context offset: %zu\n",
                     offsetof(runtime_context_ppc64le, host_translated_context));
 
     // Allocate an executable code buffer. For the initial size,
@@ -40,7 +40,7 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
     size_t initial_code_size = llir.get_insns().size() * 4 * 2;
     void *code = econtext.get_code_allocator().allocate(initial_code_size);
     if (!code) {
-        log(LOGL_ERROR, "Failed to allocate suitably sized code buffer!\n");
+        pr_error("Failed to allocate suitably sized code buffer!\n");
         return status_code::NOMEM;
     }
     simple_region_writer code_buffer(econtext.get_code_allocator(), code, initial_code_size);
@@ -58,7 +58,7 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
     if (context.relocations.size()) {
         status_code ret = resolve_relocations(context);
         if (ret != status_code::SUCCESS) {
-            log(LOGL_ERROR, "Failed to resolve relocations for generated code: %s!\n", status_code_str(ret));
+            pr_error("Failed to resolve relocations for generated code: %s!\n", status_code_str(ret));
             return ret;
         }
     }
@@ -66,11 +66,11 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
     // Final pass (debug): Disassemble buffer with capstone and print out
     csh cs_handle;
     if (cs_open(CS_ARCH_PPC, (cs_mode)(CS_MODE_64 + CS_MODE_LITTLE_ENDIAN), &cs_handle) != CS_ERR_OK) {
-        log(LOGL_ERROR, "Failed to open capstone handle for disassembly!\n");
+        pr_error("Failed to open capstone handle for disassembly!\n");
         return status_code::NOMEM;
     }
 
-    log(LOGL_DEBUG, "Disassembling code buffer with capstone:\n");
+    pr_debug("Disassembling code buffer with capstone:\n");
     size_t expected_total = code_buffer.pos() / 4;
     size_t total_count = 0;
     while (total_count < expected_total) {
@@ -83,13 +83,13 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
         cs_insn *cur;
         for (size_t i=0; i<count; i++) {
             cur = &cs_insns[i];
-            log(LOGL_DEBUG, "0x%zx: %s %s\n", cur->address, cur->mnemonic, cur->op_str);
+            pr_debug("0x%zx: %s %s\n", cur->address, cur->mnemonic, cur->op_str);
         }
 
         total_count += count;
 
         if (total_count != expected_total) {
-            log(LOGL_DEBUG, "0x%zx: (unknown insn)\n", cur->address + 4);
+            pr_debug("0x%zx: (unknown insn)\n", cur->address + 4);
             total_count++;
         }
     }
@@ -164,7 +164,7 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
                 [&](const Relocation::BranchImmUnconditional &data) -> status_code {
                     auto target = ctx.local_branch_targets.find(data.abs_vaddr);
                     if (target == ctx.local_branch_targets.end()) {
-                        log(LOGL_ERROR, "Unable to resolve Immediate Branch to target 0x%lx\n", target);
+                        pr_error("Unable to resolve Immediate Branch to target 0x%lx\n", target);
                         return status_code::BADBRANCH;
                     }
 
@@ -277,7 +277,7 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
 
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn) {
-    log(LOGL_DEBUG, "alu$load_imm\n");
+    pr_debug("alu$load_imm\n");
     assert(insn.dest_cnt == 1);
     assert(insn.dest[0].type == llir::Operand::Type::REG);
     assert(insn.src_cnt == 1);
@@ -290,7 +290,7 @@ void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &i
 
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) {
-    log(LOGL_DEBUG, "alu$sub\n");
+    pr_debug("alu$sub\n");
     assert(insn.src_cnt == 2);
     assert(insn.src[0].type == llir::Operand::Type::REG);
 
@@ -326,13 +326,13 @@ uint64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
             TODO();
     }
 
-    log(LOGL_DEBUG, "Resolved LLINSN branch target to 0x%lx: %s\n", res, llir::to_string(insn).c_str());
+    pr_debug("Resolved LLINSN branch target to 0x%lx: %s\n", res, llir::to_string(insn).c_str());
     return res;
 }
 
 template <typename T>
 void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn) {
-    log(LOGL_DEBUG, "branch$unconditional\n");
+    pr_debug("branch$unconditional\n");
     assert(insn.dest_cnt == 0);
     assert(insn.src_cnt == 1);
 
@@ -350,7 +350,7 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
 
 template <typename T>
 void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
-    log(LOGL_DEBUG, "branch$conditional\n");
+    pr_debug("branch$conditional\n");
     assert(insn.src_cnt == 1);
 
     uint64_t target = resolve_branch_target(insn);
@@ -430,7 +430,7 @@ out:
 
 template <typename T>
 void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::Insn &insn) {
-    log(LOGL_DEBUG, "interrupt$syscall\n");
+    pr_debug("interrupt$syscall\n");
     assert(insn.dest_cnt == 0 && insn.src_cnt == 0);
     ppc64le::assembler &assembler = ctx.assembler;
 

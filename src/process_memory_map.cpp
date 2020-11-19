@@ -8,7 +8,7 @@ status_code process_memory_map::init() {
     std::string path = std::string{"/proc/"} + std::to_string(pid) + "/maps";
     std::fstream maps(path, std::ios::in);
     if (!maps.is_open()) {
-        log(LOGL_ERROR, "Failed to open %s!\n", path.c_str());
+        pr_error("Failed to open %s!\n", path.c_str());
         return status_code::BADFILE;
     }
 

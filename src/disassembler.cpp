@@ -54,7 +54,7 @@ status_code disassembler::init() {
             break;
 
         default:
-            log(LOGL_ERROR, "Unsupported architecture %d!\n", (int)arch);
+            pr_error("Unsupported architecture %d!\n", (int)arch);
             return status_code::BADARCH;
     }
 
@@ -77,19 +77,18 @@ status_code disassembler::disassemble_region(const void *code, size_t max_length
         cs_detail *detail = cur->detail;
         assert(detail);
 
-        fprintf(stderr, "0x%zx: %s %s ", cur->address, cur->mnemonic, cur->op_str);
-        fprintf(stderr, ", operands: %s, groups: %s\n",
+        pr_debug("0x%zx: %s %s, operands: %s, groups: %s\n", cur->address, cur->mnemonic, cur->op_str,
                 array_to_string(detail->x86.operands, detail->x86.op_count).c_str(),
                 array_to_string(detail->groups, detail->groups_count).c_str());
 
         // Lift to LLIR
         status_code res = lifter->lift(cur, llir_insns);
         if (res != status_code::SUCCESS) {
-            log(LOGL_ERROR, "Failed to lift instruction!\n");
+            pr_error("Failed to lift instruction!\n");
             return res;
         }
 
-        fprintf(stderr, "LLIR: %s\n", llir::to_string(*(llir_insns.end() - 1)).c_str());
+        pr_debug("LLIR: %s\n", llir::to_string(*(llir_insns.end() - 1)).c_str());
     }
 
     llir_out = std::move(llir_insns);

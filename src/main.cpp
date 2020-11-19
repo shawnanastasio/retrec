@@ -15,13 +15,13 @@ int main(int argc, char *argv[]) {
     // Map the user provided binary
     mapped_file binary(binary_path, true);
     if (binary.map() != status_code::SUCCESS) {
-        log(LOGL_ERROR, "Failed to open binary %s!\n", binary_path);
+        pr_error("Failed to open binary %s!\n", binary_path);
         return 1;
     }
 
     dynamic_recompiler rec(Architecture::ppc64le, std::move(binary));
     if (rec.init() != status_code::SUCCESS) {
-        log(LOGL_ERROR, "Failed to init dynamic recompiler\n");
+        pr_error("Failed to init dynamic recompiler\n");
         return 1;
     }
 

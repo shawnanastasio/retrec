@@ -101,7 +101,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
             } else {
-                log(LOGL_ERROR, "Unimplemented MOV type!\n");
+                pr_error("Unimplemented MOV type!\n");
                 return status_code::UNIMPL_INSN;
             }
             break;
@@ -156,7 +156,7 @@ void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
             out.reg = get_reg(op.reg);
             break;
         default:
-            log(LOGL_ERROR, "Invalid operand type!\n");
+            pr_error("Invalid operand type!\n");
             assert(0);
     }
 }
@@ -227,7 +227,7 @@ llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
         case X86_REG_ES: ret.x86_64 = llir::X86_64Register::ES; ret.mask = llir::Register::Mask::Special; break;
 
         default:
-            log(LOGL_ERROR, "Unknown register!\n");
+            pr_error("Unknown register!\n");
             assert(0);
     }
 
