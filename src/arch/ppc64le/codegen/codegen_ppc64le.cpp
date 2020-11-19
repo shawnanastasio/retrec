@@ -610,14 +610,14 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     // generating the Carry flag if necessary.
     //
     // 1. Determine whether the Carry flag has been calculated already by branching
-    //    to the epilogue (5) if CR2[0] is set. Otherwise fall through.
+    //    to the epilogue (5) if CR_LAZYVALID_CARRY is set. Otherwise fall through.
     //
     // 2. Extract the low 8 bits from GPR_FIXED_FLAG_OP_TYPE to obtain branch table target.
     //    Add width to IP and branch.
     //
     // 3. The code at the destination will evaluate the Carry condition for the correct width.
     //    Refer to the table below for information on how the condition is evaluated for each
-    //    width. The result is moved into CR1[2] and code branches to (4).
+    //    width. Rc=1 instructions are used to store the compliment of the carry flag in cr0[eq].
     //
     //    64 bit (doubleword, sub) - Use sube+subc to manually calculate carry
     //    64 bit (doubleword, add) - Use CA flag from XER
@@ -625,12 +625,17 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     //    16 bit (halfword)        - Use bit 16 from result
     //    8 bit  (byte)            - Use bit 8  from result
     //
+    //    Width-specific code then jumps to common code that moves ~cr0[eq] into CR_LAZY_FIELD_CARRY.
+    //
     // 4. Set CR2[0] to indicate that the Carry flag has been evaluated.
     //
-    // 5. Epilogue branches conditionally on CR1[2] to destination.
+    // 5. Epilogue branches conditionally on CR_LAZY_FIELD_CARRY to destination.
 
     // Skip to last instruction if CF has already been evaluated
-    ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_CARRY, 21 * 4);
+    ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_CARRY, 20 * 4);
+
+    // Preserve cr0 in CR_SCRATCH
+    ctx.assembler.mcrf(CR_SCRATCH, 0);
 
     // Extract offset, add to NIA, branch
     ctx.assembler.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-8, false); // Mask off all but the low 8 bits
@@ -641,52 +646,52 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     ctx.assembler.mtspr(assembler::SPR::CTR, 0);
     ctx.assembler.bctr();
 
-    { // 8-bit - 3 insns
-        constexpr uint32_t cr_carry_field_bit_position = 31 - CR_CARRY_FIELD_CARRY;
-        // Extract carry bit from res[8] to r0[25]
-        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, cr_carry_field_bit_position - 8, 0, false);
-        ctx.assembler.mtocrf(1 << (7-CR_CARRY), 0);
-        ctx.assembler.b(12 * 4);
+    { // 8-bit - 2 insns
+        // Extract carry bit from res[8]. This sets cr0[gt] to the inverse of the carry bit.
+        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64 - 8, 63, true);
+        ctx.assembler.b(10 * 4);
     }
 
-    { // 16-bit - 3 insns
-        constexpr uint32_t cr_carry_field_bit_position = 31 - CR_CARRY_FIELD_CARRY;
-        // Extract carry bit from res[16] to r0[25]
-        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, cr_carry_field_bit_position - 16, 0, false);
-        ctx.assembler.mtocrf(1 << (7-CR_CARRY), 0);
-        ctx.assembler.b(9 * 4);
+    { // 16-bit - 2 insns
+        // Extract carry bit from res[16]. This sets cr0[gt] to the inverse of the carry bit.
+        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64 - 16, 63, true);
+        ctx.assembler.b(8 * 4);
     }
 
-    { // 32-bit - 3 insns
-        constexpr uint32_t cr_carry_field_bit_position = 31 - CR_CARRY_FIELD_CARRY;
-        // Extract carry bit from res[32] to r0[25]
-        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64-(32 - cr_carry_field_bit_position), 0, true);
-        ctx.assembler.mtocrf(1 << (7-CR_CARRY), 0);
+    { // 32-bit - 2 insns
+        // Extract carry bit from res[32]. This sets cr0[gt] to the inverse of the carry bit.
+        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64 - 32, 63, true);
         ctx.assembler.b(6 * 4);
     }
 
-    { // 64-bit (ADD) - 2 insns
-        ctx.assembler.mcrxrx(1 /* CR1 */);
-        ctx.assembler.b(4 * 4);
+    { // 64-bit (ADD) - 3 insns
+        // Calculate carry bit and set cr0[eq] accordingly.
+        ctx.assembler.subc(0, GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1);
+        ctx.assembler.sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
+        ctx.assembler.b(3 * 4);
     }
 
-    { // 64-bit (SUB) - 3 insns
+    { // 64-bit (SUB) - 2 insns
+        // Calculate carry bit and set cr0[eq] accordingly.
         ctx.assembler.subc(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_RES);
-        ctx.assembler.sube(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
-        // r0 will now contain -1 on carry, or 0 otherwise.
-        // Because of this, we can use mtocrf to set the contents of all bits in CR1 to 1/0 from r1.
-        ctx.assembler.mtocrf(1 << (7-CR_CARRY), 0);
+        ctx.assembler.sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
         /* fallthrough */
     }
 
-    /* Set CR2[0] to indicate that the Carry flag is valid */
+    // Move !cr0[eq] to CR_LAZY[CARRY]
+    ctx.assembler.crnot(CR_LAZY_FIELD_CARRY, 4*0 + assembler::CR_EQ);
+
+    // Set CR_LAZYVALID_CARRY to indicate that the Carry flag is valid
     ctx.assembler.crset(CR_LAZYVALID_CARRY);
 
-    /* At this point, the Carry flag in CR1[2] is valid and we can branch on it */
+    // Restore cr0
+    ctx.assembler.mcrf(0, CR_SCRATCH);
+
+    // At this point, the Carry flag in cr1[2] is valid and we can branch on it
     ctx.relocations.push_back({
             ctx.code_buffer.pos(),
             1,
-            Relocation::BranchImmConditional{set ? assembler::BO::FIELD_SET : assembler::BO::FIELD_CLR, CR_CARRY_FIELD_CARRY, target}
+            Relocation::BranchImmConditional{set ? assembler::BO::FIELD_SET : assembler::BO::FIELD_CLR, CR_LAZY_FIELD_CARRY, target}
     });
     ctx.assembler.nop();
 }
@@ -730,8 +735,8 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typ
 
     allocator.free_gpr(scratch1);
 
-    // CR_SCRATCH[eq] now contains the Overflow flag. Use cror to move it into CR_LAZY[OVERFLOW].
-    ctx.assembler.cror(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ, 4*CR_SCRATCH + assembler::CR_EQ);
+    // CR_SCRATCH[eq] now contains the Overflow flag. Move it into CR_LAZY[OVERFLOW].
+    ctx.assembler.crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
 
     // Mark OF as valid
     ctx.assembler.crset(CR_LAZYVALID_OVERFLOW);

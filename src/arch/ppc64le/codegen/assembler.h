@@ -120,6 +120,7 @@ public:
         ASM_LOG("Emitting cror %u, %u, %u to 0x%lx\n", bt, ba, bb, code_buf.pos_addr());
         return xl_form(19, bt, ba, bb, 449, 0);
     }
+    status_code crmove(uint8_t bx, uint8_t by) { return cror(bx, by, by); }
 
     status_code crxor(uint8_t bt, uint8_t ba, uint8_t bb) {
         ASM_LOG("Emitting crxor %u, %u, %u to 0x%lx\n", bt, ba, bb, code_buf.pos_addr());
@@ -131,6 +132,7 @@ public:
         ASM_LOG("Emitting crnor %u, %u, %u to 0x%lx\n", bt, ba, bb, code_buf.pos_addr());
         return xl_form(19, bt, ba, bb, 33, 0);
     }
+    status_code crnot(uint8_t bx, uint8_t by) { return crnor(bx, by, by); }
 
     status_code creqv(uint8_t bt, uint8_t ba, uint8_t bb) {
         ASM_LOG("Emitting creqv %u, %u, %u to 0x%lx\n", bt, ba, bb, code_buf.pos_addr());
