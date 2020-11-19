@@ -27,6 +27,7 @@ ASM_EPILOG = \
 FlagTestCase = namedtuple("FlagTestCase", ["width", "reg1_str", "reg2_str", "imm1_str", "imm2_str", "insn_str", "jmp_good", "jmp_bad"])
 
 CARRY_TESTS = [
+    # SUB (cmp)
     FlagTestCase(64, "rax", "rbx", "0", "-1", "cmp", "jc", "jnc"),
     FlagTestCase(64, "rax", "rbx", "-1", "-1", "cmp", "jnc", "jc"),
     FlagTestCase(64, "rax", "", "-1", "-1", "cmp", "jnc", "jc"),
@@ -44,8 +45,60 @@ CARRY_TESTS = [
     FlagTestCase(8, "al", "", "-1", "-1", "cmp", "jnc", "jc"),
 ]
 
+OVERFLOW_TESTS = [
+    # SUB (cmp)
+    FlagTestCase(64, "rax", "", "0x7FFFFFFFFFFFFFFF", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFFF", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(64, "rax", "", "0x8000000000000000", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(64, "rax", "rbx", "0x8000000000000000", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(64, "rax", "", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(64, "rax", "rbx", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(64, "rax", "", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+    FlagTestCase(64, "rax", "rbx", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+
+    FlagTestCase(32, "eax", "", "0x7FFFFFFF", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFFF", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(32, "eax", "", "0x80000000", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(32, "eax", "ebx", "0x80000000", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(32, "eax", "", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(32, "eax", "ebx", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(32, "eax", "", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+    FlagTestCase(32, "eax", "ebx", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+
+    FlagTestCase(16, "ax", "", "0x7FFF", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(16, "ax", "bx", "0x7FFF", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(16, "ax", "", "0x8000", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(16, "ax", "bx", "0x8000", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(16, "ax", "", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(16, "ax", "bx", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(16, "ax", "", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+    FlagTestCase(16, "ax", "bx", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+
+    FlagTestCase(8, "ah", "", "0x7F", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(8, "ah", "bh", "0x7F", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(8, "ah", "", "0x80", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(8, "ah", "bh", "0x80", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(8, "ah", "", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(8, "ah", "bh", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(8, "ah", "", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+    FlagTestCase(8, "ah", "bh", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+
+    FlagTestCase(8, "al", "", "0x7F", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(8, "al", "bl", "0x7F", "-1", "cmp", "jo", "jno"), # Positive overflow (OF)
+    FlagTestCase(8, "al", "", "0x80", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(8, "al", "bl", "0x80", "1", "cmp", "jo", "jno"), # Negative overflow (OF)
+    FlagTestCase(8, "al", "", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(8, "al", "bl", "0", "1", "cmp", "jno", "jo"), # Positive underflow (!OF)
+    FlagTestCase(8, "al", "", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+    FlagTestCase(8, "al", "bl", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
+
+    # ADD
+    #FlagTestCase(64, "eax", "", "0x7FFFFFFF", "1", "add", "jo", "jno")
+]
+
 SUITES = {
-    "CF" : CARRY_TESTS
+    "CF" : CARRY_TESTS,
+    "OF" : OVERFLOW_TESTS
 }
 
 def width_to_cast(width):
@@ -124,7 +177,7 @@ def main():
         for k, v in SUITES.items():
             selected.append(v)
     else:
-        selected.append(SUITES[selected])
+        selected.append(SUITES[suite.upper()])
 
     with open(filename, "w") as f:
         generate_tests(selected, f)

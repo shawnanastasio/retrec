@@ -1,13 +1,19 @@
 SRCS:=$(shell find . -name "*.S")
 OBJS:=$(SRCS:.S=.o)
 TARGETS:=$(SRCS:.S=.bin)
+GENERATED_TARGETS=cf.gen.bin of.gen.bin
+GENERATED_SRCS=$(GENERATED_TARGETS:.bin=.S)
+.SECONDARY:
 
 # Tell LD to account for a max page size of 64k. This lets us easily test
 # our binaries on ppc64le 64k hosts. Real binaries will need to be run on a
 # 4k host.
 LDFLAGS:=-z max-page-size=65536
 
-all: $(TARGETS)
+all: $(TARGETS) $(GENERATED_TARGETS)
+
+%.gen.S: ./gentest.py
+	./gentest.py $(@:.gen.S=) $@
 
 %.bin: %.o
 	x86_64-unknown-linux-gnu-ld $(LDFLAGS) $< -o $@
@@ -17,3 +23,6 @@ all: $(TARGETS)
 
 clean:
 	rm -rf $(TARGETS)
+	rm -rf *.o
+	rm -rf $(GENERATED_TARGETS)
+	rm -rf $(GENERATED_SRCS)
