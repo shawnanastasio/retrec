@@ -269,7 +269,6 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
     } else if (op.type == llir::Operand::Type::IMM) {
         // Operand is an immediate, load it into the appropriate FLAG_OP reg
         macro$load_imm(ctx.assembler, target, op.imm, default_mask, true);
-        //assert(0);
     } else { TODO(); }
 }
 
@@ -688,14 +687,14 @@ void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, g
             case llir::Register::Mask::Low32:
                 TODO();
             case llir::Register::Mask::LowLow16:
-                assembler.rldicl(dest, src, 0, 63-16, false);
+                assembler.rldicr(dest, src, 0, 63-16, false);
                 break;
             case llir::Register::Mask::LowLowHigh8:
                 assembler.rldicl(dest, src, 48, 8, false);
                 assembler.rldicl(dest, src, 16, 0, false);
                 break;
             case llir::Register::Mask::LowLowLow8:
-                assembler.rldicl(dest, src, 0, 63-8, false);
+                assembler.rldicr(dest, src, 0, 63-8, false);
                 break;
             default:
                 TODO();
