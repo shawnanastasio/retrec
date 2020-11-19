@@ -56,11 +56,11 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_JLE:   { TODO(); }
         case X86_INS_JL:    { TODO(); }
         case X86_INS_JNE:   { llinsn.branch.op = llir::Branch::Op::NOT_EQ; goto jcc_common; }
-        case X86_INS_JNO:   { TODO(); }
-        case X86_INS_JNP:   { TODO(); /* does anybody even use PF?? */ }
+        case X86_INS_JNO:   { llinsn.branch.op = llir::Branch::Op::NOT_OVERFLOW; goto jcc_common; }
+        case X86_INS_JNP:   { TODO(); }
         case X86_INS_JNS:   { llinsn.branch.op = llir::Branch::Op::NOT_NEGATIVE; goto jcc_common; }
-        case X86_INS_JO:    { TODO(); }
-        case X86_INS_JP:    { TODO(); /* does anybody even use PF?? */ }
+        case X86_INS_JO:    { llinsn.branch.op = llir::Branch::Op::OVERFLOW; goto jcc_common; }
+        case X86_INS_JP:    { TODO(); }
         case X86_INS_JRCXZ: { TODO(); }
         case X86_INS_JS:    { llinsn.branch.op = llir::Branch::Op::NEGATIVE; goto jcc_common; }
         jcc_common:

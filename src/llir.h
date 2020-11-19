@@ -86,6 +86,8 @@ struct Branch {
         POSITIVE,
         CARRY,
         NOT_CARRY,
+        OVERFLOW,
+        NOT_OVERFLOW
     } op;
 
     bool signed_comparison;
@@ -201,6 +203,8 @@ inline std::string to_string(const Branch &branch) {
         case Branch::Op::POSITIVE: ret += "POSITIVE,"; break;
         case Branch::Op::CARRY: ret += "CARRY,"; break;
         case Branch::Op::NOT_CARRY: ret += "NOT_CARRY,"; break;
+        case Branch::Op::OVERFLOW: ret += "OVERFLOW,"; break;
+        case Branch::Op::NOT_OVERFLOW: ret += "NOT_OVERFLOW,"; break;
         default:
             TODO();
     }

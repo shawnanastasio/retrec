@@ -132,6 +132,8 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Branch::Op::POSITIVE:
                 case llir::Branch::Op::CARRY:
                 case llir::Branch::Op::NOT_CARRY:
+                case llir::Branch::Op::OVERFLOW:
+                case llir::Branch::Op::NOT_OVERFLOW:
                     llir$branch$conditional(ctx, insn);
                     break;
 
@@ -398,6 +400,17 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
             macro$branch$conditional$carry(ctx, reg_allocator, false, target);
             goto out;
 
+        case llir::Branch::Op::OVERFLOW:
+            // lazily evaluated
+            macro$branch$conditional$overflow(ctx, reg_allocator, true, target);
+            goto out;
+
+        case llir::Branch::Op::NOT_OVERFLOW:
+            // lazily evaluated
+            macro$branch$conditional$overflow(ctx, reg_allocator, false, target);
+            goto out;
+
+
         default:
             TODO();
     }
@@ -616,7 +629,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     //
     // 5. Epilogue branches conditionally on CR1[2] to destination.
 
-    // Skip to last instruction if Carry has already been evaluated
+    // Skip to last instruction if CF has already been evaluated
     ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_CARRY, 21 * 4);
 
     // Extract offset, add to NIA, branch
@@ -674,6 +687,60 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
             ctx.code_buffer.pos(),
             1,
             Relocation::BranchImmConditional{set ? assembler::BO::FIELD_SET : assembler::BO::FIELD_CLR, CR_CARRY_FIELD_CARRY, target}
+    });
+    ctx.assembler.nop();
+}
+
+template <typename T>
+void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typename T::RegisterAllocatorT &allocator,
+                                                           bool set, uint64_t target) {
+    // Skip to last instruction if OF has already been evaluated
+    ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 20 * 4);
+
+    // Allocate scratch registers for use in calculation
+    gpr_t scratch1 = allocator.allocate_gpr();
+
+    // Branch to calculation code for operation type
+    ctx.assembler.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[15:14] into r0
+    ctx.assembler.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
+    ctx.assembler.bc(assembler::BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 8 * 4); // Less than ADD -> SUB
+    ctx.assembler.bc(assembler::BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 2 * 4); // Equal to ADD
+    ctx.assembler.invalid(); // Emit an invalid instruction to assert not reached
+
+    { // ADD
+        ctx.assembler.add(scratch1, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler.eqv(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler._xor(scratch1, scratch1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler._and(0, 0, scratch1);
+        ctx.assembler.b(5 * 4); // Branch to common shifting code
+    }
+
+    { // SUB
+        ctx.assembler.sub(scratch1, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler._xor(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler.eqv(scratch1, scratch1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler._and(0, 0, scratch1);
+        // fall through to common shifting code
+    }
+
+    // The overflow bit is now in r0. Depending on operation width, shift it into bit 0, and clear all left.
+    ctx.assembler.rldicl(scratch1, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OVERFLOW_SHIFT, 64-6, false);
+    ctx.assembler.rldcl(0, 0, scratch1, 63, false); // Put overflow flag into r0[0]
+    ctx.assembler.cmpldi(CR_SCRATCH, 0, 1);
+
+    allocator.free_gpr(scratch1);
+
+    // CR_SCRATCH[eq] now contains the Overflow flag. Use cror to move it into CR_LAZY[OVERFLOW].
+    ctx.assembler.cror(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ, 4*CR_SCRATCH + assembler::CR_EQ);
+
+    // Mark OF as valid
+    ctx.assembler.crset(CR_LAZYVALID_OVERFLOW);
+
+    // Now, branch on OF
+    ctx.relocations.push_back({
+            ctx.code_buffer.pos(),
+            1,
+            Relocation::BranchImmConditional{set ? assembler::BO::FIELD_SET : assembler::BO::FIELD_CLR, CR_LAZY_FIELD_OVERFLOW, target}
     });
     ctx.assembler.nop();
 }

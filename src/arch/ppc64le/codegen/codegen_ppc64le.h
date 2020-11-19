@@ -28,8 +28,12 @@ namespace ppc64le {
  *     CR1[1]   - UNDEFINED
  *     CR1[2]   - CARRY
  *     CR1[3]   - UNDEFINED
- * CR2 - Whether the lazy flags in CR1,X are valid or whether they need to be recalculated
- *     CR2[0] - Carry valid
+ * CR2 - Other lazily evaluated flags
+ *     CR2[3] - OVERFLOW
+ * CR4 - Whether the lazy flags in CR1,X are valid or whether they need to be recalculated
+ *     CR4[0] - Carry valid
+ *     CR4[1] - Overflow valid
+ * CR5 - Scratch. Potentially used by lazy evaluation routines.
  * CR7 - Reserved all zeros
  *
  * In addition, the following are provided for efficient
@@ -57,9 +61,14 @@ constexpr gpr_t GPR_FIXED_FLAG_OP_TYPE = 15;
 constexpr uint32_t CR_CARRY = 1; // CR1
 constexpr uint32_t CR_CARRY_FIELD_CARRY = CR_CARRY*4 + 2; // CR1[2]
 
-constexpr uint32_t CR_LAZYVALID = 2; // CR2
-constexpr uint32_t CR_LAZYVALID_CARRY = CR_LAZYVALID*4 + 0; // CR2[0]
+constexpr uint32_t CR_LAZY = 2; // CR2
+constexpr uint32_t CR_LAZY_FIELD_OVERFLOW = CR_LAZY*4 + 3;
 
+constexpr uint32_t CR_LAZYVALID = 4; // CR2
+constexpr uint32_t CR_LAZYVALID_CARRY = CR_LAZYVALID*4 + 0; // CR4[0]
+constexpr uint32_t CR_LAZYVALID_OVERFLOW = CR_LAZYVALID*4 + 1; // CR4[1]
+
+constexpr uint32_t CR_SCRATCH = 5; // CR5
 constexpr uint32_t CR_ZEROS = 7; // CR7
 
 constexpr uint32_t UINT26_MAX = 0x3ffffff; // 2**26 - 1
@@ -74,6 +83,18 @@ enum class LastFlagOpData : uint32_t {
     CARRY_WORD = 36,
     CARRY_DOUBLEWORD_ADD = 48,
     CARRY_DOUBLEWORD_SUB = 56,
+
+    // Shift for overflow flag calculation (13:8)
+    OVERFLOW_SHIFT = 8,
+    OVERFLOW_BYTE = (57 << OVERFLOW_SHIFT),
+    OVERFLOW_HALFWORD = (49 << OVERFLOW_SHIFT),
+    OVERFLOW_WORD = (33 << OVERFLOW_SHIFT),
+    OVERFLOW_DOUBLEWORD = (1 << OVERFLOW_SHIFT),
+
+    // Operation type for flag calculation (15:14)
+    OP_TYPE_SHIFT = 14,
+    OP_SUB = (0 << OP_TYPE_SHIFT),
+    OP_ADD = (1 << OP_TYPE_SHIFT),
 };
 enum class LastFlagOp : uint32_t {
     SUB = (0 << 8),
@@ -177,30 +198,45 @@ class codegen_ppc64le final : public codegen {
     }
 
     static inline uint16_t build_flag_op_data(ppc64le::LastFlagOp op, llir::Register::Mask mask) {
-        // Calculate carry offsets
-        ppc64le::LastFlagOpData carry;
+        ppc64le::LastFlagOpData data;
+
         switch (mask) {
             case llir::Register::Mask::Full64:
                 if (op == ppc64le::LastFlagOp::SUB)
-                    carry = ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_SUB;
+                    data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_SUB
+                           | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_DOUBLEWORD);
                 else if (op == ppc64le::LastFlagOp::ADD)
-                    carry = ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_ADD;
+                    data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_ADD
+                           | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_DOUBLEWORD);
                 else
                     TODO();
 
                 break;
             case llir::Register::Mask::Low32:
-                carry = ppc64le::LastFlagOpData::CARRY_WORD; break;
+                data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_WORD
+                       | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_WORD);
+                break;
             case llir::Register::Mask::LowLow16:
-                carry = ppc64le::LastFlagOpData::CARRY_HALFWORD; break;
+                data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_HALFWORD
+                       | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_HALFWORD);
+                break;
             case llir::Register::Mask::LowLowLow8:
             case llir::Register::Mask::LowLowHigh8:
-                carry = ppc64le::LastFlagOpData::CARRY_BYTE;
+                data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_BYTE
+                       | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_BYTE);
                 break;
             default: TODO();
         }
 
-        return (uint16_t)carry;
+        // Fill in operation type
+        if (op == ppc64le::LastFlagOp::SUB)
+            data = (ppc64le::LastFlagOpData)((uint32_t)data | (uint32_t)ppc64le::LastFlagOpData::OP_SUB);
+        else if (op == ppc64le::LastFlagOp::ADD)
+            data = (ppc64le::LastFlagOpData)((uint32_t)data | (uint32_t)ppc64le::LastFlagOpData::OP_ADD);
+        else
+            TODO();
+
+        return (uint16_t)data;
     }
 
     //
@@ -213,6 +249,8 @@ class codegen_ppc64le final : public codegen {
                                   ppc64le::assembler::BO bo, uint8_t cr_field, size_t insn_cnt);
     void macro$branch$conditional$carry(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator,
                                         bool set, uint64_t target);
+    void macro$branch$conditional$overflow(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator,
+                                           bool set, uint64_t target);
     void macro$mask_register(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src, llir::Register::Mask mask, bool invert);
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others);
