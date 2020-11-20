@@ -339,65 +339,70 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
             // beq
             bo = assembler::BO::FIELD_SET;
             cr_field = assembler::CR_EQ;
-            goto clean_map_common;
+            goto common;
 
         case llir::Branch::Op::NOT_EQ:
             // bne
             bo = assembler::BO::FIELD_CLR;
             cr_field = assembler::CR_EQ;
-            goto clean_map_common;
+            goto common;
 
         case llir::Branch::Op::NEGATIVE:
             // blt
             bo = assembler::BO::FIELD_SET;
             cr_field = assembler::CR_LT;
-            goto clean_map_common;
+            goto common;
 
         case llir::Branch::Op::NOT_NEGATIVE:
             // bnlt
             bo = assembler::BO::FIELD_CLR;
             cr_field = assembler::CR_LT;
-            goto clean_map_common;
+            goto common;
 
         case llir::Branch::Op::POSITIVE:
             // bgt
             bo = assembler::BO::FIELD_SET;
             cr_field = assembler::CR_GT;
-            goto clean_map_common;
+            goto common;
 
         case llir::Branch::Op::CARRY:
             // lazily evaluated
-            macro$branch$conditional$carry(ctx, reg_allocator, true, target);
-            goto out;
+            macro$branch$conditional$carry(ctx, reg_allocator);
+            bo = assembler::BO::FIELD_SET;
+            cr_field = CR_LAZY_FIELD_CARRY;
+            goto common;
 
         case llir::Branch::Op::NOT_CARRY:
             // lazily evaluated
-            macro$branch$conditional$carry(ctx, reg_allocator, false, target);
-            goto out;
+            macro$branch$conditional$carry(ctx, reg_allocator);
+            bo = assembler::BO::FIELD_CLR;
+            cr_field = CR_LAZY_FIELD_CARRY;
+            goto common;
 
         case llir::Branch::Op::OVERFLOW:
             // lazily evaluated
-            macro$branch$conditional$overflow(ctx, reg_allocator, true, target);
-            goto out;
+            macro$branch$conditional$overflow(ctx, reg_allocator);
+            bo = assembler::BO::FIELD_SET;
+            cr_field = CR_LAZY_FIELD_OVERFLOW;
+            goto common;
 
         case llir::Branch::Op::NOT_OVERFLOW:
             // lazily evaluated
-            macro$branch$conditional$overflow(ctx, reg_allocator, false, target);
-            goto out;
-
+            macro$branch$conditional$overflow(ctx, reg_allocator);
+            bo = assembler::BO::FIELD_CLR;
+            cr_field = CR_LAZY_FIELD_OVERFLOW;
+            goto common;
 
         default:
             TODO();
     }
 
-
-clean_map_common:
-    // For operations that cleanly map to Power ISA flags, directly emit a cond branch relocation
+common:
+    // With the condition determined, emit a relocation for a conditional branch
     if (insn.src[0].type == llir::Operand::Type::IMM) {
         ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmConditional{bo, cr_field, target} });
         ctx.assembler.nop();
     } else { TODO(); }
-out: ;
 }
 
 template <typename T>
@@ -576,8 +581,7 @@ void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typename T::RegisterAllocatorT &allocator,
-                                                        bool set, uint64_t target) {
+void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typename T::RegisterAllocatorT &allocator) {
 
     // This function emits a conditional branch depending on the state of the emulated CPU's Carry flag,
     // generating the Carry flag if necessary.
@@ -602,7 +606,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     //
     // 4. Set CR2[0] to indicate that the Carry flag has been evaluated.
     //
-    // 5. Epilogue branches conditionally on CR_LAZY_FIELD_CARRY to destination.
+    // 5. Carry is now valid and can be branched on conditionally
 
     // Skip to last instruction if CF has already been evaluated
     ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_CARRY, 20 * 4);
@@ -659,19 +663,10 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
 
     // Restore cr0
     ctx.assembler.mcrf(0, CR_SCRATCH);
-
-    // At this point, the Carry flag in cr1[2] is valid and we can branch on it
-    ctx.relocations.push_back({
-            ctx.code_buffer.pos(),
-            1,
-            Relocation::BranchImmConditional{set ? assembler::BO::FIELD_SET : assembler::BO::FIELD_CLR, CR_LAZY_FIELD_CARRY, target}
-    });
-    ctx.assembler.nop();
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typename T::RegisterAllocatorT &allocator,
-                                                           bool set, uint64_t target) {
+void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typename T::RegisterAllocatorT &allocator) {
     // Skip to last instruction if OF has already been evaluated
     ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 20 * 4);
 
@@ -713,14 +708,6 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typ
 
     // Mark OF as valid
     ctx.assembler.crset(CR_LAZYVALID_OVERFLOW);
-
-    // Now, branch on OF
-    ctx.relocations.push_back({
-            ctx.code_buffer.pos(),
-            1,
-            Relocation::BranchImmConditional{set ? assembler::BO::FIELD_SET : assembler::BO::FIELD_CLR, CR_LAZY_FIELD_OVERFLOW, target}
-    });
-    ctx.assembler.nop();
 }
 
 template <typename T>
