@@ -70,31 +70,6 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
         return status_code::NOMEM;
     }
 
-    pr_debug("Disassembling code buffer with capstone:\n");
-    size_t expected_total = code_buffer.pos() / 4;
-    size_t total_count = 0;
-    while (total_count < expected_total) {
-        cs_insn *cs_insns_tmp;
-        size_t total_count_bytes = total_count * 4;
-        size_t count = cs_disasm(cs_handle, (const uint8_t *)code + total_count_bytes,
-                                 code_buffer.pos() - total_count_bytes, total_count_bytes, 0, &cs_insns_tmp);
-        unique_cs_insn_arr cs_insns(cs_insns_tmp, cs_insn_deleter(count));
-
-        cs_insn *cur;
-        for (size_t i=0; i<count; i++) {
-            cur = &cs_insns[i];
-            pr_debug("0x%zx: %s %s\n", cur->address, cur->mnemonic, cur->op_str);
-        }
-
-        total_count += count;
-
-        if (total_count != expected_total) {
-            pr_debug("0x%zx: (unknown insn)\n", cur->address + 4);
-            total_count++;
-        }
-    }
-    cs_close(&cs_handle);
-
     // Return translated code region
     out = {code, code_buffer.pos()};
 
