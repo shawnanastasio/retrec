@@ -13,9 +13,6 @@ static constexpr gpr_t GPR_INVALID = (gpr_t)-1;
  * Register allocator for X86_64 targets
  */
 class register_allocator_x86_64 {
-    uint64_t start_vaddr; // Address (in target vaddr space) that allocation starts at (inclusive)
-    uint64_t end_vaddr;   // Address (in target vaddr space) that allocation ends at (inclusive)
-
     // Allocation status of GPRs. True = reserved, false = free.
     struct RegisterInfo {
         enum class State {
@@ -45,13 +42,9 @@ class register_allocator_x86_64 {
     } static_allocations;
 
 public:
-    register_allocator_x86_64(uint64_t start_vaddr_);
+    register_allocator_x86_64();
     ~register_allocator_x86_64();
     //DISABLE_COPY_AND_MOVE(register_allocator_x86_64)
-
-    uint64_t start() const { return start_vaddr; }
-    uint64_t end() const { return end_vaddr; }
-    void set_end(uint64_t end) { end_vaddr = end; }
 
     gpr_t allocate_gpr();
     gpr_t get_fixed_gpr(const llir::Register &reg);

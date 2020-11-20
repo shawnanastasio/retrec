@@ -257,9 +257,10 @@ llir::Register::Mask codegen_ppc64le<T>::llir$alu$helper$determine_immediate_mas
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn, const llir::Operand &op,
                                                               gpr_t target, llir::Register::Mask default_mask) {
+    (void)insn;
     if (op.type == llir::Operand::Type::REG) {
         // Operand is in a register, move it to the appropriate FLAG_OP reg and mask it
-        gpr_t gpr = ctx.reg_allocator(insn)->get_fixed_gpr(op.reg);
+        gpr_t gpr = ctx.reg_allocator().get_fixed_gpr(op.reg);
 
         if (op.reg.mask != llir::Register::Mask::LowLowHigh8) {
             // Directly load operand into FLAG_OP register with mask
@@ -283,7 +284,7 @@ void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &i
     assert(insn.src_cnt == 1);
     assert(insn.src[0].type == llir::Operand::Type::IMM);
 
-    gpr_t rt = ctx.reg_allocator(insn)->get_fixed_gpr(insn.dest[0].reg);
+    gpr_t rt = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
 
     macro$load_imm(ctx.assembler, rt, insn.src[0].imm, insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
 }
@@ -343,9 +344,6 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
         ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmUnconditional{target} });
         ctx.assembler.nop();
     } else { TODO(); }
-
-    // Invalidate the current register allocator after each indirect branch
-    ctx.invalidate_reg_allocator(insn);
 }
 
 template <typename T>
@@ -354,7 +352,7 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     assert(insn.src_cnt == 1);
 
     uint64_t target = resolve_branch_target(insn);
-    auto &reg_allocator = *ctx.reg_allocator(insn);
+    auto &reg_allocator = ctx.reg_allocator();
 
     assembler::BO bo;
     uint8_t cr_field;
@@ -422,10 +420,7 @@ clean_map_common:
         ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmConditional{bo, cr_field, target} });
         ctx.assembler.nop();
     } else { TODO(); }
-
-out:
-    // Invalidate the current register allocator after each indirect branch
-    ctx.invalidate_reg_allocator(insn);
+out: ;
 }
 
 template <typename T>
@@ -439,8 +434,7 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
     // * arch_leave_translated code won't save LR for us, so we have to do it
     // * we need to store the callback in runtime_context(r11).host_native_context.native_function_call_target
 
-    gpr_t scratch = ctx.reg_allocator(insn)->allocate_gpr();
-    assert(scratch != GPR_INVALID);
+    gpr_t scratch = ctx.reg_allocator().allocate_gpr();
 
     // Store address of callback
     macro$load_imm(assembler, scratch, (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL, llir::Register::Mask::Full64, true);
@@ -456,6 +450,8 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
 
     // Branch
     assembler.bctrl();
+
+    ctx.reg_allocator().free_gpr(scratch);
 }
 
 //
@@ -798,7 +794,6 @@ void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, g
 template <typename T>
 void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t dest, gpr_t src, llir::Register::Mask src_mask,
                                                     llir::Register::Mask dest_mask, bool zero_others) {
-
     auto get_width_from_mask = [](auto mask) -> uint8_t {
         switch (mask) {
             case llir::Register::Mask::Full64: return 64;

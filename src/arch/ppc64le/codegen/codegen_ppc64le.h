@@ -34,12 +34,10 @@ namespace ppc64le {
  *
  * In addition, the following are provided for efficient
  * lazy evaluation of operations that depend on foreign CPU flags (e.g. EFLAGS):
- *     R12 - flag operation operand 1
- *     R13 - flag operation operand 2
- *     R14 - flag operation result
- *     R15(7:0)   - flag operation width
- *     R15(15:8)  - flag operation type
- *     R15(31:16) - flag operation valid flags
+ *     R14 - flag operation operand 1
+ *     R15 - flag operation operand 2
+ *     R16 - flag operation result
+ *     R17 - flag operation data (See LastFlagOpData for fields)
  * Upon any instruction that alters foriegn flags, the operands and operation type
  * will be loaded into R12, R13, and R14 respectively. Then, when generated code
  * needs to evaluate the flags for, e.g. a branch, the values in these registers
@@ -49,10 +47,10 @@ namespace ppc64le {
  * and worth wasting 3 registers.
  */
 constexpr gpr_t GPR_FIXED_RUNTIME_CTX = 11;
-constexpr gpr_t GPR_FIXED_FLAG_OP1 = 12;
-constexpr gpr_t GPR_FIXED_FLAG_OP2 = 13;
-constexpr gpr_t GPR_FIXED_FLAG_RES = 14;
-constexpr gpr_t GPR_FIXED_FLAG_OP_TYPE = 15;
+constexpr gpr_t GPR_FIXED_FLAG_OP1 = 14;
+constexpr gpr_t GPR_FIXED_FLAG_OP2 = 15;
+constexpr gpr_t GPR_FIXED_FLAG_RES = 16;
+constexpr gpr_t GPR_FIXED_FLAG_OP_TYPE = 17;
 
 constexpr uint32_t CR_LAZY = 1; // CR1
 constexpr uint32_t CR_LAZY_FIELD_OVERFLOW = CR_LAZY*4 + 3;
@@ -114,46 +112,22 @@ template <typename Traits>
 class codegen_ppc64le final : public codegen {
     Architecture target;
     execution_context &econtext;
-    //typename Traits::RegisterAllocatorT reg_allocator;
 
     struct gen_context {
         const lifted_llir_block &llir;
         simple_region_writer &code_buffer;
         ppc64le::assembler assembler;
+        typename Traits::RegisterAllocatorT m_reg_allocator;
 
         // Map of (target binary vaddr) : (generated code vaddr) for branch targets
         std::unordered_map<uint64_t, uint64_t> local_branch_targets;
         // Relocations that get resolved in second pass
         std::vector<ppc64le::Relocation> relocations;
-        // Register allocation contexts used throughout this code block
-        std::vector<typename Traits::RegisterAllocatorT> reg_allocators;
 
         gen_context(const lifted_llir_block &llir_, simple_region_writer &code_buffer_, ppc64le::assembler assembler_) :
             llir(llir_), code_buffer(code_buffer_), assembler(std::move(assembler_)) {}
 
-        // Obtain a register allocator pointer for a givein insn
-        typename Traits::RegisterAllocatorT *reg_allocator(const llir::Insn &insn, bool make_new) {
-            // Return a register allocator instance that can be used for the given insn
-            for (auto &allocator : reg_allocators) {
-                if (insn.address >= allocator.start() && (!allocator.end() || insn.address <= allocator.end()))
-                    return &allocator;
-            }
-
-            if (make_new) {
-                // No suitable allocator, create a new one
-                pr_debug("Creating new register allocator for code at: 0x%llx\n", insn.address);
-                reg_allocators.emplace_back((uint64_t)insn.address);
-                return &(*(reg_allocators.end() - 1));
-            } else
-                return nullptr;
-        }
-        typename Traits::RegisterAllocatorT *reg_allocator(const llir::Insn &insn) { return reg_allocator(insn, true); }
-
-        void invalidate_reg_allocator(const llir::Insn &insn) {
-            auto *allocator = reg_allocator(insn, false);
-            if (allocator && !allocator->end())
-                allocator->set_end(insn.address);
-        }
+        auto &reg_allocator() { return m_reg_allocator; }
     };
 
 
