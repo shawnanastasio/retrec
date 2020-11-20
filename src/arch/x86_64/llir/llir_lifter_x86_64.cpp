@@ -77,15 +77,18 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
             break;
 
-        case X86_INS_CMP:
+        case X86_INS_CMP: {llinsn.alu.op = llir::Alu::Op::SUB; llinsn.dest_cnt = 0; goto alu_2op_common; }
+        case X86_INS_SUB: {llinsn.alu.op = llir::Alu::Op::SUB; llinsn.dest_cnt = 1; goto alu_2op_common; }
+        alu_2op_common:
             assert(detail->x86.op_count == 2);
             llinsn.iclass = llir::Insn::Class::ALU;
-            llinsn.alu.op = llir::Alu::Op::SUB;
-            llinsn.dest_cnt = 0;
             llinsn.src_cnt = 2;
             llinsn.alu.modifies_flags = true;
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
             fill_operand(detail->x86.operands[1], llinsn.src[1]);
+            if (llinsn.dest_cnt)
+                fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+
             break;
 
         case X86_INS_MOVABS:

@@ -186,10 +186,12 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
                                                       llir::Register::Mask mask) {
     assert(insn.alu.modifies_flags);
 
-
     if (insn.dest_cnt) {
         // Instruction has a destination register - copy it there
-        TODO(); // Use macro$move_register_masked
+        assert(insn.dest[0].type == llir::Operand::Type::REG);
+        gpr_t dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
+        macro$move_register_masked(ctx.assembler, dest, GPR_FIXED_FLAG_RES, mask,
+                                   insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
     }
 
     if (!insn.alu.modifies_flags) {
@@ -814,7 +816,7 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
     } else {
         if (!src_shift) {
             // If the source isn't shifted, this can be accomplished with rldimi
-            assembler.insrdi(dest, src, dest_width, 64-dest_shift, false);
+            assembler.insrdi(dest, src, dest_width, (uint8_t)(64-(dest_width + dest_shift)), false);
 
             if (dest_width > src_width) {
                 // Extra bits were copied, clear high order
