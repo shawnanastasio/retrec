@@ -191,9 +191,32 @@ OVERFLOW_TESTS = [
     #FlagTestCase(64, "eax", "", "0x7FFFFFFF", "1", "add", "jo", "jno")
 ]
 
+ABOVE_TESTS = [
+    FlagTestCase(64, "rax", "", "1", "0", "cmp", "ja", "jb"), # !CF, !ZF
+    FlagTestCase(64, "rax", "", "1", "1", "cmp", "jbe", "ja"), # !CF, ZF
+    FlagTestCase(64, "rax", "", "1", "-1", "cmp", "jbe", "ja"), # CF, !ZF
+
+    FlagTestCase(32, "eax", "", "1", "0", "cmp", "ja", "jb"), # !CF, !ZF
+    FlagTestCase(32, "eax", "", "1", "1", "cmp", "jbe", "ja"), # !CF, ZF
+    FlagTestCase(32, "eax", "", "1", "-1", "cmp", "jbe", "ja"), # CF, !ZF
+
+    FlagTestCase(16, "ax", "", "1", "0", "cmp", "ja", "jb"), # !CF, !ZF
+    FlagTestCase(16, "ax", "", "1", "1", "cmp", "jbe", "ja"), # !CF, ZF
+    FlagTestCase(16, "ax", "", "1", "-1", "cmp", "jbe", "ja"), # CF, !ZF
+
+    FlagTestCase(8, "ah", "", "1", "0", "cmp", "ja", "jb"), # !CF, !ZF
+    FlagTestCase(8, "ah", "", "1", "1", "cmp", "jbe", "ja"), # !CF, ZF
+    FlagTestCase(8, "ah", "", "1", "-1", "cmp", "jbe", "ja"), # CF, !ZF
+
+    FlagTestCase(8, "al", "", "1", "0", "cmp", "ja", "jb"), # !CF, !ZF
+    FlagTestCase(8, "al", "", "1", "1", "cmp", "jbe", "ja"), # !CF, ZF
+    FlagTestCase(8, "al", "", "1", "-1", "cmp", "jbe", "ja"), # CF, !ZF
+]
+
 SUITES = {
     "CF" : CARRY_TESTS,
     "OF" : OVERFLOW_TESTS,
+    "ABOVE" : ABOVE_TESTS,
     "ALU" : ALU_TESTS,
 }
 

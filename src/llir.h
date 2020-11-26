@@ -87,7 +87,10 @@ struct Branch {
         CARRY,
         NOT_CARRY,
         OVERFLOW,
-        NOT_OVERFLOW
+        NOT_OVERFLOW,
+
+        X86_ABOVE, // CF=0 && ZF=0
+        X86_BELOW_EQ, // CF=1 || ZF=1
     } op;
 
     bool signed_comparison;
@@ -205,6 +208,8 @@ inline std::string to_string(const Branch &branch) {
         case Branch::Op::NOT_CARRY: ret += "NOT_CARRY,"; break;
         case Branch::Op::OVERFLOW: ret += "OVERFLOW,"; break;
         case Branch::Op::NOT_OVERFLOW: ret += "NOT_OVERFLOW,"; break;
+        case Branch::Op::X86_ABOVE: ret += "X86_ABOVE,"; break;
+        case Branch::Op::X86_BELOW_EQ: ret += "X86_BELOW_EQ,"; break;
         default:
             TODO();
     }

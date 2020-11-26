@@ -112,6 +112,8 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Branch::Op::NOT_CARRY:
                 case llir::Branch::Op::OVERFLOW:
                 case llir::Branch::Op::NOT_OVERFLOW:
+                case llir::Branch::Op::X86_ABOVE:
+                case llir::Branch::Op::X86_BELOW_EQ:
                     llir$branch$conditional(ctx, insn);
                     break;
 
@@ -384,65 +386,86 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
             // beq
             bo = BO::FIELD_SET;
             cr_field = assembler::CR_EQ;
-            goto common;
+            break;
 
         case llir::Branch::Op::NOT_EQ:
             // bne
             bo = BO::FIELD_CLR;
             cr_field = assembler::CR_EQ;
-            goto common;
+            break;
 
         case llir::Branch::Op::NEGATIVE:
             // blt
             bo = BO::FIELD_SET;
             cr_field = assembler::CR_LT;
-            goto common;
+            break;
 
         case llir::Branch::Op::NOT_NEGATIVE:
             // bnlt
             bo = BO::FIELD_CLR;
             cr_field = assembler::CR_LT;
-            goto common;
+            break;
 
         case llir::Branch::Op::POSITIVE:
             // bgt
             bo = BO::FIELD_SET;
             cr_field = assembler::CR_GT;
-            goto common;
+            break;
 
         case llir::Branch::Op::CARRY:
             // lazily evaluated
             macro$branch$conditional$carry(ctx, reg_allocator);
             bo = BO::FIELD_SET;
             cr_field = CR_LAZY_FIELD_CARRY;
-            goto common;
+            break;
 
         case llir::Branch::Op::NOT_CARRY:
             // lazily evaluated
             macro$branch$conditional$carry(ctx, reg_allocator);
             bo = BO::FIELD_CLR;
             cr_field = CR_LAZY_FIELD_CARRY;
-            goto common;
+            break;
 
         case llir::Branch::Op::OVERFLOW:
             // lazily evaluated
             macro$branch$conditional$overflow(ctx, reg_allocator);
             bo = BO::FIELD_SET;
             cr_field = CR_LAZY_FIELD_OVERFLOW;
-            goto common;
+            break;
 
         case llir::Branch::Op::NOT_OVERFLOW:
             // lazily evaluated
             macro$branch$conditional$overflow(ctx, reg_allocator);
             bo = BO::FIELD_CLR;
             cr_field = CR_LAZY_FIELD_OVERFLOW;
-            goto common;
+            break;
+
+        case llir::Branch::Op::X86_ABOVE:
+            // Relies on a combination of flags, one of which is lazily evaluated (CF)
+            macro$branch$conditional$carry(ctx, reg_allocator);
+
+            // !CR && !ZF can be implemented with a single NOR
+            ctx.assembler->crnor(CR_SCRATCH*4+0, CR_LAZY_FIELD_CARRY, 0*4+assembler::CR_EQ);
+
+            bo = BO::FIELD_SET;
+            cr_field = CR_SCRATCH*4+0;
+            break;
+
+        case llir::Branch::Op::X86_BELOW_EQ:
+            // Relies on a combination of flags, one of which is lazily evaluated (CF)
+            macro$branch$conditional$carry(ctx, reg_allocator);
+
+            // CR || ZF can be implemented with a single OR
+            ctx.assembler->cror(CR_SCRATCH*4+0, CR_LAZY_FIELD_CARRY, 0*4+assembler::CR_EQ);
+
+            bo = BO::FIELD_SET;
+            cr_field = CR_SCRATCH*4+0;
+            break;
 
         default:
             TODO();
     }
 
-common:
     // With the condition determined, emit a relocation for a conditional branch
     if (insn.src[0].type == llir::Operand::Type::IMM) {
         ctx.assembler->bc(bo, cr_field, 0);
@@ -653,7 +676,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     // 5. Carry is now valid and can be branched on conditionally
 
     // Skip to last instruction if CF has already been evaluated
-    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 20 * 4);
+    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 21 * 4);
 
     // Preserve cr0 in CR_SCRATCH
     ctx.assembler->mcrf(CR_SCRATCH, 0);
