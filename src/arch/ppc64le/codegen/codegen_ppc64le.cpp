@@ -1,6 +1,10 @@
-#include "llir.h"
+#include <llir.h>
 #include <arch/ppc64le/codegen/codegen_ppc64le.h>
+#include <arch/ppc64le/codegen/codegen_types.h>
+#include <arch/ppc64le/codegen/assembler.h>
 
+#include <type_traits>
+#include <variant>
 #include <cstring>
 
 using namespace retrec;
@@ -28,57 +32,56 @@ status_code codegen_ppc64le<T>::init() {
 }
 
 template <typename T>
+codegen_ppc64le<T>::gen_context::gen_context(const lifted_llir_block &llir_)
+        : llir(llir_) {
+    assembler = std::make_unique<ppc64le::assembler>();
+    stream = std::make_unique<ppc64le::instruction_stream>(*assembler);
+    assembler->set_stream(&*stream);
+}
+
+template <typename T>
 status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) {
 
     pr_debug("vmx offset: %zu\n", offsetof(cpu_context_ppc64le, vmx));
     pr_debug("host_translated_context offset: %zu\n",
                     offsetof(runtime_context_ppc64le, host_translated_context));
 
-    // Allocate an executable code buffer. For the initial size,
-    // we'll use the number of llir instructions * 4 bytes (ppc64 insn size) * 2 (fudge).
-    // As instructions are emitted, the buffer will be resized to the exact required size.
-    size_t initial_code_size = llir.get_insns().size() * 4 * 2;
-    void *code = econtext.get_code_allocator().allocate(initial_code_size);
-    if (!code) {
-        pr_error("Failed to allocate suitably sized code buffer!\n");
-        return status_code::NOMEM;
-    }
-    simple_region_writer code_buffer(econtext.get_code_allocator(), code, initial_code_size);
-
-    // First pass: emit instructions
-    gen_context context(llir, code_buffer, assembler(code_buffer));
+    // First pass: dispatch and translate all LLIR instructions
+    gen_context context(llir);
     for (const llir::Insn &insn : llir.get_insns()) {
         dispatch(context, insn);
     }
 
-    // Shrink region to only use the minimum necessary space
-    code_buffer.shrink();
-
     // Second pass: resolve relocations
-    if (context.relocations.size()) {
-        status_code ret = resolve_relocations(context);
-        if (ret != status_code::SUCCESS) {
-            pr_error("Failed to resolve relocations for generated code: %s!\n", status_code_str(ret));
-            return ret;
-        }
+    status_code res = resolve_relocations(context);
+    if (res != status_code::SUCCESS) {
+        pr_error("Failed to resolve relocations for generated code: %s!\n", status_code_str(res));
+        return res;
     }
 
-    // Final pass (debug): Disassemble buffer with capstone and print out
-    csh cs_handle;
-    if (cs_open(CS_ARCH_PPC, (cs_mode)(CS_MODE_64 + CS_MODE_LITTLE_ENDIAN), &cs_handle) != CS_ERR_OK) {
-        pr_error("Failed to open capstone handle for disassembly!\n");
+    // Third pass: Emit all generated instructions to a code buffer
+    size_t code_size = context.stream->code_size();
+    void *code = econtext.get_code_allocator().allocate(code_size);
+    if (!code) {
+        pr_error("Failed to allocate suitably sized code buffer!\n");
         return status_code::NOMEM;
     }
 
+    res = context.stream->emit_all_to_buf((uint8_t *)code, code_size);
+    if (res != status_code::SUCCESS) {
+        pr_error("Failed to emit instructions to code buffer: %s!\n", status_code_str(res));
+        return res;
+    }
+
     // Return translated code region
-    out = {code, code_buffer.pos()};
+    out = {code, code_size};
 
     return status_code::SUCCESS;
 }
 
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
-    ctx.local_branch_targets.insert({ insn.address, ctx.code_buffer.pos_addr() });
+    ctx.local_branch_targets.insert({ insn.address, ctx.stream->size() });
     switch (insn.iclass) {
         case llir::Insn::Class::ALU:
             switch (insn.alu.op) {
@@ -133,43 +136,85 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
 
 template <typename T>
 status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_context &ctx) {
-    for (auto &relocation : ctx.relocations) {
+    // Walk the instruction stream and look for relocationsa
+    for (size_t i = 0; i < ctx.stream->size(); i++) {
+        auto &insn = (*ctx.stream)[i];
+
+        if (!insn.aux)
+            continue;
+        instruction_aux &aux = *insn.aux;
+
+        if (!aux.relocation)
+            continue;
+        relocation &relocation = *aux.relocation;
+
         auto res = std::visit(
             Overloaded {
-                [&](const Relocation::BranchImmUnconditional &data) -> status_code {
-                    auto target = ctx.local_branch_targets.find(data.abs_vaddr);
-                    if (target == ctx.local_branch_targets.end()) {
+                [&](const relocation::imm_rel_vaddr_fixup &data) -> status_code {
+                    /**
+                     * imm_rel_vaddr_fixup - Modify the instruction's immediate field to point to
+                     * the relative address corresponding to the provided absolute target virtual address.
+                     */
+                    auto target_index_it = ctx.local_branch_targets.find(data.abs_vaddr);
+                    if (target_index_it == ctx.local_branch_targets.end()) {
                         pr_error("Unable to resolve Immediate Branch to target 0x%lx\n", target);
                         return status_code::BADBRANCH;
                     }
+                    size_t target_index = target_index_it->second;
 
-                    {
-                        uint64_t my_address = (uint64_t) ctx.code_buffer.start() + relocation.offset;
-                        auto temp_assembler = ctx.assembler.create_temporary(relocation.offset);
-                        macro$branch$unconditional(temp_assembler, my_address, target->second, relocation.insn_cnt);
+                    // Calculate the target's relative offset from us
+                    int64_t target_off = target_index*INSN_SIZE - i*INSN_SIZE;
+
+                    // Helper to fix up absolute branches
+                    auto fixup_absolute_branch = [](bool &aa) {
+                        if (aa) {
+                            pr_warn("Relocation requires changing branch from absolute to relative\n");
+                            aa = false;
+                        }
+                    };
+
+                    // Disable compiler diagnostics for implicit conversions for this block.
+                    ALLOW_IMPLICIT_INT_CONVERSION();
+
+                    // Update relative address
+                    switch (insn.operation()) {
+                        case Operation::B:
+                        {
+                            // B can do 26-bit relative branches
+                            if (target_off < INT26_MIN || target_off > INT26_MAX)
+                                return status_code::BADBRANCH;
+
+                            insn_arg<0 /* target */, Operation::B>(insn) = target_off;
+                            fixup_absolute_branch(insn_arg<1 /* aa */, Operation::B>(insn));
+
+                            break;
+                        }
+
+                        case Operation::BC:
+                        {
+                            // BC can do 16-bit relative branches
+                            if (target_off < INT16_MIN || target_off > INT16_MAX)
+                                return status_code::BADBRANCH;
+
+                            insn_arg<2 /* target */, Operation::BC>(insn) = target_off;
+                            fixup_absolute_branch(insn_arg<3 /* aa */, Operation::BC>(insn));
+
+                            break;
+                        }
+
+                        default:
+                            return status_code::UNIMPL_INSN;
                     }
+
+                    DISALLOW_IMPLICIT_INT_CONVERSION();
 
                     return status_code::SUCCESS;
                 },
-
-                [&](const Relocation::BranchImmConditional &data) -> status_code {
-                    auto target = ctx.local_branch_targets.find(data.abs_vaddr);
-                    if (target == ctx.local_branch_targets.end())
-                        return status_code::BADBRANCH;
-
-                    {
-                        uint64_t my_address = (uint64_t) ctx.code_buffer.start() + relocation.offset;
-                        auto temp_assembler = ctx.assembler.create_temporary(relocation.offset);
-                        macro$branch$conditional(temp_assembler, my_address, target->second, data.bo, data.cr_field,
-                                                 relocation.insn_cnt);
-                    }
-
-                    return status_code::SUCCESS;
-                }
             },
             relocation.data
         );
 
+        // Bail out if a relocation failed
         if (res != status_code::SUCCESS)
             return res;
     }
@@ -190,7 +235,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
         // Instruction has a destination register - copy it there
         assert(insn.dest[0].type == llir::Operand::Type::REG);
         gpr_t dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
-        macro$move_register_masked(ctx.assembler, dest, GPR_FIXED_FLAG_RES, mask,
+        macro$move_register_masked(*ctx.assembler, dest, GPR_FIXED_FLAG_RES, mask,
                                    insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
     }
 
@@ -201,13 +246,13 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
 
     // Record flag operation type in GPR_FIXED_FLAG_OP_TYPE
     uint32_t flag_data = build_flag_op_data(op, mask);
-    macro$load_imm(ctx.assembler, GPR_FIXED_FLAG_OP_TYPE, flag_data, llir::Register::Mask::Low32, true);
+    macro$load_imm(*ctx.assembler, GPR_FIXED_FLAG_OP_TYPE, flag_data, llir::Register::Mask::Low32, true);
 
     // Set lazy flag status according to operation type
     switch (op) {
         case LastFlagOp::SUB:
             // SUB needs carry+sign+parity+? to be lazily evaluated
-            ctx.assembler.mcrf(CR_LAZYVALID, CR_ZEROS);
+            ctx.assembler->mcrf(CR_LAZYVALID, CR_ZEROS);
             break;
 
         default:
@@ -241,14 +286,14 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
 
         if (op.reg.mask != llir::Register::Mask::LowLowHigh8) {
             // Directly load operand into FLAG_OP register with mask
-            macro$mask_register(ctx.assembler, target, gpr, default_mask, false);
+            macro$mask_register(*ctx.assembler, target, gpr, default_mask, false);
         } else {
             // Load operand into FLAG_OP register with mask and shift
-            ctx.assembler.rldicl(target, gpr, 64-8, 64-8, false);
+            ctx.assembler->rldicl(target, gpr, 64-8, 64-8, false);
         }
     } else if (op.type == llir::Operand::Type::IMM) {
         // Operand is an immediate, load it into the appropriate FLAG_OP reg
-        macro$load_imm(ctx.assembler, target, op.imm, default_mask, true);
+        macro$load_imm(*ctx.assembler, target, op.imm, default_mask, true);
     } else { TODO(); }
 }
 
@@ -263,7 +308,7 @@ void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &i
 
     gpr_t rt = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
 
-    macro$load_imm(ctx.assembler, rt, insn.src[0].imm, insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
+    macro$load_imm(*ctx.assembler, rt, insn.src[0].imm, insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
 }
 
 template <typename T>
@@ -279,9 +324,9 @@ void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) 
     llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2, mask);
 
     if (insn.alu.modifies_flags)
-        ctx.assembler.subo_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->subo_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
     else
-        ctx.assembler.subo(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->subo(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
 
     // Finalize operation
     llir$alu$helper$finalize_op(ctx, insn, LastFlagOp::SUB, mask);
@@ -317,9 +362,9 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
     if (insn.src[0].type == llir::Operand::Type::IMM) {
         uint64_t target = resolve_branch_target(insn);
 
-        // Experiment: always emit a relocation. This could make optimizations in later passes easier
-        ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmUnconditional{target} });
-        ctx.assembler.nop();
+        // Always emit a relocation. This could make optimizations in later passes easier.
+        ctx.assembler->b(0);
+        ctx.stream->add_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
     } else { TODO(); }
 }
 
@@ -331,65 +376,65 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     uint64_t target = resolve_branch_target(insn);
     auto &reg_allocator = ctx.reg_allocator();
 
-    assembler::BO bo;
+    BO bo;
     uint8_t cr_field;
 
     switch (insn.branch.op) {
         case llir::Branch::Op::EQ:
             // beq
-            bo = assembler::BO::FIELD_SET;
+            bo = BO::FIELD_SET;
             cr_field = assembler::CR_EQ;
             goto common;
 
         case llir::Branch::Op::NOT_EQ:
             // bne
-            bo = assembler::BO::FIELD_CLR;
+            bo = BO::FIELD_CLR;
             cr_field = assembler::CR_EQ;
             goto common;
 
         case llir::Branch::Op::NEGATIVE:
             // blt
-            bo = assembler::BO::FIELD_SET;
+            bo = BO::FIELD_SET;
             cr_field = assembler::CR_LT;
             goto common;
 
         case llir::Branch::Op::NOT_NEGATIVE:
             // bnlt
-            bo = assembler::BO::FIELD_CLR;
+            bo = BO::FIELD_CLR;
             cr_field = assembler::CR_LT;
             goto common;
 
         case llir::Branch::Op::POSITIVE:
             // bgt
-            bo = assembler::BO::FIELD_SET;
+            bo = BO::FIELD_SET;
             cr_field = assembler::CR_GT;
             goto common;
 
         case llir::Branch::Op::CARRY:
             // lazily evaluated
             macro$branch$conditional$carry(ctx, reg_allocator);
-            bo = assembler::BO::FIELD_SET;
+            bo = BO::FIELD_SET;
             cr_field = CR_LAZY_FIELD_CARRY;
             goto common;
 
         case llir::Branch::Op::NOT_CARRY:
             // lazily evaluated
             macro$branch$conditional$carry(ctx, reg_allocator);
-            bo = assembler::BO::FIELD_CLR;
+            bo = BO::FIELD_CLR;
             cr_field = CR_LAZY_FIELD_CARRY;
             goto common;
 
         case llir::Branch::Op::OVERFLOW:
             // lazily evaluated
             macro$branch$conditional$overflow(ctx, reg_allocator);
-            bo = assembler::BO::FIELD_SET;
+            bo = BO::FIELD_SET;
             cr_field = CR_LAZY_FIELD_OVERFLOW;
             goto common;
 
         case llir::Branch::Op::NOT_OVERFLOW:
             // lazily evaluated
             macro$branch$conditional$overflow(ctx, reg_allocator);
-            bo = assembler::BO::FIELD_CLR;
+            bo = BO::FIELD_CLR;
             cr_field = CR_LAZY_FIELD_OVERFLOW;
             goto common;
 
@@ -400,8 +445,8 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
 common:
     // With the condition determined, emit a relocation for a conditional branch
     if (insn.src[0].type == llir::Operand::Type::IMM) {
-        ctx.relocations.push_back({ ctx.code_buffer.pos(), 1, Relocation::BranchImmConditional{bo, cr_field, target} });
-        ctx.assembler.nop();
+        ctx.assembler->bc(bo, cr_field, 0);
+        ctx.stream->add_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
     } else { TODO(); }
 }
 
@@ -409,7 +454,6 @@ template <typename T>
 void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::Insn &insn) {
     pr_debug("interrupt$syscall\n");
     assert(insn.dest_cnt == 0 && insn.src_cnt == 0);
-    ppc64le::assembler &assembler = ctx.assembler;
 
     // To handle a syscall, we have to re-enter native code, so emit a branch to arch_leave_translated_code.
     // Special considerations:
@@ -419,19 +463,19 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
     gpr_t scratch = ctx.reg_allocator().allocate_gpr();
 
     // Store address of callback
-    macro$load_imm(assembler, scratch, (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL, llir::Register::Mask::Full64, true);
-    assembler.std(scratch, 11, offsetof(runtime_context_ppc64le, native_function_call_target));
+    macro$load_imm(*ctx.assembler, scratch, (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL, llir::Register::Mask::Full64, true);
+    ctx.assembler->std(scratch, 11, offsetof(runtime_context_ppc64le, native_function_call_target));
 
     // Load arch_leave_translated_code
-    macro$load_imm(assembler, scratch, (int64_t)arch_leave_translated_code, llir::Register::Mask::Full64, true);
-    assembler.mtspr(assembler::SPR::CTR, scratch);
+    macro$load_imm(*ctx.assembler, scratch, (int64_t)arch_leave_translated_code, llir::Register::Mask::Full64, true);
+    ctx.assembler->mtspr(SPR::CTR, scratch);
 
     // Save LR
-    assembler.mfspr(scratch, assembler::SPR::LR);
-    assembler.std(scratch, 11, TRANSLATED_CTX_OFF(lr));
+    ctx.assembler->mfspr(scratch, SPR::LR);
+    ctx.assembler->std(scratch, 11, TRANSLATED_CTX_OFF(lr));
 
     // Branch
-    assembler.bctrl();
+    ctx.assembler->bctrl();
 
     ctx.reg_allocator().free_gpr(scratch);
 }
@@ -571,7 +615,7 @@ void codegen_ppc64le<T>::macro$branch$unconditional(assembler &assembler, uint64
 
 template <typename T>
 void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t my_address, uint64_t target,
-                                                  assembler::BO bo, uint8_t cr_field, size_t insn_cnt) {
+                                                  BO bo, uint8_t cr_field, size_t insn_cnt) {
     int64_t diff = target - my_address;
     if (rel16_in_range(my_address, target)) {
         assert(insn_cnt >= 1); // Enough space for a single branch insn
@@ -609,105 +653,105 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
     // 5. Carry is now valid and can be branched on conditionally
 
     // Skip to last instruction if CF has already been evaluated
-    ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_CARRY, 20 * 4);
+    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 20 * 4);
 
     // Preserve cr0 in CR_SCRATCH
-    ctx.assembler.mcrf(CR_SCRATCH, 0);
+    ctx.assembler->mcrf(CR_SCRATCH, 0);
 
     // Extract offset, add to NIA, branch
-    ctx.assembler.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-8, false); // Mask off all but the low 8 bits
+    ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-8, false); // Mask off all but the low 8 bits
     gpr_t scratch = allocator.allocate_gpr();
-    ctx.assembler.lnia(scratch);
-    ctx.assembler.add(0, 0, scratch);
+    ctx.assembler->lnia(scratch);
+    ctx.assembler->add(0, 0, scratch);
     allocator.free_gpr(scratch);
-    ctx.assembler.mtspr(assembler::SPR::CTR, 0);
-    ctx.assembler.bctr();
+    ctx.assembler->mtspr(SPR::CTR, 0);
+    ctx.assembler->bctr();
 
     { // 8-bit - 2 insns
         // Extract carry bit from res[8]. This sets cr0[gt] to the inverse of the carry bit.
-        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64 - 8, 63, true);
-        ctx.assembler.b(10 * 4);
+        ctx.assembler->rldicl(0, GPR_FIXED_FLAG_RES, 64 - 8, 63, true);
+        ctx.assembler->b(10 * 4);
     }
 
     { // 16-bit - 2 insns
         // Extract carry bit from res[16]. This sets cr0[gt] to the inverse of the carry bit.
-        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64 - 16, 63, true);
-        ctx.assembler.b(8 * 4);
+        ctx.assembler->rldicl(0, GPR_FIXED_FLAG_RES, 64 - 16, 63, true);
+        ctx.assembler->b(8 * 4);
     }
 
     { // 32-bit - 2 insns
         // Extract carry bit from res[32]. This sets cr0[gt] to the inverse of the carry bit.
-        ctx.assembler.rldicl(0, GPR_FIXED_FLAG_RES, 64 - 32, 63, true);
-        ctx.assembler.b(6 * 4);
+        ctx.assembler->rldicl(0, GPR_FIXED_FLAG_RES, 64 - 32, 63, true);
+        ctx.assembler->b(6 * 4);
     }
 
     { // 64-bit (ADD) - 3 insns
         // Calculate carry bit and set cr0[eq] accordingly.
-        ctx.assembler.subc(0, GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1);
-        ctx.assembler.sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
-        ctx.assembler.b(3 * 4);
+        ctx.assembler->subc(0, GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1);
+        ctx.assembler->sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
+        ctx.assembler->b(3 * 4);
     }
 
     { // 64-bit (SUB) - 2 insns
         // Calculate carry bit and set cr0[eq] accordingly.
-        ctx.assembler.subc(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_RES);
-        ctx.assembler.sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
+        ctx.assembler->subc(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_RES);
+        ctx.assembler->sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
         /* fallthrough */
     }
 
     // Move !cr0[eq] to CR_LAZY[CARRY]
-    ctx.assembler.crnot(CR_LAZY_FIELD_CARRY, 4*0 + assembler::CR_EQ);
+    ctx.assembler->crnot(CR_LAZY_FIELD_CARRY, 4*0 + assembler::CR_EQ);
 
     // Set CR_LAZYVALID_CARRY to indicate that the Carry flag is valid
-    ctx.assembler.crset(CR_LAZYVALID_CARRY);
+    ctx.assembler->crset(CR_LAZYVALID_CARRY);
 
     // Restore cr0
-    ctx.assembler.mcrf(0, CR_SCRATCH);
+    ctx.assembler->mcrf(0, CR_SCRATCH);
 }
 
 template <typename T>
 void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typename T::RegisterAllocatorT &allocator) {
     // Skip to last instruction if OF has already been evaluated
-    ctx.assembler.bc(assembler::BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 20 * 4);
+    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 20 * 4);
 
     // Allocate scratch registers for use in calculation
     gpr_t scratch1 = allocator.allocate_gpr();
 
     // Branch to calculation code for operation type
-    ctx.assembler.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[15:14] into r0
-    ctx.assembler.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
-    ctx.assembler.bc(assembler::BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 8 * 4); // Less than ADD -> SUB
-    ctx.assembler.bc(assembler::BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 2 * 4); // Equal to ADD
-    ctx.assembler.invalid(); // Emit an invalid instruction to assert not reached
+    ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[15:14] into r0
+    ctx.assembler->cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
+    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 8 * 4); // Less than ADD -> SUB
+    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 2 * 4); // Equal to ADD
+    ctx.assembler->invalid(); // Emit an invalid instruction to assert not reached
 
     { // ADD
-        ctx.assembler.add(scratch1, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler.eqv(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler._xor(scratch1, scratch1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler._and(0, 0, scratch1);
-        ctx.assembler.b(5 * 4); // Branch to common shifting code
+        ctx.assembler->add(scratch1, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->eqv(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->_xor(scratch1, scratch1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->_and(0, 0, scratch1);
+        ctx.assembler->b(5 * 4); // Branch to common shifting code
     }
 
     { // SUB
-        ctx.assembler.sub(scratch1, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler._xor(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler.eqv(scratch1, scratch1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler._and(0, 0, scratch1);
+        ctx.assembler->sub(scratch1, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->_xor(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->eqv(scratch1, scratch1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->_and(0, 0, scratch1);
         // fall through to common shifting code
     }
 
     // The overflow bit is now in r0. Depending on operation width, shift it into bit 0, and clear all left.
-    ctx.assembler.rldicl(scratch1, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OVERFLOW_SHIFT, 64-6, false);
-    ctx.assembler.rldcl(0, 0, scratch1, 63, false); // Put overflow flag into r0[0]
-    ctx.assembler.cmpldi(CR_SCRATCH, 0, 1);
+    ctx.assembler->rldicl(scratch1, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OVERFLOW_SHIFT, 64-6, false);
+    ctx.assembler->rldcl(0, 0, scratch1, 63, false); // Put overflow flag into r0[0]
+    ctx.assembler->cmpldi(CR_SCRATCH, 0, 1);
 
     allocator.free_gpr(scratch1);
 
     // CR_SCRATCH[eq] now contains the Overflow flag. Move it into CR_LAZY[OVERFLOW].
-    ctx.assembler.crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
+    ctx.assembler->crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
 
     // Mark OF as valid
-    ctx.assembler.crset(CR_LAZYVALID_OVERFLOW);
+    ctx.assembler->crset(CR_LAZYVALID_OVERFLOW);
 }
 
 template <typename T>

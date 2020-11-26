@@ -85,7 +85,7 @@ gpr_t register_allocator_x86_64::allocate_gpr() {
         }
     }
 
-    assert(0); // No free registers
+    ASSERT_NOT_REACHED(); // No free registers
 }
 
 gpr_t register_allocator_x86_64::get_fixed_gpr(const llir::Register &reg) {

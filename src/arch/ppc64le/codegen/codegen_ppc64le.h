@@ -4,7 +4,7 @@
 #include <llir.h>
 #include <codegen.h>
 #include <execution_context.h>
-#include <arch/ppc64le/codegen/assembler.h>
+#include <arch/ppc64le/codegen/codegen_types.h>
 #include <arch/ppc64le/codegen/register_allocator.h>
 #include <arch/ppc64le/cpu_context_ppc64le.h>
 #include <arch/x86_64/cpu_context_x86_64.h>
@@ -93,15 +93,6 @@ enum class LastFlagOp : uint32_t {
     ADD = (1 << 8),
 };
 
-struct Relocation {
-    struct BranchImmUnconditional { uint64_t abs_vaddr; };
-    struct BranchImmConditional { assembler::BO bo; uint8_t cr_field; uint64_t abs_vaddr; };
-
-    size_t offset;
-    size_t insn_cnt; // Number of instructions reserved for this Relocation
-    std::variant<BranchImmUnconditional, BranchImmConditional> data;
-};
-
 struct target_traits_x86_64 {
     using RegisterAllocatorT = register_allocator_x86_64;
 };
@@ -113,23 +104,22 @@ class codegen_ppc64le final : public codegen {
     Architecture target;
     execution_context &econtext;
 
+    /**
+     * All codegen state used in translation of a single code block
+     */
     struct gen_context {
         const lifted_llir_block &llir;
-        simple_region_writer &code_buffer;
-        ppc64le::assembler assembler;
+        std::unique_ptr<ppc64le::assembler> assembler;
+        std::unique_ptr<ppc64le::instruction_stream> stream;
         typename Traits::RegisterAllocatorT m_reg_allocator;
 
-        // Map of (target binary vaddr) : (generated code vaddr) for branch targets
-        std::unordered_map<uint64_t, uint64_t> local_branch_targets;
-        // Relocations that get resolved in second pass
-        std::vector<ppc64le::Relocation> relocations;
+        // Map of (target binary vaddr) : (instruction stream offset) for branch targets
+        std::unordered_map<uint64_t, size_t> local_branch_targets;
 
-        gen_context(const lifted_llir_block &llir_, simple_region_writer &code_buffer_, ppc64le::assembler assembler_) :
-            llir(llir_), code_buffer(code_buffer_), assembler(std::move(assembler_)) {}
+        gen_context(const lifted_llir_block &llir_);
 
         auto &reg_allocator() { return m_reg_allocator; }
     };
-
 
     static uint64_t resolve_branch_target(const llir::Insn &insn);
 
@@ -214,7 +204,7 @@ class codegen_ppc64le final : public codegen {
                         bool zero_others);
     void macro$branch$unconditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target, size_t insn_cnt);
     void macro$branch$conditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target,
-                                  ppc64le::assembler::BO bo, uint8_t cr_field, size_t insn_cnt);
+                                  ppc64le::BO bo, uint8_t cr_field, size_t insn_cnt);
     void macro$branch$conditional$carry(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator);
     void macro$branch$conditional$overflow(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator);
     void macro$mask_register(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src, llir::Register::Mask mask,

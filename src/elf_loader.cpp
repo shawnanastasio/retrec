@@ -115,9 +115,11 @@ status_code elf_loader::init() {
         return a.value < b.value;
     });
 
+#if RETREC_MINIMUM_LOG_LEVEL <= _LOGL_DEBUG
     for (auto &e : symbols) {
-        pr_info("%s: %zu (shn: %zu)\n", e.name.c_str(), e.value, e.shndx);
+        pr_debug("%s: %zu (shn: %zu)\n", e.name.c_str(), e.value, e.shndx);
     }
+#endif
 
     return status_code::SUCCESS;
 }
