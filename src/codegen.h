@@ -41,6 +41,7 @@ class codegen {
 public:
     virtual status_code init() = 0;
     virtual status_code translate(const lifted_llir_block& insns, std::optional<translated_code_region> &out) = 0;
+    virtual ~codegen() {}
 };
 
 }

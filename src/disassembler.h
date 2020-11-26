@@ -23,6 +23,7 @@ using unique_cs_insn_arr = std::unique_ptr<cs_insn[], cs_insn_deleter>;
 class llir_lifter {
 public:
     virtual status_code lift(cs_insn *insn, std::vector<llir::Insn> &out) = 0;
+    virtual ~llir_lifter() {};
 };
 
 class disassembler {

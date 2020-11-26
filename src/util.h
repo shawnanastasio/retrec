@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <cstdint>
 #include <cassert>
+#include <cstdlib>
 
 #include <unistd.h>
 
@@ -64,10 +65,15 @@ enum class Architecture {
     classname(const classname &other) = delete; \
     classname& operator=(const classname &other) = delete; \
     classname(const classname &&other) = delete; \
-    classname& operator=(const classname &&other) = delete;
+    classname& operator=(classname &&other) = delete;
 
 template<class... Ts> struct Overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
+
+template <typename R, typename T>
+constexpr std::remove_reference_t<R> ref_cast(T val) {
+    return static_cast<std::remove_reference_t<R>>(val);
+}
 
 //
 // Logging
@@ -85,14 +91,27 @@ enum log_level {
 };
 
 void log_impl(log_level level, const char *file, int line, const char *fmt, ...);
-//#define log(level, fmt, ...) retrec::log_impl(level, &__FILE__[SOURCE_PATH_SIZE], __LINE__, fmt, ##__VA_ARGS__)
+
+} // namespace retrec
 
 #define TODO() do { \
     pr_error("Unimplemented code path hit!\n"); \
-    assert(0); \
+    abort(); \
 } while(0)
 
-} // namespace retrec
+#define ASSERT_NOT_REACHED() do { \
+    pr_error("Assert not reached!\n"); \
+    abort(); \
+} while (0)
+
+#define ALLOW_IMPLICIT_INT_CONVERSION() do { \
+    _Pragma("GCC diagnostic push"); \
+    _Pragma("GCC diagnostic ignored \"-Wconversion\""); \
+} while (0)
+
+#define DISALLOW_IMPLICIT_INT_CONVERSION() do { \
+    _Pragma("GCC diagnostic pop"); \
+} while (0)
 
 #ifndef RETREC_MINIMUM_LOG_LEVEL
 #error "RETREC_MINIMUM_LOG_LEVEL not defined! Broken build system?"

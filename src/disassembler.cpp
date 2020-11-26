@@ -50,7 +50,7 @@ status_code disassembler::init() {
             if (cs_open(capstone_arch, capstone_mode, &capstone_handle) != CS_ERR_OK)
                 return status_code::NOMEM;
 
-            lifter = std::make_unique<llir_lifter_x86_64>(capstone_handle);
+            lifter = std::make_unique<llir_lifter_x86_64>();
             break;
 
         default:

@@ -21,6 +21,8 @@ static inline void relative_jump_fixup(llir::Insn &llinsn) {
     }
 }
 
+llir_lifter_x86_64::~llir_lifter_x86_64() {}
+
 status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out) {
     cs_detail *detail = insn->detail;
     llir::Insn llinsn;

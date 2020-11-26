@@ -25,6 +25,7 @@ public:
     virtual simple_placement_allocator &get_code_allocator() = 0;
     virtual status_code initialize_runtime_context(Architecture target_arch, translated_code_region *entry) = 0;
     virtual void enter_translated_code() = 0;
+    virtual ~execution_context() {};
 };
 
 //
@@ -41,7 +42,7 @@ class simple_execution_context final : public execution_context {
 public:
     DISABLE_COPY_AND_MOVE(simple_execution_context)
     simple_execution_context() : vaddr_map(getpid()) {}
-    ~simple_execution_context() { TODO(); }
+    ~simple_execution_context();
 
     status_code init() override;
     process_memory_map &map() override { return vaddr_map; }

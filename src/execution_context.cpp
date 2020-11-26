@@ -5,6 +5,8 @@
 
 using namespace retrec;
 
+simple_execution_context::~simple_execution_context() {}
+
 status_code simple_execution_context::init() {
     // Setup virtual address space allocator
     status_code ret = vaddr_map.init();
