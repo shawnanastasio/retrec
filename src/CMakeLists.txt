@@ -14,8 +14,8 @@ add_executable(retrec
     dynamic_recompiler.h
     elf_loader.cpp
     elf_loader.h
-    util.h
-    util.cpp
+    util/util.h
+    util/util.cpp
     execution_context.cpp
     execution_context.h
     disassembler.cpp
