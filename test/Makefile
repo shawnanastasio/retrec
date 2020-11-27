@@ -1,7 +1,7 @@
 SRCS:=$(shell find . -name "*.S")
 OBJS:=$(SRCS:.S=.o)
 TARGETS:=$(SRCS:.S=.bin)
-GENERATED_TARGETS=sf.gen.bin cf.gen.bin of.gen.bin above.gen.bin greater_eq.gen.bin alu.gen.bin
+GENERATED_TARGETS=sf.gen.bin cf.gen.bin of.gen.bin above.gen.bin greater_eq.gen.bin greater.gen.bin alu.gen.bin
 GENERATED_SRCS=$(GENERATED_TARGETS:.bin=.S)
 .SECONDARY:
 

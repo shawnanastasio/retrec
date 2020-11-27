@@ -267,12 +267,50 @@ SIGN_TESTS = [
     FlagTestCase(8, "al", "", "-1", "1", "cmp", "js", "jns"), # SF=1
 ]
 
+GREATER_TESTS = [
+    FlagTestCase(64, "rax", "", "1", "0", "cmp", "jg", "jle"), # !ZF, !SF, !OF
+    FlagTestCase(64, "rax", "", "0x7FFFFFFFFFFFFFFF", "-1", "cmp", "jg", "jle"), # !ZF, SF, OF
+    FlagTestCase(64, "rax", "", "1", "1", "cmp", "jle", "jg"), # ZF, !SF, !OF
+    FlagTestCase(64, "rax", "", "-1", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(64, "rax", "", "-2", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(64, "rax", "", "0", "1", "cmp", "jle", "jg"), # !ZF, SF, OF
+
+    FlagTestCase(32, "eax", "", "1", "0", "cmp", "jg", "jle"), # !ZF, !SF, !OF
+    FlagTestCase(32, "eax", "", "0x7FFFFFFF", "-1", "cmp", "jg", "jle"), # !ZF, SF, OF
+    FlagTestCase(32, "eax", "", "1", "1", "cmp", "jle", "jg"), # ZF, !SF, !OF
+    FlagTestCase(32, "eax", "", "-1", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(32, "eax", "", "-2", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(32, "eax", "", "0", "1", "cmp", "jle", "jg"), # !ZF, SF, OF
+
+    FlagTestCase(16, "ax", "", "1", "0", "cmp", "jg", "jle"), # !ZF, !SF, !OF
+    FlagTestCase(16, "ax", "", "0x7FFF", "-1", "cmp", "jg", "jle"), # !ZF, SF, OF
+    FlagTestCase(16, "ax", "", "1", "1", "cmp", "jle", "jg"), # ZF, !SF, !OF
+    FlagTestCase(16, "ax", "", "-1", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(16, "ax", "", "-2", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(16, "ax", "", "0", "1", "cmp", "jle", "jg"), # !ZF, SF, OF
+
+    FlagTestCase(8, "ah", "", "1", "0", "cmp", "jg", "jle"), # !ZF, !SF, !OF
+    FlagTestCase(8, "ah", "", "0x7F", "-1", "cmp", "jg", "jle"), # !ZF, SF, OF
+    FlagTestCase(8, "ah", "", "1", "1", "cmp", "jle", "jg"), # ZF, !SF, !OF
+    FlagTestCase(8, "ah", "", "-1", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(8, "ah", "", "-2", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(8, "ah", "", "0", "1", "cmp", "jle", "jg"), # !ZF, SF, OF
+
+    FlagTestCase(8, "al", "", "1", "0", "cmp", "jg", "jle"), # !ZF, !SF, !OF
+    FlagTestCase(8, "al", "", "0x7F", "-1", "cmp", "jg", "jle"), # !ZF, SF, OF
+    FlagTestCase(8, "al", "", "1", "1", "cmp", "jle", "jg"), # ZF, !SF, !OF
+    FlagTestCase(8, "al", "", "-1", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(8, "al", "", "-2", "-1", "cmp", "jle", "jg"), # ZF, !SF, OF
+    FlagTestCase(8, "al", "", "0", "1", "cmp", "jle", "jg"), # !ZF, SF, OF
+]
+
 SUITES = {
     "SF" : SIGN_TESTS,
     "CF" : CARRY_TESTS,
     "OF" : OVERFLOW_TESTS,
     "ABOVE" : ABOVE_TESTS,
     "GREATER_EQ" : GREATER_EQ_TESTS,
+    "GREATER" : GREATER_TESTS,
     "ALU" : ALU_TESTS,
 }
 
