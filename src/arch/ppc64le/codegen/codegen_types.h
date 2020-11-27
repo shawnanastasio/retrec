@@ -23,6 +23,7 @@
     x(B, assembler::b_internal) \
     x(BC, assembler::bc_internal) \
     x(BCCTR, assembler::bcctr_internal) \
+    x(CMPI, assembler::cmpi) \
     x(CMP, assembler::cmp) \
     x(CMPL, assembler::cmpl) \
     x(CMPLI, assembler::cmpli) \
@@ -35,6 +36,8 @@
     x(CRORC, assembler::crorc) \
     x(CRXOR, assembler::crxor) \
     x(EQV, assembler::creqv) \
+    x(EXTSB, assembler::extsb) \
+    x(EXTSH, assembler::extsh) \
     x(MCRF, assembler::mcrf) \
     x(MCRXRX, assembler::mcrxrx) \
     x(MFCR, assembler::mfcr) \

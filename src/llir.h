@@ -89,8 +89,10 @@ struct Branch {
         OVERFLOW,
         NOT_OVERFLOW,
 
-        X86_ABOVE, // CF=0 && ZF=0
-        X86_BELOW_EQ, // CF=1 || ZF=1
+        X86_ABOVE,      // CF=0 && ZF=0
+        X86_BELOW_EQ,   // CF=1 || ZF=1
+        X86_GREATER_EQ, // SF == OF
+        X86_LESS,       // SF != OF
     } op;
 
     bool signed_comparison;
@@ -210,6 +212,8 @@ inline std::string to_string(const Branch &branch) {
         case Branch::Op::NOT_OVERFLOW: ret += "NOT_OVERFLOW,"; break;
         case Branch::Op::X86_ABOVE: ret += "X86_ABOVE,"; break;
         case Branch::Op::X86_BELOW_EQ: ret += "X86_BELOW_EQ,"; break;
+        case Branch::Op::X86_GREATER_EQ: ret += "X86_GREATER_EQ,"; break;
+        case Branch::Op::X86_LESS: ret += "X86_LESS,"; break;
         default:
             TODO();
     }
@@ -231,7 +235,6 @@ template<>
 inline std::string to_string(const Interrupt &interrupt) {
     switch (interrupt.op) {
         case Interrupt::Op::SYSCALL: return "SYSCALL";
-        default:
             TODO();
     }
 }

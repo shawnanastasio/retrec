@@ -205,12 +205,12 @@ class codegen_ppc64le final : public codegen {
     void macro$branch$unconditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target, size_t insn_cnt);
     void macro$branch$conditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target,
                                   ppc64le::BO bo, uint8_t cr_field, size_t insn_cnt);
-    void macro$branch$conditional$carry(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator);
-    void macro$branch$conditional$overflow(gen_context &ctx, typename Traits::RegisterAllocatorT &allocator);
+    void macro$branch$conditional$carry(gen_context &ctx);
+    void macro$branch$conditional$overflow(gen_context &ctx);
     void macro$mask_register(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src, llir::Register::Mask mask,
-                             bool invert);
+                             bool invert, bool modify_cr);
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
-                                    llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others);
+                                    llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
 
 public:
     codegen_ppc64le(Architecture target_, execution_context &econtext_)

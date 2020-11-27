@@ -114,6 +114,8 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Branch::Op::NOT_OVERFLOW:
                 case llir::Branch::Op::X86_ABOVE:
                 case llir::Branch::Op::X86_BELOW_EQ:
+                case llir::Branch::Op::X86_GREATER_EQ:
+                case llir::Branch::Op::X86_LESS:
                     llir$branch$conditional(ctx, insn);
                     break;
 
@@ -231,15 +233,38 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, LastFlagOp op,
                                                       llir::Register::Mask mask) {
-    assert(insn.alu.modifies_flags);
-
     if (insn.dest_cnt) {
         // Instruction has a destination register - copy it there
         assert(insn.dest[0].type == llir::Operand::Type::REG);
+
         gpr_t dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
         macro$move_register_masked(*ctx.assembler, dest, GPR_FIXED_FLAG_RES, mask,
-                                   insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
+                                   insn.dest[0].reg.mask, insn.dest[0].reg.zero_others, false);
     }
+
+    if (insn.alu.modifies_flags && mask != llir::Register::Mask::Full64) {
+        // If the instruction modifies flags and the mask is < 64, we need to generate the cr0 flags
+        switch (mask) {
+            case llir::Register::Mask::Low32:
+                // For 32-bit, do a signed compare to immediate 0
+                ctx.assembler->cmpwi(0 /* cr0 */, GPR_FIXED_FLAG_RES, 0);
+                break;
+
+            case llir::Register::Mask::LowLow16:
+                // For 16-bit, do a sign extension with Rc=1
+                ctx.assembler->extsh(0, GPR_FIXED_FLAG_RES, true);
+                break;
+
+            case llir::Register::Mask::LowLowLow8:
+                // For 8-bit, do a sign extension with Rc=1
+                ctx.assembler->extsb(0, GPR_FIXED_FLAG_RES, true);
+                break;
+
+            default:
+                TODO();
+        }
+    }
+
 
     if (!insn.alu.modifies_flags) {
         // Instruction doesn't modify flags, nothing left to do
@@ -288,7 +313,7 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
 
         if (op.reg.mask != llir::Register::Mask::LowLowHigh8) {
             // Directly load operand into FLAG_OP register with mask
-            macro$mask_register(*ctx.assembler, target, gpr, default_mask, false);
+            macro$mask_register(*ctx.assembler, target, gpr, default_mask, false, false);
         } else {
             // Load operand into FLAG_OP register with mask and shift
             ctx.assembler->rldicl(target, gpr, 64-8, 64-8, false);
@@ -325,10 +350,10 @@ void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) 
     llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1, mask);
     llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2, mask);
 
-    if (insn.alu.modifies_flags)
-        ctx.assembler->subo_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+    if (insn.alu.modifies_flags && mask == llir::Register::Mask::Full64)
+        ctx.assembler->sub_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
     else
-        ctx.assembler->subo(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->sub(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
 
     // Finalize operation
     llir$alu$helper$finalize_op(ctx, insn, LastFlagOp::SUB, mask);
@@ -376,10 +401,8 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     assert(insn.src_cnt == 1);
 
     uint64_t target = resolve_branch_target(insn);
-    auto &reg_allocator = ctx.reg_allocator();
-
-    BO bo;
     uint8_t cr_field;
+    BO bo;
 
     switch (insn.branch.op) {
         case llir::Branch::Op::EQ:
@@ -414,52 +437,54 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
 
         case llir::Branch::Op::CARRY:
             // lazily evaluated
-            macro$branch$conditional$carry(ctx, reg_allocator);
+            macro$branch$conditional$carry(ctx);
             bo = BO::FIELD_SET;
             cr_field = CR_LAZY_FIELD_CARRY;
             break;
 
         case llir::Branch::Op::NOT_CARRY:
             // lazily evaluated
-            macro$branch$conditional$carry(ctx, reg_allocator);
+            macro$branch$conditional$carry(ctx);
             bo = BO::FIELD_CLR;
             cr_field = CR_LAZY_FIELD_CARRY;
             break;
 
         case llir::Branch::Op::OVERFLOW:
             // lazily evaluated
-            macro$branch$conditional$overflow(ctx, reg_allocator);
+            macro$branch$conditional$overflow(ctx);
             bo = BO::FIELD_SET;
             cr_field = CR_LAZY_FIELD_OVERFLOW;
             break;
 
         case llir::Branch::Op::NOT_OVERFLOW:
             // lazily evaluated
-            macro$branch$conditional$overflow(ctx, reg_allocator);
+            macro$branch$conditional$overflow(ctx);
             bo = BO::FIELD_CLR;
             cr_field = CR_LAZY_FIELD_OVERFLOW;
             break;
 
-        case llir::Branch::Op::X86_ABOVE:
+        case llir::Branch::Op::X86_BELOW_EQ: bo = BO::FIELD_CLR; goto above_common;
+        case llir::Branch::Op::X86_ABOVE: bo = BO::FIELD_SET; goto above_common;
+        above_common:
             // Relies on a combination of flags, one of which is lazily evaluated (CF)
-            macro$branch$conditional$carry(ctx, reg_allocator);
+            macro$branch$conditional$carry(ctx);
 
-            // !CR && !ZF can be implemented with a single NOR
+            // !CR && !ZF can be implemented with CRNOR
             ctx.assembler->crnor(CR_SCRATCH*4+0, CR_LAZY_FIELD_CARRY, 0*4+assembler::CR_EQ);
-
-            bo = BO::FIELD_SET;
             cr_field = CR_SCRATCH*4+0;
+
             break;
 
-        case llir::Branch::Op::X86_BELOW_EQ:
-            // Relies on a combination of flags, one of which is lazily evaluated (CF)
-            macro$branch$conditional$carry(ctx, reg_allocator);
+        case llir::Branch::Op::X86_LESS: bo = BO::FIELD_CLR; goto greater_eq_common;
+        case llir::Branch::Op::X86_GREATER_EQ: bo = BO::FIELD_SET; goto greater_eq_common;
+        greater_eq_common:
+            // Relies on a combination of flags, one of which is lazily evaluated (OF)
+            macro$branch$conditional$overflow(ctx);
 
-            // CR || ZF can be implemented with a single OR
-            ctx.assembler->cror(CR_SCRATCH*4+0, CR_LAZY_FIELD_CARRY, 0*4+assembler::CR_EQ);
-
-            bo = BO::FIELD_SET;
+            // SF == OF can be implemented with CREQV
+            ctx.assembler->creqv(CR_SCRATCH*4+0, CR_LAZY_FIELD_OVERFLOW, 0*4+assembler::CR_LT);
             cr_field = CR_SCRATCH*4+0;
+
             break;
 
         default:
@@ -523,7 +548,7 @@ void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_
     auto oris = [&](auto a, uint16_t b) { if (b) assembler.oris(a, a, b); };
 
     if (!zero_others)
-        macro$mask_register(assembler, dest, dest, mask, true);
+        macro$mask_register(assembler, dest, dest, mask, true, false);
 
     if (mask == llir::Register::Mask::LowLowLow8) {
         if (!zero_others)
@@ -648,7 +673,7 @@ void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typename T::RegisterAllocatorT &allocator) {
+void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx) {
 
     // This function emits a conditional branch depending on the state of the emulated CPU's Carry flag,
     // generating the Carry flag if necessary.
@@ -683,10 +708,10 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
 
     // Extract offset, add to NIA, branch
     ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-8, false); // Mask off all but the low 8 bits
-    gpr_t scratch = allocator.allocate_gpr();
+    gpr_t scratch = ctx.reg_allocator().allocate_gpr();
     ctx.assembler->lnia(scratch);
     ctx.assembler->add(0, 0, scratch);
-    allocator.free_gpr(scratch);
+    ctx.reg_allocator().free_gpr(scratch);
     ctx.assembler->mtspr(SPR::CTR, 0);
     ctx.assembler->bctr();
 
@@ -733,12 +758,12 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx, typena
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typename T::RegisterAllocatorT &allocator) {
+void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx) {
     // Skip to last instruction if OF has already been evaluated
     ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 20 * 4);
 
     // Allocate scratch registers for use in calculation
-    gpr_t scratch1 = allocator.allocate_gpr();
+    gpr_t scratch1 = ctx.reg_allocator().allocate_gpr();
 
     // Branch to calculation code for operation type
     ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[15:14] into r0
@@ -768,7 +793,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typ
     ctx.assembler->rldcl(0, 0, scratch1, 63, false); // Put overflow flag into r0[0]
     ctx.assembler->cmpldi(CR_SCRATCH, 0, 1);
 
-    allocator.free_gpr(scratch1);
+    ctx.reg_allocator().free_gpr(scratch1);
 
     // CR_SCRATCH[eq] now contains the Overflow flag. Move it into CR_LAZY[OVERFLOW].
     ctx.assembler->crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
@@ -778,7 +803,8 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx, typ
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, gpr_t src, llir::Register::Mask mask, bool invert) {
+void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, gpr_t src, llir::Register::Mask mask,
+                                             bool invert, bool modify_cr) {
     if (invert) {
         // Mask out all requested bits
         switch (mask) {
@@ -786,14 +812,14 @@ void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, g
             case llir::Register::Mask::Low32:
                 TODO();
             case llir::Register::Mask::LowLow16:
-                assembler.rldicr(dest, src, 0, 63-16, false);
+                assembler.rldicr(dest, src, 0, 63-16, modify_cr);
                 break;
             case llir::Register::Mask::LowLowHigh8:
-                assembler.rldicl(dest, src, 48, 8, false);
-                assembler.rldicl(dest, src, 16, 0, false);
+                assembler.rldicl(dest, src, 48, 8, modify_cr);
+                assembler.rldicl(dest, src, 16, 0, modify_cr);
                 break;
             case llir::Register::Mask::LowLowLow8:
-                assembler.rldicr(dest, src, 0, 63-8, false);
+                assembler.rldicr(dest, src, 0, 63-8, modify_cr);
                 break;
             default:
                 TODO();
@@ -805,16 +831,16 @@ void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, g
                 assembler.mr(dest, src); // Don't mask anything, just move
                 break;
             case llir::Register::Mask::Low32:
-                assembler.rldicl(dest, src, 0, 32, false);
+                assembler.rldicl(dest, src, 0, 32, modify_cr);
                 break;
             case llir::Register::Mask::LowLow16:
-                assembler.rldicl(dest, src, 0, 48, false);
+                assembler.rldicl(dest, src, 0, 48, modify_cr);
                 break;
             case llir::Register::Mask::LowLowHigh8:
                 TODO();
                 //assembler.rldicl(reg, reg, 64-8, 56, false);
             case llir::Register::Mask::LowLowLow8:
-                assembler.rldicl(dest, src, 0, 56, false);
+                assembler.rldicl(dest, src, 0, 56, modify_cr);
                 break;
             default:
                 TODO();
@@ -824,7 +850,7 @@ void codegen_ppc64le<T>::macro$mask_register(assembler &assembler, gpr_t dest, g
 
 template <typename T>
 void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t dest, gpr_t src, llir::Register::Mask src_mask,
-                                                    llir::Register::Mask dest_mask, bool zero_others) {
+                                                    llir::Register::Mask dest_mask, bool zero_others, bool modify_cr) {
     auto get_width_from_mask = [](auto mask) -> uint8_t {
         switch (mask) {
             case llir::Register::Mask::Full64: return 64;
@@ -858,25 +884,25 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
         uint8_t sh = (uint8_t)(64 - src_shift + dest_shift) % 64;
         uint8_t me = (uint8_t)(64 - std::min(dest_width, src_width) - dest_shift);
 
-        assembler.rldicl(dest, src, sh, me, false);
+        assembler.rldicl(dest, src, sh, me, modify_cr);
 
         // If the destination isn't right-justified, clear the extra right bits
         if (dest_shift)
-            assembler.rldicr(dest, dest, 0, 64-dest_shift, false);
+            assembler.rldicr(dest, dest, 0, 64-dest_shift, modify_cr);
 
         // If the source is smaller than the destination, clear the difference
         if (src_width < dest_width)
-            assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), false);
+            assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), modify_cr);
     } else {
         if (!src_shift) {
             // If the source isn't shifted, this can be accomplished with rldimi
-            assembler.insrdi(dest, src, dest_width, (uint8_t)(64-(dest_width + dest_shift)), false);
+            assembler.insrdi(dest, src, dest_width, (uint8_t)(64-(dest_width + dest_shift)), modify_cr);
 
             if (dest_width > src_width) {
                 // Extra bits were copied, clear high order
                 // Test: 8 moved into 16
                 assembler.rldicl(dest, dest, (uint8_t)(64-(dest_width+dest_shift)), src_width, false);
-                assembler.rldicl(dest, dest, (uint8_t)(64-(64-(dest_width+dest_shift))), 0, false);
+                assembler.rldicl(dest, dest, (uint8_t)(64-(64-(dest_width+dest_shift))), 0, modify_cr);
             }
         } else { TODO(); }
     }

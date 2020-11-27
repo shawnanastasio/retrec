@@ -395,17 +395,27 @@ public:
     void nego_(uint8_t rt, uint8_t rb) { neg_internal(rt, rb, 1, 1); }
 
     // 3.3.10 Fixed-Point Compare Instructions
-    void cmp(uint8_t bf, uint8_t l, uint8_t ra, uint8_t rb) {
+    void cmpi(uint8_t bf, bool l, uint8_t ra, int16_t si) {
+        ASM_LOG("Emitting cmpi %u, %u, r%u, %d to 0x%lu\n", bf, l, ra, si);
+        EMIT_INSN(Operation::CMPI, [=] {
+            check_mask(bf, 0b111U);
+            uint8_t rt = (uint8_t)((bf << (uint8_t)2U) | (l & (uint8_t)1U));
+            return self->d_form(11, rt, ra, si);
+        }, bf, l, ra, si);
+    }
+    void cmpdi(uint8_t bf, uint8_t ra, uint16_t si) { cmpi(bf, true, ra, si); }
+    void cmpwi(uint8_t bf, uint8_t ra, uint16_t si) { cmpi(bf, false, ra, si); }
+
+    void cmp(uint8_t bf, bool l, uint8_t ra, uint8_t rb) {
         ASM_LOG("Emitting cmp %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, rb);
         EMIT_INSN(Operation::CMP, [=] {
-            check_mask(l, 1U);
             check_mask(bf, 0b111U);
-            uint8_t rs = (uint8_t) (bf << (uint8_t)2U) | (l & (uint8_t)1U);
+            uint8_t rs = (uint8_t)((bf << (uint8_t)2U) | (l & (uint8_t)1U));
             return self->x_form(31, rs, ra, rb, 0, 0);
         }, bf, l, ra, rb);
     }
-    void cmpd(uint8_t bf, uint8_t ra, uint8_t rb) { cmp(bf, 1, ra, rb); }
-    void cmpw(uint8_t bf, uint8_t ra, uint8_t rb) { cmp(bf, 0, ra, rb); }
+    void cmpd(uint8_t bf, uint8_t ra, uint8_t rb) { cmp(bf, true, ra, rb); }
+    void cmpw(uint8_t bf, uint8_t ra, uint8_t rb) { cmp(bf, false, ra, rb); }
 
     void cmpli(uint8_t bf, uint8_t l, uint8_t ra, uint16_t ui) {
         ASM_LOG("Emitting cmpli %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, ui);
@@ -503,6 +513,20 @@ public:
         EMIT_INSN(Operation::EQV, [=] {
             return self->x_form(31, rs, ra, rb, 284, 1);
         }, ra, rs, rb);
+    }
+
+    void extsb(uint8_t ra, uint8_t rs, bool modify_cr = false) {
+        ASM_LOG("Emitting extsb%s r%u, r%u\n", modify_cr?".":"", ra, rs);
+        EMIT_INSN(Operation::EXTSB, [=] {
+            return self->x_form(31, rs, ra, 0, 954, modify_cr);
+        }, ra, rs, modify_cr);
+    }
+
+    void extsh(uint8_t ra, uint8_t rs, bool modify_cr = false) {
+        ASM_LOG("Emitting extsh%s r%u, r%u\n", modify_cr?".":"", ra, rs);
+        EMIT_INSN(Operation::EXTSH, [=] {
+            return self->x_form(31, rs, ra, 0, 922, modify_cr);
+        }, ra, rs, modify_cr);
     }
 
     // 3.3.14 Fixed-Point Rotate and Shift Instruction
