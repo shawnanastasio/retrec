@@ -213,10 +213,66 @@ ABOVE_TESTS = [
     FlagTestCase(8, "al", "", "1", "-1", "cmp", "jbe", "ja"), # CF, !ZF
 ]
 
+GREATER_EQ_TESTS = [
+    FlagTestCase(64, "rax", "", "-1", "-2", "cmp", "jge", "jl"), # SF=OF=1
+    FlagTestCase(64, "rax", "", "-2", "-1", "cmp", "jl", "jge"), # SF=1, OF=0
+    FlagTestCase(64, "rax", "", "-1", "1", "cmp", "jl", "jge"), # SF=0, OF=1
+    FlagTestCase(64, "rax", "", "1", "0", "cmp", "jge", "jl"), # SF=OF=0
+
+    FlagTestCase(32, "eax", "", "-1", "-2", "cmp", "jge", "jl"), # SF=OF=1
+    FlagTestCase(32, "eax", "", "-2", "-1", "cmp", "jl", "jge"), # SF=1, OF=0
+    FlagTestCase(32, "eax", "", "-1", "1", "cmp", "jl", "jge"), # SF=0, OF=1
+    FlagTestCase(32, "eax", "", "1", "0", "cmp", "jge", "jl"), # SF=OF=0
+
+    FlagTestCase(16, "ax", "", "-1", "-2", "cmp", "jge", "jl"), # SF=OF=1
+    FlagTestCase(16, "ax", "", "-2", "-1", "cmp", "jl", "jge"), # SF=1, OF=0
+    FlagTestCase(16, "ax", "", "-1", "1", "cmp", "jl", "jge"), # SF=0, OF=1
+    FlagTestCase(16, "ax", "", "1", "0", "cmp", "jge", "jl"), # SF=OF=0
+
+    FlagTestCase(8, "ah", "", "-1", "-2", "cmp", "jge", "jl"), # SF=OF=1
+    FlagTestCase(8, "ah", "", "-2", "-1", "cmp", "jl", "jge"), # SF=1, OF=0
+    FlagTestCase(8, "ah", "", "-1", "1", "cmp", "jl", "jge"), # SF=0, OF=1
+    FlagTestCase(8, "ah", "", "1", "0", "cmp", "jge", "jl"), # SF=OF=0
+
+    FlagTestCase(8, "al", "", "-1", "-2", "cmp", "jge", "jl"), # SF=OF=1
+    FlagTestCase(8, "al", "", "-2", "-1", "cmp", "jl", "jge"), # SF=1, OF=0
+    FlagTestCase(8, "al", "", "-1", "1", "cmp", "jl", "jge"), # SF=0, OF=1
+    FlagTestCase(8, "al", "", "1", "0", "cmp", "jge", "jl"), # SF=OF=0
+]
+
+SIGN_TESTS = [
+    FlagTestCase(64, "rax", "", "0", "1", "cmp", "js", "jns"), # SF=1
+    FlagTestCase(64, "rax", "", "1", "1", "cmp", "jns", "js"),  # SF=0
+    FlagTestCase(64, "rax", "", "0", "-1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(64, "rax", "", "-1", "1", "cmp", "js", "jns"), # SF=1
+
+    FlagTestCase(32, "eax", "", "0", "1", "cmp", "js", "jns"), # SF=1
+    FlagTestCase(32, "eax", "", "1", "1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(32, "eax", "", "0", "-1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(32, "eax", "", "-1", "1", "cmp", "js", "jns"), # SF=1
+
+    FlagTestCase(16, "ax", "", "0", "1", "cmp", "js", "jns"), # SF=1
+    FlagTestCase(16, "ax", "", "1", "1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(16, "ax", "", "0", "-1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(16, "ax", "", "-1", "1", "cmp", "js", "jns"), # SF=1
+
+    FlagTestCase(8, "ah", "", "0", "1", "cmp", "js", "jns"), # SF=1
+    FlagTestCase(8, "ah", "", "1", "1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(8, "ah", "", "0", "-1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(8, "ah", "", "-1", "1", "cmp", "js", "jns"), # SF=1
+
+    FlagTestCase(8, "al", "", "0", "1", "cmp", "js", "jns"), # SF=1
+    FlagTestCase(8, "al", "", "1", "1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(8, "al", "", "0", "-1", "cmp", "jns", "js"), # SF=0
+    FlagTestCase(8, "al", "", "-1", "1", "cmp", "js", "jns"), # SF=1
+]
+
 SUITES = {
+    "SF" : SIGN_TESTS,
     "CF" : CARRY_TESTS,
     "OF" : OVERFLOW_TESTS,
     "ABOVE" : ABOVE_TESTS,
+    "GREATER_EQ" : GREATER_EQ_TESTS,
     "ALU" : ALU_TESTS,
 }
 
