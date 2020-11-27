@@ -116,6 +116,8 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Branch::Op::X86_BELOW_EQ:
                 case llir::Branch::Op::X86_GREATER_EQ:
                 case llir::Branch::Op::X86_LESS:
+                case llir::Branch::Op::X86_GREATER:
+                case llir::Branch::Op::X86_LESS_EQ:
                     llir$branch$conditional(ctx, insn);
                     break;
 
@@ -483,6 +485,19 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
 
             // SF == OF can be implemented with CREQV
             ctx.assembler->creqv(CR_SCRATCH*4+0, CR_LAZY_FIELD_OVERFLOW, 0*4+assembler::CR_LT);
+            cr_field = CR_SCRATCH*4+0;
+
+            break;
+
+        case llir::Branch::Op::X86_LESS_EQ: bo = BO::FIELD_CLR; goto greater_common;
+        case llir::Branch::Op::X86_GREATER: bo = BO::FIELD_SET; goto greater_common;
+        greater_common:
+            // Relies on a combination of flags, one of which is lazily evaluated (OF)
+            macro$branch$conditional$overflow(ctx);
+
+            // (!ZF && (SF == OF)) can be implemented with NOR(ZF, XOR(SF, OF))
+            ctx.assembler->crxor(CR_SCRATCH*4+1, CR_LAZY_FIELD_OVERFLOW, 0*4+assembler::CR_LT); // cr_scratch[1] = !(SF == OF)
+            ctx.assembler->crnor(CR_SCRATCH*4+0, CR_SCRATCH*4+1, 0*4+assembler::CR_EQ);         // cr_scratch[0] = !cr_scratch[1] && !ZF
             cr_field = CR_SCRATCH*4+0;
 
             break;

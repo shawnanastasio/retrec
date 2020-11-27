@@ -89,10 +89,12 @@ struct Branch {
         OVERFLOW,
         NOT_OVERFLOW,
 
-        X86_ABOVE,      // CF=0 && ZF=0
-        X86_BELOW_EQ,   // CF=1 || ZF=1
+        X86_ABOVE,      // !CF && !ZF
+        X86_BELOW_EQ,   // CF || ZF
         X86_GREATER_EQ, // SF == OF
         X86_LESS,       // SF != OF
+        X86_GREATER,    // !ZF && (SF == OF)
+        X86_LESS_EQ,    // ZF || (SF != OF)
     } op;
 
     bool signed_comparison;
@@ -214,6 +216,8 @@ inline std::string to_string(const Branch &branch) {
         case Branch::Op::X86_BELOW_EQ: ret += "X86_BELOW_EQ,"; break;
         case Branch::Op::X86_GREATER_EQ: ret += "X86_GREATER_EQ,"; break;
         case Branch::Op::X86_LESS: ret += "X86_LESS,"; break;
+        case Branch::Op::X86_GREATER: ret += "X86_GREATER,"; break;
+        case Branch::Op::X86_LESS_EQ: ret += "X86_LESS_EQ,"; break;
         default:
             TODO();
     }

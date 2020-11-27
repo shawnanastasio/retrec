@@ -55,8 +55,8 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_JECXZ: { TODO(); }
         case X86_INS_JE:    { llinsn.branch.op = llir::Branch::Op::EQ; goto jcc_common; }
         case X86_INS_JGE:   { llinsn.branch.op = llir::Branch::Op::X86_GREATER_EQ; goto jcc_common; }
-        case X86_INS_JG:    { TODO(); }
-        case X86_INS_JLE:   { TODO(); }
+        case X86_INS_JG:    { llinsn.branch.op = llir::Branch::Op::X86_GREATER; goto jcc_common; }
+        case X86_INS_JLE:   { llinsn.branch.op = llir::Branch::Op::X86_LESS_EQ; goto jcc_common; }
         case X86_INS_JL:    { llinsn.branch.op = llir::Branch::Op::X86_LESS; goto jcc_common; }
         case X86_INS_JNE:   { llinsn.branch.op = llir::Branch::Op::NOT_EQ; goto jcc_common; }
         case X86_INS_JNO:   { llinsn.branch.op = llir::Branch::Op::NOT_OVERFLOW; goto jcc_common; }
