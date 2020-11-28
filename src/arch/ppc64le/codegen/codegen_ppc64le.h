@@ -128,6 +128,7 @@ class codegen_ppc64le final : public codegen {
     //
     void llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$sub(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$add(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op,
                                       llir::Register::Mask mask);
     llir::Register::Mask llir$alu$helper$determine_immediate_mask(const llir::Insn &insn);

@@ -93,6 +93,10 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                     llir$alu$sub(ctx, insn);
                     break;
 
+                case llir::Alu::Op::ADD:
+                    llir$alu$add(ctx, insn);
+                    break;
+
                 default:
                     TODO();
             }
@@ -279,8 +283,9 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
 
     // Set lazy flag status according to operation type
     switch (op) {
+        case LastFlagOp::ADD:
         case LastFlagOp::SUB:
-            // SUB needs carry+sign+parity+? to be lazily evaluated
+            // Needs carry+sign+parity+? to be lazily evaluated
             ctx.assembler->mcrf(CR_LAZYVALID, CR_ZEROS);
             break;
 
@@ -359,6 +364,27 @@ void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) 
 
     // Finalize operation
     llir$alu$helper$finalize_op(ctx, insn, LastFlagOp::SUB, mask);
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$add(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("alu$add\n");
+    assert(insn.src_cnt == 2);
+    assert(insn.src[0].type == llir::Operand::Type::REG);
+
+    auto mask = llir$alu$helper$determine_immediate_mask(insn);
+
+    // Ensure all operands are in registers
+    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1, mask);
+    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2, mask);
+
+    if (insn.alu.modifies_flags && mask == llir::Register::Mask::Full64)
+        ctx.assembler->add_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+    else
+        ctx.assembler->add(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+
+    // Finalize operation
+    llir$alu$helper$finalize_op(ctx, insn, LastFlagOp::ADD, mask);
 }
 
 /**

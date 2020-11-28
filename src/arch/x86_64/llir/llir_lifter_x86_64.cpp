@@ -80,6 +80,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
             break;
 
+        case X86_INS_ADD: {llinsn.alu.op = llir::Alu::Op::ADD; llinsn.dest_cnt = 1; goto alu_2op_common; }
         case X86_INS_CMP: {llinsn.alu.op = llir::Alu::Op::SUB; llinsn.dest_cnt = 0; goto alu_2op_common; }
         case X86_INS_SUB: {llinsn.alu.op = llir::Alu::Op::SUB; llinsn.dest_cnt = 1; goto alu_2op_common; }
         alu_2op_common:
