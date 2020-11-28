@@ -99,6 +99,7 @@ AluTestCase = namedtuple("AluTestCase", ["width", "insn_str", "reg1_str", "reg2_
                                         defaults=(None,None,None,None,None,None,None,alu_test_case_genstrs,alu_test_case_gentest))
 
 ALU_TESTS = [
+    # SUB
     AluTestCase(64, "sub", "rax", "rbx", "100", "99", "1"),
     AluTestCase(64, "sub", "rax", "rbx", "0", "1", "-1"),
     AluTestCase(64, "sub", "rax", "rbx", "1", "1", "0"),
@@ -119,6 +120,36 @@ ALU_TESTS = [
     AluTestCase(8, "sub", "al", "bl", "0", "1", "-1"),
     AluTestCase(8, "sub", "al", "bl", "1", "1", "0"),
 
+    # ADD
+    AluTestCase(64, "add", "rax", "rbx", "1", "99", "100"),
+    AluTestCase(64, "add", "rax", "rbx", "0", "1", "1"),
+    AluTestCase(64, "add", "rax", "rbx", "1", "1", "2"),
+    AluTestCase(64, "add", "rax", "rbx", "1", "-1", "0"),
+    AluTestCase(64, "add", "rax", "rbx", "1", "-2", "-1"),
+
+    AluTestCase(32, "add", "eax", "ebx", "1", "99", "100"),
+    AluTestCase(32, "add", "eax", "ebx", "0", "1", "1"),
+    AluTestCase(32, "add", "eax", "ebx", "1", "1", "2"),
+    AluTestCase(32, "add", "eax", "ebx", "1", "-1", "0"),
+    AluTestCase(32, "add", "eax", "ebx", "1", "-2", "-1"),
+
+    AluTestCase(16, "add", "ax", "bx", "1", "99", "100"),
+    AluTestCase(16, "add", "ax", "bx", "0", "1", "1"),
+    AluTestCase(16, "add", "ax", "bx", "1", "1", "2"),
+    AluTestCase(16, "add", "ax", "bx", "1", "-1", "0"),
+    AluTestCase(16, "add", "ax", "bx", "1", "-2", "-1"),
+
+    AluTestCase(8, "add", "ah", "bh", "1", "99", "100"),
+    AluTestCase(8, "add", "ah", "bh", "0", "1", "1"),
+    AluTestCase(8, "add", "ah", "bh", "1", "1", "2"),
+    AluTestCase(8, "add", "ah", "bh", "1", "-1", "0"),
+    AluTestCase(8, "add", "ah", "bh", "1", "-2", "-1"),
+
+    AluTestCase(8, "add", "al", "bl", "1", "99", "100"),
+    AluTestCase(8, "add", "al", "bl", "0", "1", "1"),
+    AluTestCase(8, "add", "al", "bl", "1", "1", "2"),
+    AluTestCase(8, "add", "al", "bl", "1", "-1", "0"),
+    AluTestCase(8, "add", "al", "bl", "1", "-2", "-1"),
 ]
 
 CARRY_TESTS = [
@@ -188,7 +219,30 @@ OVERFLOW_TESTS = [
     FlagTestCase(8, "al", "bl", "-1", "1", "cmp", "jno", "jo"), # Negative underflow (!OF)
 
     # ADD
-    #FlagTestCase(64, "eax", "", "0x7FFFFFFF", "1", "add", "jo", "jno")
+    FlagTestCase(64, "rax", "", "0x8000000000000000", "-1", "add", "jo", "jno"), # Positive overflow
+    FlagTestCase(64, "rax", "", "0x7FFFFFFFFFFFFFFF", "1", "add", "jo", "jno"), # Negative overflow
+    FlagTestCase(64, "rax", "", "0", "-1", "add", "jno", "jo"), # No overflow
+    FlagTestCase(64, "rax", "", "-1", "-1", "add", "jno", "jo"), # No overflow
+
+    FlagTestCase(32, "eax", "", "0x80000000", "-1", "add", "jo", "jno"), # Positive overflow
+    FlagTestCase(32, "eax", "", "0x7FFFFFFF", "1", "add", "jo", "jno"), # Negative overflow
+    FlagTestCase(32, "eax", "", "0", "-1", "add", "jno", "jo"), # No overflow
+    FlagTestCase(32, "eax", "", "-1", "-1", "add", "jno", "jo"), # No overflow
+
+    FlagTestCase(16, "ax", "", "0x8000", "-1", "add", "jo", "jno"), # Positive overflow
+    FlagTestCase(16, "ax", "", "0x7FFF", "1", "add", "jo", "jno"), # Negative overflow
+    FlagTestCase(16, "ax", "", "0", "-1", "add", "jno", "jo"), # No overflow
+    FlagTestCase(16, "ax", "", "-1", "-1", "add", "jno", "jo"), # No overflow
+
+    FlagTestCase(8, "ah", "", "0x80", "-1", "add", "jo", "jno"), # Positive overflow
+    FlagTestCase(8, "ah", "", "0x7F", "1", "add", "jo", "jno"), # Negative overflow
+    FlagTestCase(8, "ah", "", "0", "-1", "add", "jno", "jo"), # No overflow
+    FlagTestCase(8, "ah", "", "-1", "-1", "add", "jno", "jo"), # No overflow
+
+    FlagTestCase(8, "al", "", "0x80", "-1", "add", "jo", "jno"), # Positive overflow
+    FlagTestCase(8, "al", "", "0x7F", "1", "add", "jo", "jno"), # Negative overflow
+    FlagTestCase(8, "al", "", "0", "-1", "add", "jno", "jo"), # No overflow
+    FlagTestCase(8, "al", "", "-1", "-1", "add", "jno", "jo"), # No overflow
 ]
 
 ABOVE_TESTS = [
