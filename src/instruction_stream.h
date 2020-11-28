@@ -77,7 +77,7 @@ public:
 
 private:
     status_code write32(uint32_t x) {
-        if (offset >= buf_size)
+        if (offset+4 > buf_size)
             return status_code::OVERFLOW;
 
         *(uint32_t *)(out_buf + offset) = x;
