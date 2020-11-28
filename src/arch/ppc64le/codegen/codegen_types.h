@@ -82,7 +82,11 @@ enum class Operation {
 #define OPERATION(op, ...) op,
     PPC64LE_ENUMERATE_OPERATIONS(OPERATION)
 #undef OPERATION
+    SIZE
 };
+
+// A list of strings for all Operation types
+extern const char *operation_names[(std::underlying_type_t<Operation>)Operation::SIZE];
 
 enum class BO : uint8_t {
     ALWAYS = 0b10100,    // Branch unconditionally
