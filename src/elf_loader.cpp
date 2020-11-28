@@ -139,7 +139,6 @@ status_code elf_loader::load_all() {
         switch (phdr.p_type) {
             case PT_LOAD:
             {
-                assert(phdr.p_filesz == phdr.p_memsz);
                 assert(phdr.p_paddr != 0);
 
                 uint64_t aligned_start = phdr.p_vaddr & (~(getpagesize() - 1));
@@ -151,7 +150,7 @@ status_code elf_loader::load_all() {
                 if (res == status_code::OVERLAP) {
                     pr_error("ELF PT_LOAD overlaps existing region.\n"
                                    "  The target binary was probably compiled with a different\n"
-                                   "  max page size from the host system. This won't work\n");
+                                   "  max page size from the host system. This won't work.\n");
                     return status_code::BADELF;
                 } else if (res != status_code::SUCCESS) {
                     pr_error("Failed to allocate region: %s\n", status_code_str(res));
@@ -162,10 +161,15 @@ status_code elf_loader::load_all() {
                 memcpy((void *)((uint8_t *)region + alignment),
                        file.data<char *>() + phdr.p_offset, phdr.p_filesz);
 
+                // Fill in zeros if required
+                size_t fill_size = phdr.p_memsz - phdr.p_filesz;
+                if (fill_size) {
+                    memset((void *)((uint8_t *)region + alignment + phdr.p_filesz), 0, fill_size);
+                }
+
                 // Set protection flags
                 int flags = (phdr.p_flags & PF_R) ? PROT_READ : 0
                              | (phdr.p_flags & PF_W) ? PROT_WRITE : 0;
-                //           | (phdr.p_flags & PF_X) ? PROT_EXEC : 0 /* ignore execute permission for now */
                 assert(econtext.protect_region(aligned_start, phdr.p_memsz + alignment, flags) == status_code::SUCCESS);
 
                 pr_info("Loaded PT_LOAD segment at 0x%zx!\n", (uint64_t)region);
