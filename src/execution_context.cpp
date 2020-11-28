@@ -13,12 +13,19 @@ status_code simple_execution_context::init() {
     if (ret != status_code::SUCCESS)
         return ret;
 
+    // Allocate space for code
     uint64_t code_start = vaddr_map.allocate_high_vaddr(CODE_REGION_MAX_SIZE);
     if (!code_start)
         return status_code::NOMEM;
-    pr_info("code space: 0x%llx\n", code_start);
 
-    code_allocator.init((void *)code_start, 0, CODE_REGION_MAX_SIZE);
+    // Map code space
+    void *res = mmap((void *)code_start, CODE_REGION_MAX_SIZE,
+                     PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+                     -1, 0);
+    if (res == (void *)-1)
+        return status_code::NOMEM; // deallocate vaddr space?
+
+    code_allocator.init((void *)code_start, CODE_REGION_MAX_SIZE);
 
     return status_code::SUCCESS;
 }
