@@ -39,7 +39,7 @@ status_code simple_execution_context::allocate_region(uint64_t start, size_t len
 
     pr_info("allocated region at 0x%zx\n", start);
     // Just try to map the region with mmap
-    void *region = mmap((void *)start, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    void *region = mmap((void *)start, len, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
     if (region == (void *)-1)
         return status_code::NOMEM;
 
