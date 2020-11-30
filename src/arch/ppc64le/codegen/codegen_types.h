@@ -23,8 +23,8 @@
     x(B, assembler::b_internal) \
     x(BC, assembler::bc_internal) \
     x(BCCTR, assembler::bcctr_internal) \
-    x(CMPI, assembler::cmpi) \
     x(CMP, assembler::cmp) \
+    x(CMPI, assembler::cmpi) \
     x(CMPL, assembler::cmpl) \
     x(CMPLI, assembler::cmpli) \
     x(CRAND, assembler::crand) \
@@ -38,6 +38,14 @@
     x(EQV, assembler::creqv) \
     x(EXTSB, assembler::extsb) \
     x(EXTSH, assembler::extsh) \
+    x(LBZ, assembler::lbz) \
+    x(LBZX, assembler::lbzx) \
+    x(LD, assembler::ld) \
+    x(LDX, assembler::ldx) \
+    x(LHZ, assembler::lhz) \
+    x(LHZX, assembler::lhzx) \
+    x(LWZ, assembler::lwz) \
+    x(LWZX, assembler::lwzx) \
     x(MCRF, assembler::mcrf) \
     x(MCRXRX, assembler::mcrxrx) \
     x(MFCR, assembler::mfcr) \
@@ -54,11 +62,19 @@
     x(RLDICL, assembler::rldicl) \
     x(RLDICR, assembler::rldicr) \
     x(RLDIMI, assembler::rldimi) \
+    x(RLWIMI, assembler::rlwimi) \
     x(RLWINM, assembler::rlwinm) \
     x(SC, assembler::sc) \
     x(SLDI, assembler::sldi) \
     x(SRDI, assembler::srdi) \
+    x(STB, assembler::stb) \
+    x(STBX, assembler::stbx) \
     x(STD, assembler::std) \
+    x(STDX, assembler::stdx) \
+    x(STH, assembler::sth) \
+    x(STHX, assembler::sthx) \
+    x(STW, assembler::stw) \
+    x(STWX, assembler::stwx) \
     x(SUB, assembler::sub) \
     x(SUBC, assembler::subc) \
     x(SUBE, assembler::sube) \

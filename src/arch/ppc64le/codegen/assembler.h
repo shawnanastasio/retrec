@@ -80,13 +80,7 @@ public:
     template<size_t i, typename... F>
     auto &parameter(F&&...) {
         using ArgT = typename magic::function_traits<F...>::template ArgsT<i>;
-        // Using `*get_if` on a `variant*` instead of `get` on a `variant` results in the
-        // type check being optimized away by the compiler. Which behavior we want depends
-        // on whether or not we're doing a debug build.
-        if constexpr (DEBUG_BUILD)
-            return std::get<ArgT>(parameters[i]);
-        else
-            return *std::get_if<ArgT>(&parameters[i]);
+        return std::get<ArgT>(parameters[i]);
     }
 
     Operation operation() const { return op; }
@@ -137,23 +131,29 @@ class assembler {
     status_code xl_form(uint8_t po, uint8_t bt, uint8_t ba, uint8_t bb, uint16_t xo, uint8_t lk);
     status_code xo_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t oe, uint16_t xo, uint8_t rc);
 
+public:
+    // Helper for checking if values fit within a provided mask
+    template <typename ValT, typename MaskT>
+    static std::enable_if_t<std::is_integral_v<ValT> && std::is_integral_v<MaskT>, bool>
+    fits_in_mask(ValT val, MaskT mask) {
+        if constexpr (std::is_unsigned_v<ValT>) {
+            return (val & mask) == val;
+        } else {
+            // For signed numbers, we check if the value violates the mask differently when the value is negative
+            if (val < 0)
+                return static_cast<ValT>((val | ~(mask))) == val;
+            else
+                return static_cast<ValT>((val & mask)) == val;
+        }
+    }
+
     // Helper for asserting that values fit within a provided mask
     template <typename ValT, typename MaskT>
     static std::enable_if_t<std::is_integral_v<ValT> && std::is_integral_v<MaskT>, void>
     check_mask(ValT val, MaskT mask) {
-        if constexpr (std::is_unsigned_v<ValT>) {
-            assert((val & mask) == val);
-        } else {
-            // For signed numbers, we check if the value violates the mask differently when the value is negative
-            if (val < 0)
-                assert(static_cast<ValT>((val | ~(mask))) == val);
-            else
-                assert(static_cast<ValT>((val & mask)) == val);
-        }
+        assert(fits_in_mask(val, mask));
     }
 
-    // Extended mnemonics on p802
-public:
     assembler() {}
     ~assembler();
 
@@ -308,12 +308,120 @@ public:
         }, bf, bfa);
     }
 
+    // 3.3.2 Fixed-Point Load Instructions
+    void lbz(uint8_t rt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting lbz r%u, 0x%x(r%u)\n", rt, d, ra);
+        EMIT_INSN(Operation::LBZ, [=] {
+            return self->d_form(34, rt, ra, d);
+        }, rt, ra, d);
+    }
+
+    void lbzx(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lbzx r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LBZX, [=] {
+            return self->x_form(31, rt, ra, rb, 87, 0);
+        }, rt, ra, rb);
+    }
+
+    void lhz(uint8_t rt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting lhz r%u, 0x%x(r%u)\n", rt, d, ra);
+        EMIT_INSN(Operation::LHZ, [=] {
+            return self->d_form(40, rt, ra, d);
+        }, rt, ra, d);
+    }
+
+    void lhzx(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lbhx r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LHZX, [=] {
+            return self->x_form(31, rt, ra, rb, 279, 0);
+        }, rt, ra, rb);
+    }
+
+    void lwz(uint8_t rt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting lwz r%u, 0x%x(r%u)\n", rt, d, ra);
+        EMIT_INSN(Operation::LWZ, [=] {
+            return self->d_form(32, rt, ra, d);
+        }, rt, ra, d);
+    }
+
+    void lwzx(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lwhx r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LWZX, [=] {
+            return self->x_form(31, rt, ra, rb, 23, 0);
+        }, rt, ra, rb);
+    }
+
+    void ld(uint8_t rt, uint8_t ra, int16_t ds) {
+        ASM_LOG("Emitting ld r%u, 0x%x(r%u)\n", rt, ds, ra);
+        EMIT_INSN(Operation::LD, [=] {
+            check_mask(ds, 0xFFFC);
+            return self->ds_form(58, rt, ra, ds, 0);
+        }, rt, ra, ds);
+    }
+
+    void ldx(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting ldx r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LDX, [=] {
+            return self->x_form(31, rt, ra, rb, 21, 0);
+        }, rt, ra, rb);
+    }
+
     // 3.3.3 Fixed-Point Store Instructions
-    void std(uint8_t rs, uint8_t ra, uint16_t ds) {
+    void stb(uint8_t rs, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting stb r%u, 0x%x(r%u)\n", rs, d, ra);
+        EMIT_INSN(Operation::STB, [=] {
+            return self->d_form(38, rs, ra, d);
+        }, rs, ra, d);
+    }
+
+    void stbx(uint8_t rs, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting stbx r%u, r%u, r%u\n", rs, ra, rb);
+        EMIT_INSN(Operation::STBX, [=] {
+            return self->x_form(31, rs, ra, rb, 215, 0);
+        }, rs, ra, rb);
+    }
+
+    void sth(uint8_t rs, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting sth r%u, 0x%x(r%u)\n", rs, d, ra);
+        EMIT_INSN(Operation::STH, [=] {
+            return self->d_form(44, rs, ra, d);
+        }, rs, ra, d);
+    }
+
+    void sthx(uint8_t rs, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting sthx r%u, r%u, r%u\n", rs, ra, rb);
+        EMIT_INSN(Operation::STHX, [=] {
+            return self->x_form(31, rs, ra, rb, 407, 0);
+        }, rs, ra, rb);
+    }
+
+    void stw(uint8_t rs, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting stw r%u, 0x%x(r%u)\n", rs, d, ra);
+        EMIT_INSN(Operation::STW, [=] {
+            return self->d_form(36, rs, ra, d);
+        }, rs, ra, d);
+    }
+
+    void stwx(uint8_t rs, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting stwx r%u, r%u, r%u\n", rs, ra, rb);
+        EMIT_INSN(Operation::STWX, [=] {
+            return self->x_form(31, rs, ra, rb, 151, 0);
+        }, rs, ra, rb);
+    }
+
+    void std(uint8_t rs, uint8_t ra, int16_t ds) {
         ASM_LOG("Emitting std r%u, 0x%x(r%u)\n", rs, ds, ra);
         EMIT_INSN(Operation::STD, [=] {
+            check_mask(ds, 0xFFFC);
             return self->ds_form(62, rs, ra, ds, 0);
         }, rs, ra, ds);
+    }
+
+    void stdx(uint8_t rs, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting stdx r%u, r%u, r%u\n", rs, ra, rb);
+        EMIT_INSN(Operation::STDX, [=] {
+            return self->x_form(31, rs, ra, rb, 149, 0);
+        }, rs, ra, rb);
     }
 
     // 3.3.9 Fixed-Point Arithmetic Instructions
@@ -396,7 +504,7 @@ public:
 
     // 3.3.10 Fixed-Point Compare Instructions
     void cmpi(uint8_t bf, bool l, uint8_t ra, int16_t si) {
-        ASM_LOG("Emitting cmpi %u, %u, r%u, %d to 0x%lu\n", bf, l, ra, si);
+        ASM_LOG("Emitting cmpi %u, %u, r%u, %d\n", bf, l, ra, si);
         EMIT_INSN(Operation::CMPI, [=] {
             check_mask(bf, 0b111U);
             uint8_t rt = (uint8_t)((bf << (uint8_t)2U) | (l & (uint8_t)1U));
@@ -418,7 +526,7 @@ public:
     void cmpw(uint8_t bf, uint8_t ra, uint8_t rb) { cmp(bf, false, ra, rb); }
 
     void cmpli(uint8_t bf, uint8_t l, uint8_t ra, uint16_t ui) {
-        ASM_LOG("Emitting cmpli %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, ui);
+        ASM_LOG("Emitting cmpli %u, %u, r%u, r%u\n", bf, l, ra, ui);
         EMIT_INSN(Operation::CMPLI, [=] {
             check_mask(l, 1U);
             check_mask(bf, 0b111U);
@@ -430,7 +538,7 @@ public:
     void cmplwi(uint8_t bf, uint8_t ra, uint16_t ui) { cmpli(bf, 0, ra, ui); }
 
     void cmpl(uint8_t bf, uint8_t l, uint8_t ra, uint8_t rb) {
-        ASM_LOG("Emitting cmpl %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, rb);
+        ASM_LOG("Emitting cmpl %u, %u, r%u, r%u\n", bf, l, ra, rb);
         EMIT_INSN(Operation::CMPL, [=] {
             check_mask(l, 1U);
             check_mask(bf, 0b111U);
@@ -530,10 +638,17 @@ public:
     }
 
     // 3.3.14 Fixed-Point Rotate and Shift Instruction
-    void rlwinm(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, uint8_t me, bool modify_cr) {
+    void rlwinm(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, uint8_t me, bool modify_cr = false) {
         ASM_LOG("Emitting rlwinm%s r%u, r%u, %u, %u, %u\n", modify_cr?".":"", ra, rs, sh, mb, me);
         EMIT_INSN(Operation::RLWINM, [=] {
             return self->m_form(21, rs, ra, sh, mb, me, modify_cr);
+        }, ra, rs, sh, mb, me, modify_cr);
+    }
+
+    void rlwimi(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, uint8_t me, bool modify_cr = false) {
+        ASM_LOG("Emitting rlwimi%s r%u, r%u, %u, %u, %u\n", modify_cr?".":"", ra, rs, sh, mb, me);
+        EMIT_INSN(Operation::RLWIMI, [=] {
+            return self->m_form(20, rs, ra, sh, mb, me, modify_cr);
         }, ra, rs, sh, mb, me, modify_cr);
     }
 
@@ -554,7 +669,7 @@ public:
             return self->md_form(30, rs, ra, sh, me, 1, modify_cr);
         }, ra, rs, sh, me, modify_cr);
     }
-    void sldi(uint8_t rx, uint8_t ry, uint8_t n, bool modify_cr) {
+    void sldi(uint8_t rx, uint8_t ry, uint8_t n, bool modify_cr = false) {
         check_mask(n, 0b11111U);
         rldicr(rx, ry, n, 63-n, modify_cr);
     }

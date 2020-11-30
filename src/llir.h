@@ -2,7 +2,10 @@
 
 #include <util/util.h>
 
+#include <functional>
+#include <type_traits>
 #include <string>
+#include <array>
 #include <cstdint>
 
 namespace retrec {
@@ -57,6 +60,8 @@ struct LoadStore {
         LOAD,
         STORE,
     } op;
+
+    bool sign_extension;
 };
 
 //
@@ -71,6 +76,38 @@ struct Alu {
     } op;
 
     bool modifies_flags;
+
+    /**
+     * This serves as a superset of all flags in supported llir architectures.
+     * There may be a better way to represent this on a per-arch basis, but this
+     * works for now.
+     */
+    enum class Flag {
+        INVALID,
+
+        CARRY,
+        PARITY,
+        AUXILIARY_CARRY,
+        ZERO,
+        SIGN,
+        OVERFLOW,
+
+        COUNT
+    };
+    using FlagArr = std::array<Flag, (size_t)Flag::COUNT-1>;
+
+    static void IterateFlags(const FlagArr &flags, std::function<void(Flag)> cb) {
+        for (size_t i = 0; i < flags.size() && flags[i] != llir::Alu::Flag::INVALID; i++)
+            cb(flags[i]);
+    }
+
+    // Flags modified by this operation,
+    FlagArr flags_modified;
+
+    static constexpr FlagArr all_flags = {
+        Flag::CARRY, Flag::PARITY, Flag::AUXILIARY_CARRY, Flag::ZERO,
+        Flag::SIGN, Flag::OVERFLOW
+    };
 };
 
 //
@@ -96,8 +133,6 @@ struct Branch {
         X86_GREATER,    // !ZF && (SF == OF)
         X86_LESS_EQ,    // ZF || (SF != OF)
     } op;
-
-    bool signed_comparison;
 
     enum class Target {
         RELATIVE,
@@ -129,6 +164,13 @@ struct Operand {
         int64_t imm;
         MemOp memory;
     };
+
+    enum class Width {
+        _64BIT,
+        _32BIT,
+        _16BIT,
+        _8BIT
+    } width;
 };
 
 struct Insn {
@@ -154,6 +196,7 @@ struct Insn {
     uint8_t src_cnt;
     Operand src[2];
 };
+static_assert(std::is_trivial_v<Insn>, "Insn must be trivial!");
 
 //
 // Helpers
@@ -221,9 +264,6 @@ inline std::string to_string(const Branch &branch) {
         default:
             TODO();
     }
-
-    if (branch.signed_comparison)
-        ret += "SIGNED,";
 
     switch (branch.target) {
         case Branch::Target::RELATIVE: ret += "RELATIVE"; break;
@@ -305,9 +345,9 @@ inline std::string to_string(const MemOp &memop) {
         case Architecture::X86_64:
             return "Segment=" + to_string(memop.x86_64.segment) +
                    " Base=" + to_string(memop.x86_64.base) +
-                   " Index= " + to_string(memop.x86_64.index) +
-                   " Scale= " + std::to_string(memop.x86_64.scale) +
-                   " Disp= " + std::to_string(memop.x86_64.disp);
+                   " Index=" + to_string(memop.x86_64.index) +
+                   " Scale=" + std::to_string(memop.x86_64.scale) +
+                   " Disp=" + std::to_string(memop.x86_64.disp);
         default:
             TODO();
     }
@@ -317,11 +357,32 @@ template<>
 inline std::string to_string(const Operand &operand) {
     switch (operand.type) {
         case Operand::Type::IMM: return std::string("Immediate=") + std::to_string((int64_t)operand.imm);
-        case Operand::Type::MEM: return std::string("Memory=") + to_string(operand.memory);
+        case Operand::Type::MEM: return std::string("Memory(") + to_string(operand.memory) + ")";
         case Operand::Type::REG: return std::string("Reg=") + to_string(operand.reg);
         default:
             TODO();
     }
+}
+
+template <>
+inline std::string to_string(const decltype(Alu::flags_modified) &flags) {
+    std::string ret;
+    for (size_t i = 0; i < flags.size(); i++) {
+        switch (flags[i]) {
+            case Alu::Flag::CARRY: ret += "Carry"; break;
+            case Alu::Flag::PARITY: ret += "Parity"; break;
+            case Alu::Flag::AUXILIARY_CARRY: ret += "AuxCarry"; break;
+            case Alu::Flag::ZERO: ret += "Zero"; break;
+            case Alu::Flag::SIGN: ret += "Sign"; break;
+            case Alu::Flag::OVERFLOW: ret += "Overflow"; break;
+            case Alu::Flag::INVALID: break;
+            default: TODO();
+        }
+        if (i != flags.size() - 1)
+            ret += ", ";
+    }
+
+    return ret;
 }
 
 template<>
@@ -332,7 +393,10 @@ inline std::string to_string(const Insn &insn) {
         case Insn::Class::LOADSTORE:
             ret += " Op=" + to_string(insn.loadstore); break;
         case Insn::Class::ALU:
-            ret += " Op=" + to_string(insn.alu); break;
+            ret += " Op=" + to_string(insn.alu);
+            if (insn.alu.modifies_flags)
+                ret += " FlagsModified(" + to_string(insn.alu.flags_modified) + ")";
+            break;
         case Insn::Class::BRANCH:
             ret += " Op=" + to_string(insn.branch); break;
         case Insn::Class::INTERRUPT:

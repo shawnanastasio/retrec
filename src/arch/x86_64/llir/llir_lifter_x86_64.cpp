@@ -88,6 +88,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.iclass = llir::Insn::Class::ALU;
             llinsn.src_cnt = 2;
             llinsn.alu.modifies_flags = true;
+            llinsn.alu.flags_modified = llir::Alu::all_flags;
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
             fill_operand(detail->x86.operands[1], llinsn.src[1]);
             if (llinsn.dest_cnt)
@@ -95,16 +96,49 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
             break;
 
+        case X86_INS_INC:
+            assert(detail->x86.op_count == 1);
+            llinsn.alu.op = llir::Alu::Op::ADD;
+            llinsn.iclass = llir::Insn::Class::ALU;
+            llinsn.src_cnt = 2;
+            llinsn.dest_cnt = 1;
+            llinsn.alu.modifies_flags = true;
+
+            using Flag = llir::Alu::Flag;
+            llinsn.alu.flags_modified = { Flag::OVERFLOW, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY };
+
+            fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+            llinsn.src[1].type = llir::Operand::Type::IMM;
+            llinsn.src[1].imm = 1;
+
+            break;
+
         case X86_INS_MOVABS:
         case X86_INS_MOV:
+            assert(detail->x86.op_count == 2);
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt = 1;
+
             // MOV is pretty epic and can mean a lot of things. Determine what it's doing by looking at operand types
             if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_IMM) {
                 // mov reg, imm - Load Immediate
-                assert(detail->x86.op_count == 2);
                 llinsn.iclass = llir::Insn::Class::ALU;
                 llinsn.alu.op = llir::Alu::Op::LOAD_IMM;
-                llinsn.dest_cnt = 1;
-                llinsn.src_cnt = 1;
+                fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                fill_operand(detail->x86.operands[1], llinsn.src[0]);
+            } else if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[1].type == X86_OP_REG) {
+                // mov mem, reg - Store
+                llinsn.iclass = llir::Insn::Class::LOADSTORE;
+                llinsn.loadstore.op = llir::LoadStore::Op::STORE;
+                llinsn.loadstore.sign_extension = false;
+                fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                fill_operand(detail->x86.operands[1], llinsn.src[0]);
+            } else if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_MEM) {
+                // mov reg, mem - Load
+                llinsn.iclass = llir::Insn::Class::LOADSTORE;
+                llinsn.loadstore.op = llir::LoadStore::Op::LOAD;
+                llinsn.loadstore.sign_extension = false;
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
             } else {
@@ -129,7 +163,19 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     return status_code::SUCCESS;
 }
 
+
+llir::Operand::Width llir_lifter_x86_64::get_width(uint8_t width) {
+    switch (width) {
+        case 1: return llir::Operand::Width::_8BIT;
+        case 2: return llir::Operand::Width::_16BIT;
+        case 4: return llir::Operand::Width::_32BIT;
+        case 8: return llir::Operand::Width::_64BIT;
+        default: TODO();
+    }
+}
+
 void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
+    out.width = get_width(op.size);
     switch (op.type) {
         case X86_OP_IMM:
         {
@@ -158,13 +204,14 @@ void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
             out.memory.x86_64.scale = (uint8_t)op.mem.scale;
             out.memory.x86_64.disp = op.mem.disp;
             break;
+
         case X86_OP_REG:
             out.type = llir::Operand::Type::REG;
             out.reg = get_reg(op.reg);
             break;
         default:
             pr_error("Invalid operand type!\n");
-            assert(0);
+            ASSERT_NOT_REACHED();
     }
 }
 

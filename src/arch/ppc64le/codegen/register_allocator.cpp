@@ -77,21 +77,21 @@ register_allocator_x86_64::register_allocator_x86_64() {
 register_allocator_x86_64::~register_allocator_x86_64() {
 }
 
-gpr_t register_allocator_x86_64::allocate_gpr() {
+register_allocator_x86_64::AllocatedGprT register_allocator_x86_64::allocate_gpr() {
     for (gpr_t i=1 /* skip GPR0 which is sometimes useless */; i<ARRAY_SIZE(gprs); i++) {
         if (gprs[i].state == RegisterInfo::State::FREE) {
             gprs[i].state = RegisterInfo::State::ALLOCATED;
-            return i;
+            return register_allocator_x86_64::AllocatedGprT(i, this);
         }
     }
 
     ASSERT_NOT_REACHED(); // No free registers
 }
 
-gpr_t register_allocator_x86_64::get_fixed_gpr(const llir::Register &reg) {
+register_allocator_x86_64::AllocatedGprT register_allocator_x86_64::get_fixed_gpr(const llir::Register &reg) {
     gpr_t ret = static_allocations.allocations[static_allocations.reserved_index(reg)];
     assert(ret != GPR_INVALID);
-    return ret;
+    return register_allocator_x86_64::AllocatedGprT(ret, this);
 }
 
 void register_allocator_x86_64::free_gpr(gpr_t gpr) {

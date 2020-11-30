@@ -123,20 +123,34 @@ class codegen_ppc64le final : public codegen {
 
     static uint64_t resolve_branch_target(const llir::Insn &insn);
 
+    // All ALU flags that are stored in Rc=0 (i.e. not lazily evaluated)
+    static constexpr llir::Alu::FlagArr llir$alu$all_rc0_flags = { llir::Alu::Flag::SIGN, llir::Alu::Flag::ZERO };
+
     //
     // LLIR code generation functions
     //
+
+    /* ALU */
+    llir::Register::Mask llir$alu$helper$target_mask(llir::Register::Mask src_mask);
+    llir::Register::Mask llir$alu$helper$mask_from_width(llir::Operand::Width w);
+    void llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Operand &op, ppc64le::gpr_t target);
+    void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op);
+    llir::Alu::FlagArr llir$alu$helper$preserve_flags(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$helper$restore_flags(gen_context &ctx, llir::Alu::FlagArr &flags);
+
     void llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$sub(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$add(gen_context &ctx, const llir::Insn &insn);
-    void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op,
-                                      llir::Register::Mask mask);
-    llir::Register::Mask llir$alu$helper$determine_immediate_mask(const llir::Insn &insn);
-    void llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn, const llir::Operand &op,
-                                               ppc64le::gpr_t target, llir::Register::Mask default_mask);
+
+    /* Branch */
     void llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn);
     void llir$branch$conditional(gen_context &ctx, const llir::Insn &insn);
+
+    /* Interrupt */
     void llir$interrupt$syscall(gen_context &ctx, const llir::Insn &insn);
+
+    /* Load/Store */
+    void llir$loadstore(gen_context &ctx, const llir::Insn &insn);
 
     // Dispatch to the appropriate code generation function
     void dispatch(gen_context &ctx, const llir::Insn &insn);
@@ -212,6 +226,8 @@ class codegen_ppc64le final : public codegen {
                              bool invert, bool modify_cr);
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
+    void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::MemOp &mem, llir::LoadStore::Op op,
+                         llir::Register::Mask reg_mask);
 
 public:
     codegen_ppc64le(Architecture target_, execution_context &econtext_)
