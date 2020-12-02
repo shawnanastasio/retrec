@@ -201,7 +201,7 @@ public:
 #define UNPACK_ARGS(...) [[maybe_unused]] uint8_t n = 0; FOR_EACH(UNPACK, ##__VA_ARGS__)
 
     void b_internal(int32_t target, bool aa, bool lk) {
-        ASM_LOG("Emitting b%s%s 0x%llx\n", lk?"l":"", aa?"a":"", target);
+        ASM_LOG("Emitting b%s%s 0x%x\n", lk?"l":"", aa?"a":"", target);
 
         EMIT_INSN(Operation::B, [=] {
             assert((target & 0b11) == 0);
@@ -515,7 +515,7 @@ public:
     void cmpwi(uint8_t bf, uint8_t ra, uint16_t si) { cmpi(bf, false, ra, si); }
 
     void cmp(uint8_t bf, bool l, uint8_t ra, uint8_t rb) {
-        ASM_LOG("Emitting cmp %u, %u, r%u, r%u to 0x%lu\n", bf, l, ra, rb);
+        ASM_LOG("Emitting cmp %u, %u, r%u, r%u\n", bf, l, ra, rb);
         EMIT_INSN(Operation::CMP, [=] {
             check_mask(bf, 0b111U);
             uint8_t rs = (uint8_t)((bf << (uint8_t)2U) | (l & (uint8_t)1U));
@@ -707,7 +707,7 @@ public:
     }
 
     void mcrxrx(uint8_t bf) {
-        ASM_LOG("Emitting mcrxrx %u\n");
+        ASM_LOG("Emitting mcrxrx %u\n", bf);
         EMIT_INSN(Operation::MCRXRX, [=] {
             check_mask(bf, 0b111U);
             return self->x_form(31, (uint8_t)(bf << 2), 0, 0, 576, 0);

@@ -90,6 +90,7 @@ enum log_level {
     LOGL_ERROR = _LOGL_ERROR,
 };
 
+__attribute__((format (printf, 4, 5)))
 void log_impl(log_level level, const char *file, int line, const char *fmt, ...);
 
 } // namespace retrec

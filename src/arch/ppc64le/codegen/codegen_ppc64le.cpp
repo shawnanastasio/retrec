@@ -182,7 +182,7 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
                      */
                     auto target_index_it = ctx.local_branch_targets.find(data.abs_vaddr);
                     if (target_index_it == ctx.local_branch_targets.end()) {
-                        pr_error("Unable to resolve Immediate Branch to target 0x%lx\n", target);
+                        pr_error("Unable to resolve Immediate Branch to target 0x%x\n", target);
                         return status_code::BADBRANCH;
                     }
                     size_t target_index = target_index_it->second;
