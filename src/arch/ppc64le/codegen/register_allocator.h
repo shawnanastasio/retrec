@@ -21,7 +21,7 @@ public:
     friend RegisterAllocatorT;
 
     gpr_t gpr() const { assert(m_allocator); return m_gpr; }
-    operator bool() { return !!m_allocator; }
+    explicit operator bool() { return !!m_allocator; }
 
     // Only allow moves
     ~allocated_gpr() { if (m_allocator) m_allocator->free_gpr(m_gpr); }
