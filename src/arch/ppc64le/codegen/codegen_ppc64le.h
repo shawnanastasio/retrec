@@ -133,7 +133,8 @@ class codegen_ppc64le final : public codegen {
     /* ALU */
     llir::Register::Mask llir$alu$helper$target_mask(llir::Register::Mask src_mask);
     llir::Register::Mask llir$alu$helper$mask_from_width(llir::Operand::Width w);
-    void llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Operand &op, ppc64le::gpr_t target);
+    void llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn, const llir::Operand &op,
+                                               ppc64le::gpr_t target);
     void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op);
     llir::Alu::FlagArr llir$alu$helper$preserve_flags(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$helper$restore_flags(gen_context &ctx, llir::Alu::FlagArr &flags);
@@ -227,7 +228,7 @@ class codegen_ppc64le final : public codegen {
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
     void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::MemOp &mem, llir::LoadStore::Op op,
-                         llir::Register::Mask reg_mask);
+                         llir::Register::Mask reg_mask, const llir::Insn &insn);
 
 public:
     codegen_ppc64le(Architecture target_, execution_context &econtext_)

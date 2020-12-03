@@ -30,6 +30,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
     memset(&llinsn, 0, sizeof(llinsn));
     llinsn.address = insn->address;
+    llinsn.size = insn->size;
 
     switch (insn->id) {
         case X86_INS_JMP:

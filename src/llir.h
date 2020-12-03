@@ -177,6 +177,9 @@ struct Insn {
     // Address of original instruction
     uint64_t address;
 
+    // Size in bytes of original instruction
+    uint16_t size;
+
     // Instruction class + class-specific data
     enum class Class {
         LOADSTORE,

@@ -9,6 +9,9 @@
 
 using namespace retrec;
 
+// Program header constants
+constexpr uint32_t PHDR_GNU_RELRO = 0x6474e552;
+
 elf_loader::~elf_loader() {
     if (elf)
         elf_end(elf);
@@ -176,6 +179,11 @@ status_code elf_loader::load_all() {
 
                 break;
             }
+
+            case PHDR_GNU_RELRO:
+                pr_warn("Skipping unimplemented GNU_RELRO program header\n");
+                break;
+
             default:
                 pr_error("Don't know how to handle phdr type %d\n", phdr.p_type);
                 return status_code::BADELF;
