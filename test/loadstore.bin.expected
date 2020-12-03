@@ -1,0 +1,4 @@
+PASS: BYTE memcpy worked!
+PASS: WORD memcpy worked!
+PASS: DWORD memcpy worked!!
+PASS: QWORD memcpy worked....!!
