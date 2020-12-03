@@ -1,0 +1,8 @@
+PASS: DISP Load/Store
+PASS: BASE Load/Store
+PASS: BASE_IDX Load/Store
+PASS: BASE_IDX_DISP Load/Store
+PASS: BASE_IDX_SCALE Load/Store
+PASS: IDX_SCALE_DISP Load/Store
+PASS: BASE_IDX_SCALE_DISP Load/Store
+PASS: RIPREL Load/Store

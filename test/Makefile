@@ -8,7 +8,10 @@ GENERATED_SRCS=$(GENERATED_TARGETS:.bin=.S)
 # Tell LD to account for a max page size of 64k. This lets us easily test
 # our binaries on ppc64le 64k hosts. Real binaries will need to be run on a
 # 4k host.
-LDFLAGS:=-z max-page-size=65536
+#
+# --no-relax prevents the linker from optimizing away things like RIP-relative
+#  addressing which we want to explicitly keep for testing
+LDFLAGS:=-z max-page-size=65536 --no-relax
 
 all: $(TARGETS) $(GENERATED_TARGETS)
 

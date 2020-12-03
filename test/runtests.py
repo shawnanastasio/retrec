@@ -4,6 +4,7 @@ import sys
 import glob
 import re
 import subprocess
+import os
 
 COLOR_RESET = "\u001b[0m"
 COLOR_YELLOW = "\u001b[33m"
@@ -12,11 +13,22 @@ COLOR_RED = "\u001b[31m"
 CARGS = {'reset': COLOR_RESET, 'yellow': COLOR_YELLOW, 'green': COLOR_GREEN, 'red': COLOR_RED}
 
 def run_test(retrec, test):
-    result = subprocess.run([retrec, test], stdout=subprocess.PIPE)
+    result = subprocess.run([retrec, test], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     output = result.stdout.decode("UTF-8")
     print(output.rstrip())
+
     failures = re.findall("(FAIL:.*)", output)
     passes = re.findall("PASS:.*", output)
+
+    expected_results_path = test + ".expected"
+    if os.path.isfile(expected_results_path):
+        # Compare output to expected
+        with open(expected_results_path, "r") as f:
+            expected = f.read()
+
+        if output != expected:
+            failures.append("Output doesn't match {}".format(expected_results_path))
+
     return (failures, passes)
 
 def main():
