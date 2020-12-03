@@ -1,7 +1,6 @@
 #pragma once
 
 #include <util/util.h>
-#include <arch/arch.h>
 #include <arch/x86_64/cpu_context_x86_64.h>
 #include <arch/ppc64le/cpu_context_ppc64le.h>
 
@@ -10,6 +9,7 @@ namespace retrec {
 struct runtime_context_ppc64le {
     cpu_context_ppc64le host_native_context;     // Host CPU context when in native code
     cpu_context_ppc64le host_translated_context; // Host CPU context when in translated code
+    void (*leave_translated_code_ptr)(void);     // Function pointer to arch_leave_translated_code thunk
 
     //
     // Storage used for communication between translated and native code
@@ -31,7 +31,7 @@ struct runtime_context_ppc64le {
     int exit_code;
 };
 static_assert(std::is_pod<runtime_context_ppc64le>::value, "Runtime context must be POD, since we access it manually from emitted ASM.");
-static_assert(sizeof(runtime_context_ppc64le) <= 65535, "Runtime context must be accessible with 16-bit displacements!");
+static_assert(sizeof(runtime_context_ppc64le) <= 32768, "Runtime context must be accessible with signed 16-bit displacements!");
 
 class translated_code_region;
 namespace ppc64le {
@@ -87,7 +87,7 @@ void syscall_native_callback(runtime_context_ppc64le *);
 
 // If the host architecture is ppc64le, set global runtime context definitions
 
-using runtime_context = runtime_context_ppc64le;
+struct runtime_context : public runtime_context_ppc64le {};
 using ppc64le::runtime_context_init;
 using ppc64le::runtime_context_execute;
 

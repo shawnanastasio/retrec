@@ -14,6 +14,7 @@ namespace retrec {
 
 // Forward-declare translated_code_region since #including <codegen.h> results in cyclic includes.
 class translated_code_region;
+struct runtime_context;
 
 class execution_context {
 public:
@@ -41,7 +42,7 @@ class simple_execution_context final : public execution_context {
 
 public:
     DISABLE_COPY_AND_MOVE(simple_execution_context)
-    simple_execution_context() : vaddr_map(getpid()) {}
+    simple_execution_context();
     ~simple_execution_context();
 
     status_code init() override;

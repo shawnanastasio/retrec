@@ -5,6 +5,8 @@
 
 using namespace retrec;
 
+simple_execution_context::simple_execution_context() : vaddr_map(getpid()) {}
+
 simple_execution_context::~simple_execution_context() {}
 
 status_code simple_execution_context::init() {

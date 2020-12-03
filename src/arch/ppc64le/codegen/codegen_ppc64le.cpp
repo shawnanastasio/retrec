@@ -677,15 +677,15 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
 
     // Store address of callback
     macro$load_imm(*ctx.assembler, scratch.gpr(), (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL, llir::Register::Mask::Full64, true);
-    ctx.assembler->std(scratch.gpr(), 11, offsetof(runtime_context_ppc64le, native_function_call_target));
+    ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, native_function_call_target));
 
     // Load arch_leave_translated_code
-    macro$load_imm(*ctx.assembler, scratch.gpr(), (int64_t)arch_leave_translated_code, llir::Register::Mask::Full64, true);
+    ctx.assembler->ld(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, leave_translated_code_ptr));
     ctx.assembler->mtspr(SPR::CTR, scratch.gpr());
 
     // Save LR
     ctx.assembler->mfspr(scratch.gpr(), SPR::LR);
-    ctx.assembler->std(scratch.gpr(), 11, TRANSLATED_CTX_OFF(lr));
+    ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, TRANSLATED_CTX_OFF(lr));
 
     // Branch
     ctx.assembler->bctrl();
