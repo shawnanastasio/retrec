@@ -146,6 +146,7 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             switch (insn.loadstore.op) {
                 case llir::LoadStore::Op::LOAD:
                 case llir::LoadStore::Op::STORE:
+                case llir::LoadStore::Op::LEA:
                     llir$loadstore(ctx, insn);
                     break;
 
@@ -698,10 +699,10 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     assert(!insn.loadstore.sign_extension); // FIXME
 
     // Extract memory and register operands
-    auto &memory_operand = (insn.loadstore.op == llir::LoadStore::Op::LOAD) ? insn.src[0] : insn.dest[0];
+    auto &memory_operand = (insn.loadstore.op == llir::LoadStore::Op::STORE) ? insn.dest[0] : insn.src[0];
     assert(memory_operand.type == llir::Operand::Type::MEM);
 
-    auto &reg_operand = (insn.loadstore.op == llir::LoadStore::Op::LOAD) ? insn.dest[0] : insn.src[0];
+    auto &reg_operand = (insn.loadstore.op == llir::LoadStore::Op::STORE) ? insn.src[0] : insn.dest[0];
     assert(reg_operand.type == llir::Operand::Type::REG);
 
     // Emit load/store for the provided register and memory operands
@@ -1111,13 +1112,14 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
                      const llir::MemOp &mem, llir::LoadStore::Op op, llir::Register::Mask reg_mask,
                      const llir::Insn &insn) {
     assert(mem.arch == Architecture::X86_64);
-    assert(op == llir::LoadStore::Op::LOAD || op == llir::LoadStore::Op::STORE);
 
     auto disp_fits = [&](auto disp) -> bool {
-        if (reg_mask == llir::Register::Mask::Full64)
-            return assembler::fits_in_mask(disp, 0xFFFC);
-        else
+        if (op == llir::LoadStore::Op::LEA || reg_mask != llir::Register::Mask::Full64)
+            // For LEA or <64-bit loads/stores, check if the mask fits in 16-bit addi/l{b,h,w}z disp field
             return assembler::fits_in_mask(disp, 0xFFFF);
+        else
+            // For 64-bit loads/stores, the displacement must have the two least significant bits cleared
+            return assembler::fits_in_mask(disp, 0xFFFC);
     };
 
     auto loadstore_disp = [&](gpr_t reg, gpr_t ra, int16_t disp) {
@@ -1140,7 +1142,7 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
 
                 default: TODO();
             }
-        } else {
+        } else if (op == llir::LoadStore::Op::STORE) {
             switch (reg_mask) {
                 case llir::Register::Mask::Full64: ctx.assembler->std(reg, ra, disp); break;
                 case llir::Register::Mask::Low32: ctx.assembler->stw(reg, ra, disp); break;
@@ -1158,7 +1160,10 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
 
                 default: TODO();
             }
-        }
+        } else if (op == llir::LoadStore::Op::LEA) {
+            // Load calculated address into reg
+            ctx.assembler->addi(reg, ra, disp);
+        } else { TODO(); }
     };
 
     auto loadstore_indexed = [&](gpr_t reg, gpr_t ra, gpr_t rb) {
@@ -1180,7 +1185,7 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
 
                 default: TODO();
             }
-        } else {
+        } else if (op == llir::LoadStore::Op::STORE) {
             switch (reg_mask) {
                 case llir::Register::Mask::Full64: ctx.assembler->stdx(reg, ra, rb); break;
                 case llir::Register::Mask::Low32: ctx.assembler->stwx(reg, ra, rb); break;
@@ -1198,7 +1203,10 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
 
                 default: TODO();
             }
-        }
+        } else if (op == llir::LoadStore::Op::LEA) {
+            // Load calculated address into reg
+            ctx.assembler->add(reg, ra, rb);
+        } else { TODO(); }
     };
 
     auto loadstore_disp_auto = [&](gpr_t reg, gpr_t ra, int64_t disp) {

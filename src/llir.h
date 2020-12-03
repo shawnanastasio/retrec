@@ -59,6 +59,7 @@ struct LoadStore {
     enum class Op {
         LOAD,
         STORE,
+        LEA,
     } op;
 
     bool sign_extension;
@@ -227,6 +228,7 @@ inline std::string to_string(const LoadStore &loadstore) {
     switch (loadstore.op) {
         case LoadStore::Op::LOAD: return "LOAD";
         case LoadStore::Op::STORE: return "STORE";
+        case LoadStore::Op::LEA: return "LEA";
         default:
             TODO();
     }
