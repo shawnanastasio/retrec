@@ -703,11 +703,29 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     assert(memory_operand.type == llir::Operand::Type::MEM);
 
     auto &reg_operand = (insn.loadstore.op == llir::LoadStore::Op::STORE) ? insn.src[0] : insn.dest[0];
-    assert(reg_operand.type == llir::Operand::Type::REG);
+    typename T::RegisterAllocatorT::AllocatedGprT reg;
+    llir::Register::Mask reg_mask;
+    switch (reg_operand.type) {
+        case llir::Operand::Type::REG:
+            reg = ctx.reg_allocator().get_fixed_gpr(reg_operand.reg);
+            reg_mask = reg_operand.reg.mask;
+            break;
+
+        case llir::Operand::Type::IMM:
+            assert(insn.loadstore.op == llir::LoadStore::Op::STORE);
+            // Stores may also be performed from an immediate rather than a register.
+            // Allocate a temporary register and load the immediate to it.
+            reg = ctx.reg_allocator().allocate_gpr();
+            reg_mask = llir$alu$helper$mask_from_width(reg_operand.width);
+            macro$load_imm(*ctx.assembler, reg.gpr(), reg_operand.imm, llir::Register::Mask::Full64, true);
+            break;
+
+        case llir::Operand::Type::MEM:
+            ASSERT_NOT_REACHED();
+    }
 
     // Emit load/store for the provided register and memory operands
-    auto reg = ctx.reg_allocator().get_fixed_gpr(reg_operand.reg);
-    macro$loadstore(ctx, reg.gpr(), memory_operand.memory, insn.loadstore.op, reg_operand.reg.mask, insn);
+    macro$loadstore(ctx, reg.gpr(), memory_operand.memory, insn.loadstore.op, reg_mask, insn);
 }
 
 //

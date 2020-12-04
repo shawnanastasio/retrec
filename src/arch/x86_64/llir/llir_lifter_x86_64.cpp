@@ -129,8 +129,9 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 llinsn.alu.op = llir::Alu::Op::LOAD_IMM;
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
-            } else if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[1].type == X86_OP_REG) {
-                // mov mem, reg - Store
+            } else if (detail->x86.operands[0].type == X86_OP_MEM &&
+                       (detail->x86.operands[1].type == X86_OP_REG || detail->x86.operands[1].type == X86_OP_IMM)) {
+                // mov mem, {reg,imm} - Store
                 llinsn.iclass = llir::Insn::Class::LOADSTORE;
                 llinsn.loadstore.op = llir::LoadStore::Op::STORE;
                 llinsn.loadstore.sign_extension = false;
