@@ -39,12 +39,20 @@
     x(EXTSB, assembler::extsb) \
     x(EXTSH, assembler::extsh) \
     x(LBZ, assembler::lbz) \
+    x(LBZU, assembler::lbzu) \
+    x(LBZUX, assembler::lbzux) \
     x(LBZX, assembler::lbzx) \
     x(LD, assembler::ld) \
+    x(LDU, assembler::ldu) \
+    x(LDUX, assembler::ldux) \
     x(LDX, assembler::ldx) \
     x(LHZ, assembler::lhz) \
+    x(LHZU, assembler::lhzu) \
+    x(LHZUX, assembler::lhzux) \
     x(LHZX, assembler::lhzx) \
     x(LWZ, assembler::lwz) \
+    x(LWZU, assembler::lwzu) \
+    x(LWZUX, assembler::lwzux) \
     x(LWZX, assembler::lwzx) \
     x(MCRF, assembler::mcrf) \
     x(MCRXRX, assembler::mcrxrx) \
@@ -68,12 +76,20 @@
     x(SLDI, assembler::sldi) \
     x(SRDI, assembler::srdi) \
     x(STB, assembler::stb) \
+    x(STBU, assembler::stbu) \
+    x(STBUX, assembler::stbux) \
     x(STBX, assembler::stbx) \
     x(STD, assembler::std) \
+    x(STDU, assembler::stdu) \
+    x(STDUX, assembler::stdux) \
     x(STDX, assembler::stdx) \
     x(STH, assembler::sth) \
+    x(STHU, assembler::sthu) \
+    x(STHUX, assembler::sthux) \
     x(STHX, assembler::sthx) \
     x(STW, assembler::stw) \
+    x(STWU, assembler::stwu) \
+    x(STWUX, assembler::stwux) \
     x(STWX, assembler::stwx) \
     x(SUB, assembler::sub) \
     x(SUBC, assembler::subc) \

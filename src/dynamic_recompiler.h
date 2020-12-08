@@ -27,7 +27,7 @@ class dynamic_recompiler {
 public:
     dynamic_recompiler(Architecture host_, mapped_file binary_) :
         host(host_),
-        econtext(std::make_unique<simple_execution_context>()),
+        econtext(std::make_unique<execution_context>()),
         binary(std::move(binary_)), loader(*econtext, binary),
         disasm(loader)
     {

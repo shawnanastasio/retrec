@@ -8,8 +8,6 @@
 #include <fstream>
 #include <cstdint>
 
-#include <unistd.h>
-
 namespace retrec {
 
 class process_memory_map {
@@ -31,7 +29,7 @@ public:
             : start(start_), end(end_), type(type_), prot(prot_) {}
     };
 
-    explicit process_memory_map(pid_t pid_) : pid(pid_) {}
+    explicit process_memory_map(pid_t pid_);
 
     status_code init();
     uint64_t allocate_high_vaddr(size_t size);
@@ -42,6 +40,7 @@ public:
 
 private:
     pid_t pid;
+    long page_size;
     std::vector<Mapping> map;
 
     void sort();

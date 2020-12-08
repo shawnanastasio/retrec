@@ -218,6 +218,7 @@ class codegen_ppc64le final : public codegen {
     //
     void macro$load_imm(ppc64le::assembler &assembler, ppc64le::gpr_t dest, int64_t imm, llir::Register::Mask mask,
                         bool zero_others);
+    void macro$alu$add_imm(gen_context &ctx, ppc64le::gpr_t dest, int64_t imm);
     void macro$branch$unconditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target, size_t insn_cnt);
     void macro$branch$conditional(ppc64le::assembler &assembler, uint64_t my_address, uint64_t target,
                                   ppc64le::BO bo, uint8_t cr_field, size_t insn_cnt);
@@ -228,7 +229,7 @@ class codegen_ppc64le final : public codegen {
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
     void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::MemOp &mem, llir::LoadStore::Op op,
-                         llir::Register::Mask reg_mask, const llir::Insn &insn);
+                         llir::Register::Mask reg_mask, const llir::Insn *insn);
 
 public:
     codegen_ppc64le(Architecture target_, execution_context &econtext_)

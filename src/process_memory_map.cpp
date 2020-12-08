@@ -4,6 +4,9 @@
 
 using namespace retrec;
 
+
+process_memory_map::process_memory_map(pid_t pid_) : pid(pid_), page_size(sysconf(_SC_PAGESIZE)) {}
+
 status_code process_memory_map::init() {
     std::string path = std::string{"/proc/"} + std::to_string(pid) + "/maps";
     std::fstream maps(path, std::ios::in);

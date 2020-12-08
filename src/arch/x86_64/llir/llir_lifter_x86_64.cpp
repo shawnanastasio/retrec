@@ -134,6 +134,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 // mov mem, {reg,imm} - Store
                 llinsn.iclass = llir::Insn::Class::LOADSTORE;
                 llinsn.loadstore.op = llir::LoadStore::Op::STORE;
+                llinsn.loadstore.update = llir::LoadStore::Update::NONE;
                 llinsn.loadstore.sign_extension = false;
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
@@ -141,6 +142,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 // mov reg, mem - Load OR LEA
                 llinsn.iclass = llir::Insn::Class::LOADSTORE;
                 llinsn.loadstore.op = (insn->id == X86_INS_LEA) ? llir::LoadStore::Op::LEA : llir::LoadStore::Op::LOAD;
+                llinsn.loadstore.update = llir::LoadStore::Update::NONE;
                 llinsn.loadstore.sign_extension = false;
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
@@ -149,6 +151,51 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 return status_code::UNIMPL_INSN;
             }
             break;
+
+        case X86_INS_PUSH:
+            // Model PUSH as a STORE to RSP-8 + update
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt = 1;
+            llinsn.iclass = llir::Insn::Class::LOADSTORE;
+            llinsn.loadstore.op = llir::LoadStore::Op::STORE;
+            llinsn.loadstore.update = llir::LoadStore::Update::PRE;
+            llinsn.loadstore.sign_extension = false;
+
+            // Create an X86_64MemOp with base=(RSP), disp=(-8) as the destination
+            llinsn.dest[0].type = llir::Operand::Type::MEM;
+            llinsn.dest[0].memory.arch = Architecture::X86_64;
+            llinsn.dest[0].memory.x86_64.base = get_reg(X86_REG_RSP);
+            llinsn.dest[0].memory.x86_64.disp = -8;
+            llinsn.dest[0].memory.x86_64.segment = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory.x86_64.index = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory.x86_64.scale = 1;
+
+            // Fill the Source with operand 0
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+            break;
+
+        case X86_INS_POP:
+            // Model POP as a LOAD from RSP+8 + update
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt = 1;
+            llinsn.iclass = llir::Insn::Class::LOADSTORE;
+            llinsn.loadstore.op = llir::LoadStore::Op::LOAD;
+            llinsn.loadstore.update = llir::LoadStore::Update::POST;
+            llinsn.loadstore.sign_extension = false;
+
+            // Create an X86_64MemOp with base=(RSP), disp=(8) as the Source
+            llinsn.src[0].type = llir::Operand::Type::MEM;
+            llinsn.src[0].memory.arch = Architecture::X86_64;
+            llinsn.src[0].memory.x86_64.base = get_reg(X86_REG_RSP);
+            llinsn.src[0].memory.x86_64.disp = 8;
+            llinsn.src[0].memory.x86_64.segment = get_reg(X86_REG_INVALID);
+            llinsn.src[0].memory.x86_64.index = get_reg(X86_REG_INVALID);
+            llinsn.src[0].memory.x86_64.scale = 1;
+
+            // Fill the Destination with operand 0
+            fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+            break;
+
 
         case X86_INS_SYSCALL:
             llinsn.iclass = llir::Insn::Class::INTERRUPT;

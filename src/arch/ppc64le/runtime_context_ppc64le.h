@@ -36,7 +36,7 @@ static_assert(sizeof(runtime_context_ppc64le) <= 32768, "Runtime context must be
 class translated_code_region;
 namespace ppc64le {
 
-status_code runtime_context_init(runtime_context_ppc64le *, Architecture, translated_code_region *);
+status_code runtime_context_init(runtime_context_ppc64le *, Architecture, translated_code_region *, void *);
 status_code runtime_context_execute(runtime_context_ppc64le *);
 static inline int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, llir::X86_64Register reg) {
     // For statically allocated registers, return the corresponding ppc64 register from the translated context.

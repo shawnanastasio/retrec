@@ -42,6 +42,12 @@ enum class Architecture {
 
 #define ARRAY_SIZE(x) (sizeof((x)) / sizeof(*(x)))
 
+template <typename ValT, typename AlignT>
+std::enable_if_t<(std::is_pointer_v<ValT> || std::is_integral_v<ValT>), ValT>
+align_to(ValT val, AlignT alignment) {
+    return (ValT)((uintptr_t)val & ~(alignment - 1));
+}
+
 // C++ is a great language
 #define DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, op) \
 [[maybe_unused]] static inline T operator op (T a, T b) { \

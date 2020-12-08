@@ -62,6 +62,15 @@ struct LoadStore {
         LEA,
     } op;
 
+    // Specify whether the memory source register is updated with the newly
+    // calculated address.
+    enum class Update {
+        NONE, // Perform no update
+        PRE,  // Update source register with offset before dereferencing
+        POST  // Update source register with offset after dereferencing
+    } update;
+
+    // Whether to perform sign extension
     bool sign_extension;
 };
 
@@ -218,20 +227,28 @@ inline std::string to_string(const Insn::Class &iclass) {
         case Insn::Class::ALU: return "ALU";
         case Insn::Class::BRANCH: return "Branch";
         case Insn::Class::INTERRUPT: return "Interrupt";
-        default:
-            TODO();
     }
 }
 
 template<>
 inline std::string to_string(const LoadStore &loadstore) {
+    std::string ret = "";
     switch (loadstore.op) {
-        case LoadStore::Op::LOAD: return "LOAD";
-        case LoadStore::Op::STORE: return "STORE";
-        case LoadStore::Op::LEA: return "LEA";
-        default:
-            TODO();
+        case LoadStore::Op::LOAD: ret += "LOAD("; break;
+        case LoadStore::Op::STORE: ret += "STORE("; break;
+        case LoadStore::Op::LEA: ret += "LEA("; break;
     }
+
+    ret += "update=";
+    switch (loadstore.update) {
+        case LoadStore::Update::NONE: ret += "NONE"; break;
+        case LoadStore::Update::PRE: ret += "PRE"; break;
+        case LoadStore::Update::POST: ret += "POST"; break;
+    }
+    ret += ", signext=";
+    ret += loadstore.sign_extension ? "T" : "F";
+    ret += ")";
+    return ret;
 }
 
 template<>
@@ -241,8 +258,6 @@ inline std::string to_string(const Alu &alu) {
         case Alu::Op::SUB: return "SUB";
         case Alu::Op::MULT: return "MULT";
         case Alu::Op::LOAD_IMM: return "LOAD_IMM";
-        default:
-            TODO();
     }
 }
 
@@ -266,15 +281,11 @@ inline std::string to_string(const Branch &branch) {
         case Branch::Op::X86_LESS: ret += "X86_LESS,"; break;
         case Branch::Op::X86_GREATER: ret += "X86_GREATER,"; break;
         case Branch::Op::X86_LESS_EQ: ret += "X86_LESS_EQ,"; break;
-        default:
-            TODO();
     }
 
     switch (branch.target) {
         case Branch::Target::RELATIVE: ret += "RELATIVE"; break;
         case Branch::Target::ABSOLUTE: ret += "ABSOLUTE"; break;
-        default:
-            TODO();
     }
 
     return ret;
@@ -284,7 +295,6 @@ template<>
 inline std::string to_string(const Interrupt &interrupt) {
     switch (interrupt.op) {
         case Interrupt::Op::SYSCALL: return "SYSCALL";
-            TODO();
     }
 }
 
@@ -315,8 +325,7 @@ inline std::string to_string(const X86_64Register &reg) {
         case llir::X86_64Register::SS: return "SS";
         case llir::X86_64Register::DS: return "DS";
         case llir::X86_64Register::ES: return "ES";
-        default:
-            TODO();
+        case llir::X86_64Register::MAXIMUM: return "INVALID";
     }
 }
 
@@ -329,8 +338,6 @@ inline std::string to_string(const Register::Mask &mask) {
         case Register::Mask::LowLowHigh8: return "LowLowHigh8";
         case Register::Mask::LowLowLow8: return "LowLowLow8";
         case Register::Mask::Special: return "Special";
-        default:
-            TODO();
     }
 }
 
@@ -339,8 +346,7 @@ inline std::string to_string(const Register &reg) {
     switch (reg.arch) {
         case Architecture::X86_64:
             return to_string(reg.x86_64) + "(" + to_string(reg.mask) + ")";
-        default:
-            TODO();
+        case Architecture::ppc64le: TODO();
     }
 }
 
@@ -353,8 +359,7 @@ inline std::string to_string(const MemOp &memop) {
                    " Index=" + to_string(memop.x86_64.index) +
                    " Scale=" + std::to_string(memop.x86_64.scale) +
                    " Disp=" + std::to_string(memop.x86_64.disp);
-        default:
-            TODO();
+        case Architecture::ppc64le: TODO();
     }
 }
 
@@ -364,8 +369,6 @@ inline std::string to_string(const Operand &operand) {
         case Operand::Type::IMM: return std::string("Immediate=") + std::to_string((int64_t)operand.imm);
         case Operand::Type::MEM: return std::string("Memory(") + to_string(operand.memory) + ")";
         case Operand::Type::REG: return std::string("Reg=") + to_string(operand.reg);
-        default:
-            TODO();
     }
 }
 
@@ -381,7 +384,7 @@ inline std::string to_string(const decltype(Alu::flags_modified) &flags) {
             case Alu::Flag::SIGN: ret += "Sign"; break;
             case Alu::Flag::OVERFLOW: ret += "Overflow"; break;
             case Alu::Flag::INVALID: break;
-            default: TODO();
+            case Alu::Flag::COUNT: break;
         }
         if (i != flags.size() - 1)
             ret += ", ";
@@ -406,8 +409,6 @@ inline std::string to_string(const Insn &insn) {
             ret += " Op=" + to_string(insn.branch); break;
         case Insn::Class::INTERRUPT:
             ret += " Op=" + to_string(insn.interrupt); break;
-        default:
-            TODO();
     }
     for (size_t i=0; i<insn.dest_cnt; i++)
         ret += " Destination(" + to_string(insn.dest[0]) + ")";

@@ -1,15 +1,17 @@
 #include <execution_context.h>
 
+#include <unistd.h>
 #include <sys/mman.h>
 #include <algorithm>
 
 using namespace retrec;
 
-simple_execution_context::simple_execution_context() : vaddr_map(getpid()) {}
+execution_context::execution_context() : vaddr_map(getpid()),
+                                         page_size(sysconf(_SC_PAGESIZE)) {}
 
-simple_execution_context::~simple_execution_context() {}
+execution_context::~execution_context() {}
 
-status_code simple_execution_context::init() {
+status_code execution_context::init() {
     // Setup virtual address space allocator
     status_code ret = vaddr_map.init();
     if (ret != status_code::SUCCESS)
@@ -32,8 +34,32 @@ status_code simple_execution_context::init() {
     return status_code::SUCCESS;
 }
 
-status_code simple_execution_context::allocate_region(uint64_t start, size_t len, int prot, void **region_out) {
-    if (start % getpagesize() != 0)
+
+status_code execution_context::allocate_new_stack(size_t size, void **stack_out) {
+    // Determine the number of pages to allocate
+    size_t allocation_size = align_to(size, page_size) + 1*page_size /* guard page */;
+    assert(allocation_size >= 2);
+
+    // Allocate at the end of the address space
+    uint64_t stack = vaddr_map.allocate_high_vaddr(allocation_size);
+    if (!stack)
+        return status_code::NOMEM;
+
+    // Map the allocated region of virtual address space
+    void *mem = mmap((void *)stack, allocation_size, PROT_READ | PROT_WRITE,
+                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+    if (mem == (void *)-1)
+        return status_code::NOMEM; // deallocate vaddr space?
+
+    // Mark the guard page as !R, !W, !X
+    mprotect((void *)stack, page_size, 0);
+
+    *stack_out = (void *)(stack + allocation_size);
+    return status_code::SUCCESS;
+}
+
+status_code execution_context::allocate_region(uint64_t start, size_t len, int prot, void **region_out) {
+    if (start % page_size != 0)
         return status_code::BADALIGN;
 
     if (vaddr_map.contains(start, len))
@@ -54,32 +80,42 @@ status_code simple_execution_context::allocate_region(uint64_t start, size_t len
     // Mark region as allocated
     vaddr_map.mark_allocated({start, start+len, process_memory_map::Mapping::Type::USER, prot});
 
-    *region_out = region;
+    if (region_out)
+        *region_out = region;
     return status_code::SUCCESS;
 }
 
-void *simple_execution_context::get_region_ptr(uint64_t ptr) {
+void *execution_context::get_region_ptr(uint64_t ptr) {
     if (!vaddr_map.contains(ptr, sizeof(ptr)))
         return nullptr;
 
     return (void *)ptr;
 }
 
-status_code simple_execution_context::initialize_runtime_context(Architecture target_arch, translated_code_region *entry) {
+status_code execution_context::initialize_runtime_context(Architecture target_arch, translated_code_region *entry) {
+    // Allocate an initial stack + guard page
+    void *new_stack;
+    auto res = allocate_new_stack(DEFAULT_STACK_SIZE, &new_stack);
+    if (res != status_code::SUCCESS) {
+        pr_error("Failed to allocate stack for translated code: %s\n", status_code_str(res));
+        return res;
+    }
+
+    // Call architecture-specific function to populate the runtime context
     runtime_context = std::make_unique<retrec::runtime_context>();
-    auto ret = runtime_context_init(runtime_context.get(), target_arch, entry);
-    if (ret != status_code::SUCCESS)
-        return ret;
+    res = runtime_context_init(runtime_context.get(), target_arch, entry, new_stack);
+    if (res != status_code::SUCCESS)
+        return res;
 
     return status_code::SUCCESS;
 }
 
-void simple_execution_context::enter_translated_code() {
+void execution_context::enter_translated_code() {
     assert(runtime_context);
     assert(runtime_context_execute(runtime_context.get()) == status_code::SUCCESS);
 }
 
-status_code simple_execution_context::protect_region(uint64_t start, uint64_t len, int prot) {
+status_code execution_context::protect_region(uint64_t start, uint64_t len, int prot) {
     auto *mapping = vaddr_map.find(start, len);
     if (!mapping)
         return status_code::NOMEM;

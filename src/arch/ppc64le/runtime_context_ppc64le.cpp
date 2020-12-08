@@ -6,10 +6,13 @@
 
 using namespace retrec;
 
-status_code ppc64le::runtime_context_init(runtime_context_ppc64le *ctx, Architecture target_arch, translated_code_region *code) {
+status_code ppc64le::runtime_context_init(runtime_context_ppc64le *ctx,
+                                          Architecture target_arch,
+                                          translated_code_region *code, void *stack) {
     memset(ctx, 0, sizeof(runtime_context_ppc64le));
     ctx->arch = target_arch;
     ctx->leave_translated_code_ptr = arch_leave_translated_code;
+    *runtime_context_get_reg(ctx, llir::X86_64Register::RSP) = (uint64_t)stack;
 
     // Setup special registers
     ctx->host_translated_context.gprs[11] = (uint64_t)ctx; // R11 - runtime_context pointer
