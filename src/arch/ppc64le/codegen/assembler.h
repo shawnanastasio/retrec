@@ -1,5 +1,6 @@
 #pragma once
 
+#include <type_traits>
 #include <util/util.h>
 #include <util/magic.h>
 #include <arch/ppc64le/codegen/codegen_types.h>
@@ -118,8 +119,8 @@ class assembler {
     status_code write32(uint32_t x);
 
     status_code b_form(uint8_t po, uint8_t bo, uint8_t bi, uint16_t bd, uint8_t aa, uint8_t lk);
-    status_code d_form(uint8_t po, uint8_t rt, uint8_t ra, uint16_t i);
-    status_code ds_form(uint8_t po, uint8_t rs, uint8_t ra, uint16_t ds, uint8_t xo);
+    status_code d_form(uint8_t po, uint8_t rt, uint8_t ra, int16_t i);
+    status_code ds_form(uint8_t po, uint8_t rs, uint8_t ra, int16_t ds, uint8_t xo);
     status_code dx_form(uint8_t po, uint8_t rt, int16_t d, uint8_t xo);
     status_code i_form(uint8_t po, int32_t li, uint8_t aa, uint8_t lk);
     status_code m_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint8_t mb, uint8_t me, uint8_t rc);
@@ -136,14 +137,15 @@ public:
     template <typename ValT, typename MaskT>
     static std::enable_if_t<std::is_integral_v<ValT> && std::is_integral_v<MaskT>, bool>
     fits_in_mask(ValT val, MaskT mask) {
+        static_assert(std::is_unsigned_v<MaskT>);
         if constexpr (std::is_unsigned_v<ValT>) {
             return (val & mask) == val;
         } else {
-            // For signed numbers, we check if the value violates the mask differently when the value is negative
-            if (val < 0)
-                return static_cast<ValT>((val | ~(mask))) == val;
-            else
-                return static_cast<ValT>((val & mask)) == val;
+            if (val < 0) {
+                return (-val & mask) == static_cast<MaskT>(-val);
+            } else {
+                return (val & mask) == static_cast<MaskT>(val);
+            }
         }
     }
 
@@ -354,7 +356,7 @@ public:
     void ld(uint8_t rt, uint8_t ra, int16_t ds) {
         ASM_LOG("Emitting ld r%u, 0x%x(r%u)\n", rt, ds, ra);
         EMIT_INSN(Operation::LD, [=] {
-            check_mask(ds, 0xFFFC);
+            check_mask(ds, 0xFFFCU);
             return self->ds_form(58, rt, ra, ds, 0);
         }, rt, ra, ds);
     }
@@ -412,7 +414,7 @@ public:
     void std(uint8_t rs, uint8_t ra, int16_t ds) {
         ASM_LOG("Emitting std r%u, 0x%x(r%u)\n", rs, ds, ra);
         EMIT_INSN(Operation::STD, [=] {
-            check_mask(ds, 0xFFFC);
+            check_mask(ds, 0xFFFCU);
             return self->ds_form(62, rs, ra, ds, 0);
         }, rs, ra, ds);
     }

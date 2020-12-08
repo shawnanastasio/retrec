@@ -32,7 +32,7 @@ status_code assembler::b_form(uint8_t po, uint8_t bo, uint8_t bi, uint16_t bd, u
     return write32(insn);
 }
 
-status_code assembler::d_form(uint8_t po, uint8_t rt, uint8_t ra, uint16_t i) {
+status_code assembler::d_form(uint8_t po, uint8_t rt, uint8_t ra, int16_t i) {
     check_mask(po, PO_MASK);
     check_mask(rt, REG_MASK);
     check_mask(ra, REG_MASK);
@@ -43,7 +43,7 @@ status_code assembler::d_form(uint8_t po, uint8_t rt, uint8_t ra, uint16_t i) {
     return write32(insn);
 }
 
-status_code assembler::ds_form(uint8_t po, uint8_t rs, uint8_t ra, uint16_t ds, uint8_t xo) {
+status_code assembler::ds_form(uint8_t po, uint8_t rs, uint8_t ra, int16_t ds, uint8_t xo) {
     constexpr uint32_t DS_MASK = 0b11111111111111U;
     check_mask(po, PO_MASK);
     check_mask(rs, REG_MASK);

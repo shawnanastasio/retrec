@@ -1134,10 +1134,10 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
     auto disp_fits = [&](auto disp) -> bool {
         if (op == llir::LoadStore::Op::LEA || reg_mask != llir::Register::Mask::Full64)
             // For LEA or <64-bit loads/stores, check if the mask fits in 16-bit addi/l{b,h,w}z disp field
-            return assembler::fits_in_mask(disp, 0xFFFF);
+            return assembler::fits_in_mask(disp, 0xFFFFU);
         else
             // For 64-bit loads/stores, the displacement must have the two least significant bits cleared
-            return assembler::fits_in_mask(disp, 0xFFFC);
+            return assembler::fits_in_mask(disp, 0xFFFCU);
     };
 
     auto loadstore_disp = [&](gpr_t reg, gpr_t ra, int16_t disp) {
