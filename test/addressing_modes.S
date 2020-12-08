@@ -27,6 +27,10 @@
     RIPREL_STR: .ascii    "FAIL: RIPREL Load/Store\n"
     RIPREL_STR_LEN = . - RIPREL_STR
 
+    STORE_IMM_STR: .ascii    "FAIL: STORE_IMM Load/Store\n"
+    STORE_IMM_STR_LEN = . - STORE_IMM_STR
+    .lcomm PASS_BUF,4
+
 .text
 
 .global _start
@@ -133,6 +137,17 @@ _start:
     mov rdi, 1
     mov rsi, OFFSET RIPREL_STR
     mov edx, RIPREL_STR_LEN
+    syscall
+
+    # Store immediate
+    mov dword ptr [PASS_BUF], 0x53534150 # 'PASS'
+    mov eax, [PASS_BUF]
+    mov [STORE_IMM_STR], eax
+
+    mov rax, 1 # SYS_write
+    mov rdi, 1
+    mov rsi, OFFSET STORE_IMM_STR
+    mov edx, STORE_IMM_STR_LEN
     syscall
 
     # Exit
