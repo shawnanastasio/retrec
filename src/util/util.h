@@ -25,6 +25,7 @@ enum class status_code {
     OVERFLOW,
     BADALIGN,
     OVERLAP,
+    DEFER,
 
     // Code generation errors
     BADBRANCH,

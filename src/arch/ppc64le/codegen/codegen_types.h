@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <variant>
 #include <optional>
+#include <string>
 
 /**
  * This is an x-macro that defines each supported cpu operation, along with a corresponding
@@ -133,17 +134,41 @@ enum class SPR : uint16_t {
     CTR = 9
 };
 
+
+// Annotated types for assembler operands. Allows inspection code (like relocation) to determine
+// parameter uses without hardcoding table of per-instruction meanings.
+//
+// To ensure that the new types are distinct from their underlying types (for use in std::variant),
+// they are declared as enums. A typedef/using declaration would allow implicit conversion and make
+// it difficult to store the types in std::variants that can also contain the underlying type.
+enum BI : uint8_t {};            // Branch CR field
+enum AA : bool {};               // Branch absolute address toggle
+enum LK : bool {};               // Branch linkage toggle
+enum rel_off_26bit : int32_t {}; // 26-bit relative offset (e.g. B)
+enum rel_off_16bit : int16_t {}; // 16-bit relative offset (e.g. BC)
+
 class instruction_stream;
 
 //
 // Types used by codegen_ppc64le and related higher-level code
 //
 
+enum class LabelPosition {
+    BEFORE,
+    AFTER
+};
+
 struct relocation {
+    // Fill in the relative offset to an absolute target virtual address
     struct imm_rel_vaddr_fixup { uint64_t abs_vaddr; };
 
+    // Helpers for declaring labels and referencing them
+    struct imm_rel_label_fixup { std::string label_name; LabelPosition position; };
+    struct declare_label { std::string label_name; };
+    struct declare_label_after { std::string label_name; };
+
     size_t insn_cnt; // Number of instructions reserved for this Relocation
-    std::variant<imm_rel_vaddr_fixup> data;
+    std::variant<imm_rel_vaddr_fixup, imm_rel_label_fixup, declare_label, declare_label_after> data;
 };
 
 // Auxiliary data that can be attached to an instruction stream entry

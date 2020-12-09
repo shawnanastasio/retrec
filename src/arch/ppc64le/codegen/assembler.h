@@ -34,7 +34,8 @@ namespace ppc64le {
  */
 class instruction_stream_entry {
 public:
-    using asm_param = std::variant<bool, uint8_t, uint16_t, uint32_t, int8_t, int16_t, int32_t, BO, SPR>;
+    using asm_param = std::variant<bool, uint8_t, uint16_t, uint32_t, int8_t, int16_t, int32_t,
+                                   BO, SPR, BI, AA, LK, rel_off_26bit, rel_off_16bit>;
 
     template <typename... Ts>
     instruction_stream_entry(Operation op_, std::function<status_code(assembler*, asm_param*)> emit_, Ts&&... parameters_)
@@ -69,6 +70,20 @@ public:
     //
     // Accessors
     //
+
+    /**
+     * Return a pointer to the first stored parameter with the provided type of `DestT`.
+     * If no parameter of the given type exists, nullptr is returned.
+     */
+    template <typename DestT>
+    DestT *parameter_by_type() {
+        for (size_t i = 0; i < parameters.size(); i++) {
+            if (std::holds_alternative<DestT>(parameters[i])) {
+                return &std::get<DestT>(parameters[i]);
+            }
+        }
+        return nullptr;
+    }
 
     /**
      * Returns a reference to the stored parameter for assembler function `F` at index `i`.
@@ -203,31 +218,31 @@ public:
 #define UNPACK(x) decltype(x) x = *(decltype(x)*)(&params[n++]);
 #define UNPACK_ARGS(...) [[maybe_unused]] uint8_t n = 0; FOR_EACH(UNPACK, ##__VA_ARGS__)
 
-    void b_internal(int32_t target, bool aa, bool lk) {
+    void b_internal(rel_off_26bit target, AA aa, LK lk) {
         ASM_LOG("Emitting b%s%s 0x%x\n", lk?"l":"", aa?"a":"", target);
 
         EMIT_INSN(Operation::B, [=] {
             assert((target & 0b11) == 0);
-            return self->i_form(18, target>>2, aa, lk);
+            return self->i_form(18, target >> 2, aa, lk);
         }, target, aa, lk);
     }
-    void b(int32_t li)   { b_internal(li, 0, 0); }
-    void ba(int32_t li)  { b_internal(li, 1, 0); }
-    void bl(int32_t li)  { b_internal(li, 0, 1); }
-    void bla(int32_t li) { b_internal(li, 1, 1); }
+    void b(uint32_t li)   { b_internal((rel_off_26bit)li, (AA)0, (LK)0); }
+    void ba(uint32_t li)  { b_internal((rel_off_26bit)li, (AA)1, (LK)0); }
+    void bl(uint32_t li)  { b_internal((rel_off_26bit)li, (AA)0, (LK)1); }
+    void bla(uint32_t li) { b_internal((rel_off_26bit)li, (AA)1, (LK)1); }
 
-    void bc_internal(BO bo, uint8_t bi, uint16_t target, bool aa, bool lk) {
-        ASM_LOG("Emitting bc%s%s %u %u 0x%x\n", lk?"l":"", aa?"a":"", (uint8_t)bo, bi, target);
+    void bc_internal(BO bo, BI bi, rel_off_16bit target, AA aa, LK lk) {
+        ASM_LOG("Emitting bc%s%s %u %u 0x%x\n", lk?"l":"", aa?"a":"", (uint32_t)bo, bi, target);
 
         EMIT_INSN(Operation::BC, [=] {
             assert((target & 0b11U) == 0);
             return self->b_form(16, (uint8_t)bo, bi, target>>2, aa, lk);
         }, bo, bi, target, aa, lk);
     }
-    void bc(BO bo, uint8_t bi, uint16_t target)   { bc_internal(bo, bi, target, 0, 0); }
-    void bca(BO bo, uint8_t bi, uint16_t target)  { bc_internal(bo, bi, target, 1, 0); }
-    void bcl(BO bo, uint8_t bi, uint16_t target)  { bc_internal(bo, bi, target, 0, 1); }
-    void bcla(BO bo, uint8_t bi, uint16_t target) { bc_internal(bo, bi, target, 1, 1); }
+    void bc(BO bo, uint8_t bi, uint16_t target)   { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)0); }
+    void bca(BO bo, uint8_t bi, uint16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)0); }
+    void bcl(BO bo, uint8_t bi, uint16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)1); }
+    void bcla(BO bo, uint8_t bi, uint16_t target) { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)1); }
 
     void bcctr_internal(BO bo, uint8_t bi, uint8_t bh, bool lk) {
         ASM_LOG("Emitting bcctr%s %d %d %d\n", lk?"l":"", (uint8_t)bo, bi, bh);

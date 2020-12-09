@@ -4,6 +4,7 @@
 #include <arch/ppc64le/codegen/assembler.h>
 
 #include <type_traits>
+#include <unordered_map>
 #include <variant>
 #include <cstring>
 
@@ -162,83 +163,158 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
 
 template <typename T>
 status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_context &ctx) {
-    // Walk the instruction stream and look for relocationsa
+    instruction_stream_entry *insn; // Current instruction stream entry
+    bool first_pass = true;         // Whether we're on the first pass or not
+    size_t insn_i;                  // Index of current instruction
+    std::unordered_map<std::string, std::vector<size_t>> labels;         // Map of label:insn_index for use in label resolution
+    std::vector<std::pair<size_t, instruction_stream_entry *>> deferred; // Vector of idx:insn for deferred relocations
+
+    // Helper to fix up absolute branches
+    auto fixup_absolute_branch = [](auto &insn) {
+        if (auto *aa = insn.template parameter_by_type<AA>()) {
+            if (!*aa)
+                return;
+
+            pr_warn("Relocation requires changing branch from absolute to relative\n");
+            *aa = (AA)false;
+        }
+    };
+
+    // Helper to update an instruction's relative offset field with the provided offset
+    auto update_relative_offset = [fixup_absolute_branch](auto &insn, int64_t target_off) -> status_code {
+        if (auto *rel26 = insn.template parameter_by_type<rel_off_26bit>()) {
+            // Instruction uses 26-bit relative offsets
+            if (target_off < INT26_MIN || target_off > INT26_MAX)
+                return status_code::BADBRANCH;
+
+            *rel26 = (rel_off_26bit)target_off;
+            fixup_absolute_branch(insn);
+        } else if (auto *rel16 = insn.template parameter_by_type<rel_off_16bit>()) {
+            // Instruction uses 16-bit relative offsets
+            if (target_off < INT16_MIN || target_off > INT16_MAX)
+                return status_code::BADBRANCH;
+
+            *rel16 = (rel_off_16bit)target_off;
+            fixup_absolute_branch(insn);
+        } else {
+            pr_debug("Unknown offset field in instruction marked with imm_rel_vaddr_fixup relocation!\n");
+            return status_code::UNIMPL_INSN;
+        }
+
+        return status_code::SUCCESS;
+    };
+
+    // Visitor object for handling relocations
+    auto relocation_visitor = Overloaded {
+        [&](const relocation::imm_rel_vaddr_fixup &data) -> status_code {
+            assert(first_pass); // Should never be called more than once
+            /**
+             * imm_rel_vaddr_fixup - Modify the instruction's rel_off* field to point to
+             * the relative address corresponding to the provided absolute target virtual address.
+             */
+            auto target_index_it = ctx.local_branch_targets.find(data.abs_vaddr);
+            if (target_index_it == ctx.local_branch_targets.end()) {
+                pr_error("Unable to resolve Immediate Branch to target 0x%x\n", target);
+                return status_code::BADBRANCH;
+            }
+            size_t target_index = target_index_it->second;
+
+            // Calculate the target's relative offset from us
+            int64_t target_off = target_index*INSN_SIZE - insn_i*INSN_SIZE;
+
+            // Update instruction's relative address field
+            return update_relative_offset(*insn, target_off);
+        },
+
+
+        [&]([[maybe_unused]] const relocation::imm_rel_label_fixup &data) -> status_code {
+            /**
+             * imm_rel_label_fixup - Modify the instruction's rel_off* field to point to
+             * the relative address corresponding to the provided label.
+             */
+            if (first_pass) {
+                // We only want to run on the second pass after all labels have been emitted
+                return status_code::DEFER;
+            }
+
+            auto &target_indexes = labels[data.label_name];
+            pr_debug("(%s) processing label fixup to %s\n", first_pass ? "first" : "second", data.label_name.c_str());
+
+            std::optional<size_t> target_index;
+            if (data.position == LabelPosition::BEFORE) {
+                // Iterate backwards and find the first label index before our own
+                auto target_index_it = std::find_if(target_indexes.rbegin(), target_indexes.rend(),
+                                                    [&](const size_t &val) { return (val < insn_i); });
+                if (target_index_it != target_indexes.rend())
+                    target_index = *target_index_it;
+            } else /* AFTER */ {
+                // Iterate forwards and find the first label index after our own
+                auto target_index_it = std::find_if(target_indexes.begin(), target_indexes.end(),
+                                                    [&](const size_t &val) { return (val > insn_i); });
+                if (target_index_it != target_indexes.end())
+                    target_index = *target_index_it;
+            }
+
+            if (!target_index) {
+                // Couldn't find suitable target label
+                return status_code::BADBRANCH;
+            }
+
+            // Calculate the target's relative offset from us
+            int64_t target_off = (*target_index)*INSN_SIZE - insn_i*INSN_SIZE;
+
+            // Update instruction's relative address field
+            return update_relative_offset(*insn, target_off);
+        },
+
+        [&](const relocation::declare_label &data) -> status_code {
+            assert(first_pass);
+            /**
+             * declare_label - Declare a label that points to this instruction
+             */
+            labels[data.label_name].push_back(insn_i);
+            return status_code::SUCCESS;
+        },
+
+        [&](const relocation::declare_label_after &data) -> status_code {
+            assert(first_pass);
+            /**
+             * declare_label_after - Declare a label that points to the instruction *after* this one
+             */
+            labels[data.label_name].push_back(insn_i + 1);
+            return status_code::SUCCESS;
+        }
+    };
+
+    // Walk the instruction stream and look for relocations
     for (size_t i = 0; i < ctx.stream->size(); i++) {
-        auto &insn = (*ctx.stream)[i];
+        insn = &(*ctx.stream)[i];
+        insn_i = i;
 
-        if (!insn.aux)
+        if (!insn->aux || !insn->aux->relocation)
             continue;
-        instruction_aux &aux = *insn.aux;
 
-        if (!aux.relocation)
-            continue;
-        relocation &relocation = *aux.relocation;
+        // Attempt to resolve this relocation
+        auto res = std::visit(relocation_visitor, insn->aux->relocation->data);
+        if (res == status_code::DEFER) {
+            // Try again after other relocations have been resovled
+            deferred.push_back({insn_i, insn});
+        } else if (res != status_code::SUCCESS) {
+            // Failure - bail out
+            return res;
+        }
+    }
 
-        auto res = std::visit(
-            Overloaded {
-                [&](const relocation::imm_rel_vaddr_fixup &data) -> status_code {
-                    /**
-                     * imm_rel_vaddr_fixup - Modify the instruction's immediate field to point to
-                     * the relative address corresponding to the provided absolute target virtual address.
-                     */
-                    auto target_index_it = ctx.local_branch_targets.find(data.abs_vaddr);
-                    if (target_index_it == ctx.local_branch_targets.end()) {
-                        pr_error("Unable to resolve Immediate Branch to target 0x%x\n", target);
-                        return status_code::BADBRANCH;
-                    }
-                    size_t target_index = target_index_it->second;
+    // If there are any deferred relocations, do a second pass
+    first_pass = false;
+    for (size_t i = 0; i < deferred.size(); i++) {
+        auto &insn_pair = deferred[i];
+        insn_i = insn_pair.first;
+        insn = insn_pair.second;
+        assert(insn->aux && insn->aux->relocation);
 
-                    // Calculate the target's relative offset from us
-                    int64_t target_off = target_index*INSN_SIZE - i*INSN_SIZE;
-
-                    // Helper to fix up absolute branches
-                    auto fixup_absolute_branch = [](bool &aa) {
-                        if (aa) {
-                            pr_warn("Relocation requires changing branch from absolute to relative\n");
-                            aa = false;
-                        }
-                    };
-
-                    // Disable compiler diagnostics for implicit conversions for this block.
-                    ALLOW_IMPLICIT_INT_CONVERSION();
-
-                    // Update relative address
-                    switch (insn.operation()) {
-                        case Operation::B:
-                        {
-                            // B can do 26-bit relative branches
-                            if (target_off < INT26_MIN || target_off > INT26_MAX)
-                                return status_code::BADBRANCH;
-
-                            insn_arg<0 /* target */, Operation::B>(insn) = target_off;
-                            fixup_absolute_branch(insn_arg<1 /* aa */, Operation::B>(insn));
-
-                            break;
-                        }
-
-                        case Operation::BC:
-                        {
-                            // BC can do 16-bit relative branches
-                            if (target_off < INT16_MIN || target_off > INT16_MAX)
-                                return status_code::BADBRANCH;
-
-                            insn_arg<2 /* target */, Operation::BC>(insn) = target_off;
-                            fixup_absolute_branch(insn_arg<3 /* aa */, Operation::BC>(insn));
-
-                            break;
-                        }
-
-                        default:
-                            return status_code::UNIMPL_INSN;
-                    }
-
-                    DISALLOW_IMPLICIT_INT_CONVERSION();
-
-                    return status_code::SUCCESS;
-                },
-            },
-            relocation.data
-        );
+        // Attempt again to resolve this relocation
+        auto res = std::visit(relocation_visitor, insn->aux->relocation->data);
 
         // Bail out if a relocation failed
         if (res != status_code::SUCCESS)
@@ -543,7 +619,7 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
 
         // Always emit a relocation. This could make optimizations in later passes easier.
         ctx.assembler->b(0);
-        ctx.stream->add_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
+        ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
     } else { TODO(); }
 }
 
@@ -659,7 +735,7 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     // With the condition determined, emit a relocation for a conditional branch
     if (insn.src[0].type == llir::Operand::Type::IMM) {
         ctx.assembler->bc(bo, cr_field, 0);
-        ctx.stream->add_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
+        ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
     } else { TODO(); }
 }
 
@@ -746,6 +822,17 @@ template <typename T>
 bool imm_fits_in(int64_t imm) {
     return (T)imm == imm;
 }
+
+/**
+ * Helper macros for using relocations with local labels
+ */
+#define RELOC_DECLARE_LABEL(name) \
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label{name}});
+#define RELOC_DECLARE_LABEL_AFTER(name) \
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{name}});
+#define RELOC_FIXUP_LABEL(name, pos) \
+    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}});
+
 
 template <typename T>
 void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm, llir::Register::Mask mask,
@@ -921,7 +1008,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx) {
     // 5. Carry is now valid and can be branched on conditionally
 
     // Skip to last instruction if CF has already been evaluated
-    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 21 * 4);
+    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
 
     // Preserve cr0 in CR_SCRATCH
     ctx.assembler->mcrf(CR_SCRATCH, 0);
@@ -976,33 +1063,37 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx) {
 
     // Restore cr0
     ctx.assembler->mcrf(0, CR_SCRATCH);
+    RELOC_DECLARE_LABEL_AFTER("cf_skip");
 }
 
 template <typename T>
 void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx) {
     // Skip to last instruction if OF has already been evaluated
-    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 20 * 4);
+    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 0);
+    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{"of_skip", LabelPosition::AFTER}});
 
     // Allocate scratch registers for use in calculation
     auto scratch1 = ctx.reg_allocator().allocate_gpr();
 
     // Branch to calculation code for operation type
     ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[15:14] into r0
+
     ctx.assembler->cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
-    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 8 * 4); // Less than ADD -> SUB
-    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 2 * 4); // Equal to ADD
+    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("of_sub", AFTER); // Less than ADD -> SUB
+    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("of_add", AFTER); // Equal to ADD
+
     ctx.assembler->invalid(); // Emit an invalid instruction to assert not reached
 
     { // ADD
-        ctx.assembler->add(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->add(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("of_add");
         ctx.assembler->eqv(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
         ctx.assembler->_xor(scratch1.gpr(), scratch1.gpr(), GPR_FIXED_FLAG_OP2);
         ctx.assembler->_and(0, 0, scratch1.gpr());
-        ctx.assembler->b(5 * 4); // Branch to common shifting code
+        ctx.assembler->b(0); RELOC_FIXUP_LABEL("of_common", AFTER); // Branch to common shifting code
     }
 
     { // SUB
-        ctx.assembler->sub(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        ctx.assembler->sub(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("of_sub");
         ctx.assembler->_xor(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
         ctx.assembler->eqv(scratch1.gpr(), scratch1.gpr(), GPR_FIXED_FLAG_OP2);
         ctx.assembler->_and(0, 0, scratch1.gpr());
@@ -1010,6 +1101,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx) {
     }
 
     // The overflow bit is now in r0. Depending on operation width, shift it into bit 0, and clear all left.
+    RELOC_DECLARE_LABEL_AFTER("of_common");
     ctx.assembler->rldicl(scratch1.gpr(), GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OVERFLOW_SHIFT, 64-6, false);
     ctx.assembler->rldcl(0, 0, scratch1.gpr(), 63, false); // Put overflow flag into r0[0]
     ctx.assembler->cmpldi(CR_SCRATCH, 0, 1);
@@ -1019,6 +1111,7 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx) {
 
     // Mark OF as valid
     ctx.assembler->crset(CR_LAZYVALID_OVERFLOW);
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{"of_skip"}});
 }
 
 template <typename T>
@@ -1152,15 +1245,6 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
     assert(mem.arch == Architecture::X86_64);
     auto update = insn ? insn->loadstore.update : llir::LoadStore::Update::NONE;
 
-    auto disp_fits = [&](auto disp) -> bool {
-        if (op == llir::LoadStore::Op::LEA || reg_mask != llir::Register::Mask::Full64)
-            // For LEA or <64-bit loads/stores, check if the mask fits in 16-bit addi/l{b,h,w}z disp field
-            return assembler::fits_in_mask(disp, 0xFFFFU);
-        else
-            // For 64-bit loads/stores, the displacement must have the two least significant bits cleared
-            return assembler::fits_in_mask(disp, 0xFFFCU);
-    };
-
 // Helpers to call the appropriate loadstore op depending on whether `update` is set or not
 #define LOADSTORE_DISP(op, ...) ((update == llir::LoadStore::Update::PRE) ? ctx.assembler->op ## u(__VA_ARGS__) : ctx.assembler->op(__VA_ARGS__))
 #define LOADSTORE_INDEXED(op, ...) ((update == llir::LoadStore::Update::PRE) ? ctx.assembler->op ## ux(__VA_ARGS__) : ctx.assembler->op ## x(__VA_ARGS__))
@@ -1252,7 +1336,16 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
 #undef LOADSTORE_INDEXED
 
     auto loadstore_disp_auto = [&](gpr_t reg, gpr_t ra, int64_t disp) {
-        if (disp_fits(disp)) {
+        bool disp_fits;
+        if (op == llir::LoadStore::Op::LEA || reg_mask != llir::Register::Mask::Full64)
+            // For LEA or <64-bit loads/stores, check if the mask fits in 16-bit addi/l{b,h,w}z disp field
+            disp_fits = assembler::fits_in_mask(disp, 0xFFFFU);
+        else
+            // For 64-bit loads/stores, the displacement must have the two least significant bits cleared
+            disp_fits = assembler::fits_in_mask(disp, 0xFFFCU);
+
+
+        if (disp_fits) {
             // Fits in an immediate displacement field
             loadstore_disp(reg, ra, (int16_t)disp);
         } else {

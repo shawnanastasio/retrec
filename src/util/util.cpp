@@ -27,6 +27,8 @@ const char *retrec::status_code_str(status_code code) {
             return "Operation would result in memory region overlap";
         case status_code::BADBRANCH:
             return "Unable to resolve branch target";
+        case status_code::DEFER:
+            return "Operation should be tried again later";
         default:
             TODO();
     }

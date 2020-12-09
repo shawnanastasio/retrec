@@ -44,7 +44,7 @@ public:
      * Append auxiliary data to the last instruction emitted.
      */
     template <typename... Ts>
-    void add_aux(Ts&&... args) {
+    void set_aux(Ts&&... args) {
         assert(insns.size());
         (*(insns.end() - 1)).set_aux(std::forward<Ts>(args)...);
     }
