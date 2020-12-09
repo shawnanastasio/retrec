@@ -90,11 +90,26 @@ bool process_memory_map::contains(uint64_t addr, uint64_t len) const {
     return false;
 }
 
-process_memory_map::Mapping *process_memory_map::find(uint64_t addr, uint64_t len) {
+std::optional<process_memory_map::Mapping> process_memory_map::find(uint64_t addr, uint64_t len, size_t *index_out) {
+    size_t i = 0;
     for (auto &cur : map) {
-        if (cur.start == addr && cur.end == len + addr)
-            return &cur;
+        if (cur.start == addr && cur.end == len + addr) {
+            if (index_out)
+                *index_out = i;
+            return cur;
+        }
+
+        ++i;
     }
 
-    return nullptr;
+    return std::nullopt;
 }
+
+void process_memory_map::free(uint64_t addr, uint64_t len) {
+    size_t mapping_index;
+    auto mapping = find(addr, len, &mapping_index);
+    assert(mapping);
+
+    map.erase(map.begin() + mapping_index);
+}
+

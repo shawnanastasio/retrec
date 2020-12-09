@@ -2,10 +2,12 @@
 
 #include <util/util.h>
 
+#include <fstream>
+#include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
-#include <iostream>
-#include <fstream>
+
 #include <cstdint>
 
 namespace retrec {
@@ -30,13 +32,14 @@ public:
     };
 
     explicit process_memory_map(pid_t pid_);
-
     status_code init();
+
     uint64_t allocate_high_vaddr(size_t size);
     uint64_t allocate_low_vaddr(size_t size);
     void mark_allocated(Mapping entry);
-    [[nodiscard]] bool contains(uint64_t addr, uint64_t len) const;
-    Mapping *find(uint64_t addr, uint64_t len);
+    bool contains(uint64_t addr, uint64_t len) const;
+    std::optional<Mapping> find(uint64_t addr, uint64_t len, size_t *index_out = nullptr);
+    void free(uint64_t addr, uint64_t len);
 
 private:
     pid_t pid;

@@ -13,27 +13,43 @@ execution_context::~execution_context() {}
 
 status_code execution_context::init() {
     // Setup virtual address space allocator
-    status_code ret = vaddr_map.init();
-    if (ret != status_code::SUCCESS)
-        return ret;
+    status_code res = vaddr_map.init();
+    if (res != status_code::SUCCESS)
+        return res;
 
-    // Allocate space for code
-    uint64_t code_start = vaddr_map.allocate_high_vaddr(CODE_REGION_MAX_SIZE);
-    if (!code_start)
-        return status_code::NOMEM;
+    void *code_start;
+    res = allocate_and_map_vaddr(VaddrLocation::HIGH, CODE_REGION_MAX_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, &code_start);
+    if (res != status_code::SUCCESS)
+        return res;
 
-    // Map code space
-    void *res = mmap((void *)code_start, CODE_REGION_MAX_SIZE,
-                     PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
-                     -1, 0);
-    if (res == (void *)-1)
-        return status_code::NOMEM; // deallocate vaddr space?
-
-    code_allocator.init((void *)code_start, CODE_REGION_MAX_SIZE);
+    code_allocator.init(code_start, CODE_REGION_MAX_SIZE);
 
     return status_code::SUCCESS;
 }
 
+status_code execution_context::allocate_and_map_vaddr(VaddrLocation location, size_t size, int prot, void **region_out) {
+    uint64_t vaddr = 0;
+    switch (location) {
+        case VaddrLocation::HIGH:
+            vaddr = vaddr_map.allocate_high_vaddr(size); break;
+        case VaddrLocation::LOW:
+            vaddr = vaddr_map.allocate_low_vaddr(size); break;
+    }
+
+    if (!vaddr) {
+        return status_code::NOMEM;
+    }
+
+    // Map the allocated address space
+    void *mem = mmap((void *)vaddr, size, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+    if (mem == (void *)-1) {
+        vaddr_map.free(vaddr, size);
+        return status_code::NOMEM;
+    }
+
+    *region_out = mem;
+    return status_code::SUCCESS;
+}
 
 status_code execution_context::allocate_new_stack(size_t size, void **stack_out) {
     // Determine the number of pages to allocate
@@ -41,20 +57,15 @@ status_code execution_context::allocate_new_stack(size_t size, void **stack_out)
     assert(allocation_size >= 2);
 
     // Allocate at the end of the address space
-    uint64_t stack = vaddr_map.allocate_high_vaddr(allocation_size);
-    if (!stack)
-        return status_code::NOMEM;
-
-    // Map the allocated region of virtual address space
-    void *mem = mmap((void *)stack, allocation_size, PROT_READ | PROT_WRITE,
-                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
-    if (mem == (void *)-1)
-        return status_code::NOMEM; // deallocate vaddr space?
+    void *stack;
+    auto res = allocate_and_map_vaddr(VaddrLocation::HIGH, allocation_size, PROT_READ | PROT_WRITE, &stack);
+    if (res != status_code::SUCCESS)
+        return res;
 
     // Mark the guard page as !R, !W, !X
     mprotect((void *)stack, page_size, 0);
 
-    *stack_out = (void *)(stack + allocation_size);
+    *stack_out = (void *)((char *)stack + allocation_size);
     return status_code::SUCCESS;
 }
 
@@ -116,7 +127,7 @@ void execution_context::enter_translated_code() {
 }
 
 status_code execution_context::protect_region(uint64_t start, uint64_t len, int prot) {
-    auto *mapping = vaddr_map.find(start, len);
+    auto mapping = vaddr_map.find(start, len);
     if (!mapping)
         return status_code::NOMEM;
 

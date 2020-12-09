@@ -35,6 +35,11 @@ public:
     ~execution_context();
     status_code init();
 
+    enum class VaddrLocation {
+        LOW, // 0x1000+
+        HIGH, // 0x7fff+
+    };
+
     //
     // Accessors
     //
@@ -45,6 +50,7 @@ public:
     //
     // Functions
     //
+    status_code allocate_and_map_vaddr(VaddrLocation location, size_t size, int prot, void **region_out);
     status_code allocate_new_stack(size_t size, void **stack_out);
     status_code allocate_region(uint64_t start, size_t len, int prot, void **region_out);
     status_code protect_region(uint64_t start, size_t len, int prot);
