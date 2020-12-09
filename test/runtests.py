@@ -20,6 +20,10 @@ def run_test(retrec, test):
     failures = re.findall("(FAIL:.*)", output)
     passes = re.findall("PASS:.*", output)
 
+    if result.returncode != 0:
+        failures.append("Process exited with code {}".format(result.returncode))
+        return (failures, passes)
+
     expected_results_path = test + ".expected"
     if os.path.isfile(expected_results_path):
         # Compare output to expected
