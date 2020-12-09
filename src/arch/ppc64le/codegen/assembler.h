@@ -62,6 +62,7 @@ public:
      */
     template <typename... Ts>
     void set_aux(Ts&&... args) {
+        assert(!aux);
         aux = std::make_unique<instruction_aux>(std::forward<Ts>(args)...);
     }
 
