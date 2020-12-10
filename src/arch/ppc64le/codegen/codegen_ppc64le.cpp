@@ -489,7 +489,8 @@ llir::Alu::FlagArr codegen_ppc64le<T>::llir$alu$helper$preserve_flags(gen_contex
     });
 
     // Move cr0 to CR_SCRATCH, so $restore_flags can restore them later
-    ctx.assembler->mcrf(CR_SCRATCH, 0);
+    if (preserved_i)
+        ctx.assembler->mcrf(CR_SCRATCH, 0);
 
     return preserved;
 }
