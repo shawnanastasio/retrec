@@ -2,11 +2,14 @@
 #include <arch/ppc64le/codegen/codegen_ppc64le.h>
 #include <arch/ppc64le/codegen/codegen_types.h>
 #include <arch/ppc64le/codegen/assembler.h>
+#include <arch/ppc64le/codegen/abi.h>
 
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <cstring>
+
+#include <sys/mman.h>
 
 using namespace retrec;
 using namespace retrec::ppc64le;
@@ -17,58 +20,110 @@ using namespace retrec::ppc64le;
 
 template <typename T>
 status_code codegen_ppc64le<T>::init() {
-    // Allocate a branch table at an address that can fit in the "LI" field of I-form branch instructions
-    /*
-    uint64_t branch_table_vaddr = econtext.map().allocate_low_vaddr(0x10000);
-    assert(branch_table_vaddr);
-    assert(branch_table_vaddr <= 0b11111111111111111111111111); // I-form branches only have 26-bit wide immediates
-    pr_info("Allocated branch table at 0x%lx\n", branch_table_vaddr);
-    branch_table = (uint32_t *)mmap((void *)branch_table_vaddr, 0x10000, PROT_READ | PROT_WRITE | PROT_EXEC,
-                                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (branch_table == (uint32_t *)-1) {
+    constexpr size_t FUNCTION_TABLE_SIZE = 0x10000; // 64K
+
+    // Allocate a function table at an address that can fit in the AA=1 LI field of I-form branch instructions
+    void *function_table;
+    auto res = econtext.allocate_and_map_vaddr(execution_context::VaddrLocation::LOW, FUNCTION_TABLE_SIZE,
+                                               PROT_READ | PROT_WRITE | PROT_EXEC, &function_table);
+    if (res != status_code::SUCCESS) {
+        pr_debug("Failed to allocate function table: %s\n", status_code_str(res));
+        return res;
     }
-    */
 
-    return status_code::SUCCESS;
-}
-
-template <typename T>
-codegen_ppc64le<T>::gen_context::gen_context(const lifted_llir_block &llir_)
-        : llir(llir_) {
-    assembler = std::make_unique<ppc64le::assembler>();
-    stream = std::make_unique<ppc64le::instruction_stream>(*assembler);
-    assembler->set_stream(&*stream);
-}
-
-template <typename T>
-status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) {
-
-    pr_debug("vmx offset: %zu\n", offsetof(cpu_context_ppc64le, vmx));
-    pr_debug("host_translated_context offset: %zu\n",
-                    offsetof(runtime_context_ppc64le, host_translated_context));
-
-    // First pass: dispatch and translate all LLIR instructions
-    gen_context context(llir);
-    for (const llir::Insn &insn : llir.get_insns()) {
-        dispatch(context, insn);
+    if ((uintptr_t)function_table >= 0x3ffffff) {
+        pr_debug("Function table was allocated too high. Address: %p", function_table);
+        return status_code::NOMEM;
     }
+
+    // First pass: Generate all fixed functions
+    gen_context ctx;
+
+    auto alignment_padding = [&] {
+        while (ctx.stream->size() & 0b11)
+            ctx.assembler->invalid();
+    };
+
+    /* call */
+    uint32_t call_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$call$emit(ctx);
+    alignment_padding();
+
+    /* indirect_jmp */
+    uint32_t indirect_jmp_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$indirect_jmp$emit(ctx);
+    alignment_padding();
 
     // Second pass: resolve relocations
-    status_code res = resolve_relocations(context);
+    res = resolve_relocations(ctx);
     if (res != status_code::SUCCESS) {
         pr_error("Failed to resolve relocations for generated code: %s!\n", status_code_str(res));
         return res;
     }
 
     // Third pass: Emit all generated instructions to a code buffer
-    size_t code_size = context.stream->code_size();
+    size_t code_size = ctx.stream->code_size();
+    assert(code_size < FUNCTION_TABLE_SIZE);
+    res = ctx.stream->emit_all_to_buf((uint8_t *)function_table, code_size);
+    if (res != status_code::SUCCESS) {
+        pr_error("Failed to emit instructions to code buffer: %s!\n", status_code_str(res));
+        return res;
+    }
+
+    // Fill in function addresses
+    ff_addresses.call = (uint32_t)(uintptr_t)function_table + call_offset;
+    ff_addresses.indirect_jmp = (uint32_t)(uintptr_t)function_table + indirect_jmp_offset;
+
+    pr_debug("Emitted function table to %p\n", function_table);
+    return status_code::SUCCESS;
+}
+
+template <typename T>
+codegen_ppc64le<T>::gen_context::gen_context() {
+    assembler = std::make_unique<ppc64le::assembler>();
+    stream = std::make_unique<ppc64le::instruction_stream>(*assembler);
+    assembler->set_stream(&*stream);
+}
+
+template <typename T>
+codegen_ppc64le<T>::gen_context::~gen_context() {
+    uint64_t base_addr = (uint64_t)stream->buf();
+    assert(base_addr);
+
+    // Insert all local (vaddr:haddr) pairs into the global virtual target map
+    for (auto &pair : local_branch_targets) {
+        g_virtual_address_mapper.insert(pair.first, base_addr + pair.second*INSN_SIZE);
+    }
+}
+
+template <typename T>
+status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) {
+    pr_debug("vmx offset: %zu\n", offsetof(cpu_context_ppc64le, vmx));
+    pr_debug("host_translated_context offset: %zu\n",
+                    offsetof(runtime_context_ppc64le, host_translated_context));
+
+    // First pass: dispatch and translate all LLIR instructions
+    gen_context ctx;
+    for (const llir::Insn &insn : llir.get_insns()) {
+        dispatch(ctx, insn);
+    }
+
+    // Second pass: resolve relocations
+    status_code res = resolve_relocations(ctx);
+    if (res != status_code::SUCCESS) {
+        pr_error("Failed to resolve relocations for generated code: %s!\n", status_code_str(res));
+        return res;
+    }
+
+    // Third pass: Emit all generated instructions to a code buffer
+    size_t code_size = ctx.stream->code_size();
     void *code = econtext.get_code_allocator().allocate(code_size);
     if (!code) {
         pr_error("Failed to allocate suitably sized code buffer!\n");
         return status_code::NOMEM;
     }
 
-    res = context.stream->emit_all_to_buf((uint8_t *)code, code_size);
+    res = ctx.stream->emit_all_to_buf((uint8_t *)code, code_size);
     if (res != status_code::SUCCESS) {
         pr_error("Failed to emit instructions to code buffer: %s!\n", status_code_str(res));
         return res;
@@ -227,7 +282,7 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
         },
 
 
-        [&]([[maybe_unused]] const relocation::imm_rel_label_fixup &data) -> status_code {
+        [&](const relocation::imm_rel_label_fixup &data) -> status_code {
             /**
              * imm_rel_label_fixup - Modify the instruction's rel_off* field to point to
              * the relative address corresponding to the provided label.
@@ -612,21 +667,77 @@ uint64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
 template <typename T>
 void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn) {
     pr_debug("branch$unconditional\n");
-    assert(insn.dest_cnt == 0);
     assert(insn.src_cnt == 1);
 
-    if (insn.src[0].type == llir::Operand::Type::IMM) {
-        uint64_t target = resolve_branch_target(insn);
+    if (!insn.branch.linkage) {
+        // Unconditional branch without linkage, i.e. JMP
+        assert(insn.dest_cnt == 0);
+        switch (insn.src[0].type) {
+            case llir::Operand::Type::IMM:
+            {
+                uint64_t target = resolve_branch_target(insn);
 
-        // Always emit a relocation. This could make optimizations in later passes easier.
-        ctx.assembler->b(0);
-        ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
-    } else { TODO(); }
+                // Always emit a relocation. This could make optimizations in later passes easier.
+                ctx.assembler->b(0);
+                ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
+                break;
+            }
+
+            case llir::Operand::Type::MEM:
+                // Load operand into r0 and call fixed_helper$indirect_jmp
+                macro$loadstore(ctx, 0, insn.src[0].memory, llir::LoadStore::Op::LOAD,
+                                llir::Register::Mask::Full64, &insn);
+                ctx.assembler->bla(ff_addresses.indirect_jmp);
+                break;
+
+            case llir::Operand::Type::REG:
+                TODO();
+        }
+    } else {
+        // Unconditional branch with linkage i.e. CALL
+        assert(insn.dest_cnt == 1);
+        switch (insn.src[0].type) {
+            case llir::Operand::Type::IMM:
+            {
+                // Populate arguments
+                // r0   - target vaddr
+                // lr   - return host address
+                // [sp] - return vaddr
+
+                // Write return vaddr to memory operand
+                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
+                uint64_t ret_vaddr = insn.address + insn.size;
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
+                //ctx.assembler->stdu(ret_vaddr_reg.gpr(), GPR_SP, -8);
+                assert(insn.dest[0].type == llir::Operand::Type::MEM);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
+                                llir::Register::Mask::Full64, &insn);
+
+                // target vaddr
+                uint64_t target_vaddr = insn.src[0].imm;
+                if (insn.branch.target == llir::Branch::Target::RELATIVE)
+                    target_vaddr += insn.address;
+
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), target_vaddr, llir::Register::Mask::Full64, true);
+                ctx.assembler->mr(0, ret_vaddr_reg.gpr());
+
+                // call
+                ctx.assembler->bla(ff_addresses.call);
+                break;
+            }
+
+            case llir::Operand::Type::REG:
+            case llir::Operand::Type::MEM:
+                TODO();
+        }
+    }
 }
 
 template <typename T>
 void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
     pr_debug("branch$conditional\n");
+    assert(!insn.branch.linkage);
+    assert(insn.dest_cnt == 0);
     assert(insn.src_cnt == 1);
 
     uint64_t target = resolve_branch_target(insn);
@@ -745,27 +856,7 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
     pr_debug("interrupt$syscall\n");
     assert(insn.dest_cnt == 0 && insn.src_cnt == 0);
 
-    // To handle a syscall, we have to re-enter native code, so emit a branch to arch_leave_translated_code.
-    // Special considerations:
-    // * arch_leave_translated code won't save LR for us, so we have to do it
-    // * we need to store the callback in runtime_context(r11).host_native_context.native_function_call_target
-
-    auto scratch = ctx.reg_allocator().allocate_gpr();
-
-    // Store address of callback
-    macro$load_imm(*ctx.assembler, scratch.gpr(), (uint16_t)runtime_context_ppc64le::NativeTarget::SYSCALL, llir::Register::Mask::Full64, true);
-    ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, native_function_call_target));
-
-    // Load arch_leave_translated_code
-    ctx.assembler->ld(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, leave_translated_code_ptr));
-    ctx.assembler->mtspr(SPR::CTR, scratch.gpr());
-
-    // Save LR
-    ctx.assembler->mfspr(scratch.gpr(), SPR::LR);
-    ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, TRANSLATED_CTX_OFF(lr));
-
-    // Branch
-    ctx.assembler->bctrl();
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::SYSCALL);
 }
 
 template <typename T>
@@ -780,7 +871,7 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     assert(memory_operand.type == llir::Operand::Type::MEM);
 
     auto &reg_operand = (insn.loadstore.op == llir::LoadStore::Op::STORE) ? insn.src[0] : insn.dest[0];
-    typename T::RegisterAllocatorT::AllocatedGprT reg;
+    typename register_allocator<T>::AllocatedGprT reg;
     llir::Register::Mask reg_mask;
 
     switch (reg_operand.type) {
@@ -811,6 +902,124 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     macro$loadstore(ctx, reg.gpr(), memory_operand.memory, insn.loadstore.op, reg_mask, &insn);
 }
 
+/**
+ * Helper macros for using relocations with local labels
+ */
+#define RELOC_DECLARE_LABEL(name) \
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label{name}});
+#define RELOC_DECLARE_LABEL_AFTER(name) \
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{name}});
+#define RELOC_FIXUP_LABEL(name, pos) \
+    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}});
+
+//
+// Fixed helpers
+//
+
+/**
+ * fixed_helper$call$emit - Emit the fixed helper for emulating CALL
+ *
+ * Routine description:
+ * Call into retrec C++ code to lookup the host address corresponding to the provided
+ * target virtual address. Also stores our return address' {vaddr:haddr} pair to the
+ * call stack for fast lookup by a future indirect_jmp call.
+ *
+ * If the lookup is successful, branch to the target host address. Otherwise, trap to
+ * the retrec runtime.
+ *
+ * Calling convention:
+ *   u64 [r1]   - target virtual address of return
+ *   lr         - translated address of return
+ *   r0         - target virtual address of destination
+ *   CR_SCRATCH - clobbered internally
+ *
+ * All ABIRetrec volatile registers may be clobbered.
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$call$emit(gen_context &ctx) {
+    constexpr gpr_t GPR_TARGET_ADDR = 0;
+    assembler &a = *ctx.assembler;
+
+    // Call virtual_target_lookup_table::lookup_and_update_call_cache to try to resolve the target
+    auto &argument_regs = ABIRetrec<T>::argument_regs;
+
+    // Load parameters
+    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut)); // this*
+    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[1]), GPR_SP, 0);       // Return vaddr
+    a.mfspr(llir::PPC64RegisterGPRIndex(argument_regs[2]), SPR::LR);      // Return haddr
+
+    // Load entrypoint
+    a.ld(12, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut_lookup_and_update_call_cache));
+    a.mtspr(SPR::CTR, 12);
+
+    // Perform call
+    macro$call_native_function(ctx, llir::PPC64RegisterGPRIndex(argument_regs[0]),
+                                    GPR_TARGET_ADDR,
+                                    llir::PPC64RegisterGPRIndex(argument_regs[1]),
+                                    llir::PPC64RegisterGPRIndex(argument_regs[2]));
+
+    // If function returned 0, trap to runtime
+    a.cmpldi(CR_SCRATCH, llir::PPC64RegisterGPRIndex(argument_regs[0]), 0);
+    a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("fh_call_trap", AFTER);
+
+    // Store returned target in ctr
+    a.mtspr(SPR::CTR, llir::PPC64RegisterGPRIndex(argument_regs[0]));
+
+    // Jump to target!
+    a.bctr();
+
+    // fh_call_trap: Lookup failed - trap to runtime
+    RELOC_DECLARE_LABEL_AFTER("fh_call_trap");
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::CALL);
+}
+
+/**
+ * fixed_helper$indirect_jmp$emit - Emit the fixed helper for emulating indirect jumps
+ *
+ * Routine description:
+ * Call into retrec C++ code to lookup the host address corresponding to the provided
+ * target virtual address.
+ *
+ * If the lookup is successful, branch to the target host address. Otherwise, trap to
+ * the retrec runtime.
+ *
+ * Calling convention:
+ *   r0         - Target virtual address of destination
+ *   CR_SCRATCH - Clobbered internally
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$indirect_jmp$emit(gen_context &ctx) {
+    constexpr gpr_t GPR_TARGET_VADDR = 0;
+    assembler &a = *ctx.assembler;
+
+    // Call virtual_target_lookup_table::lookup_and_update_call_cache to try to resolve the target
+    auto &argument_regs = ABIRetrec<T>::argument_regs;
+
+    // Load parameters
+    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut)); // this*
+
+    // Load entrypoint
+    a.ld(12, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut_lookup_check_call_cache));
+    a.mtspr(SPR::CTR, 12);
+
+    // Perform call
+    macro$call_native_function(ctx, llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_TARGET_VADDR);
+
+    // If function returned 0, trap to runtime
+    a.cmpldi(CR_SCRATCH, llir::PPC64RegisterGPRIndex(argument_regs[0]), 0);
+    a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("fh_indirect_jmp_trap", AFTER);
+
+    // Store returned target in ctr
+    a.mtspr(SPR::CTR, llir::PPC64RegisterGPRIndex(argument_regs[0]));
+
+    // Jump to target!
+    a.bctr();
+
+    // fh_ret_trap: Lookup failed - trap to runtime
+    RELOC_DECLARE_LABEL_AFTER("fh_indirect_jmp_trap");
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::CALL);
+}
+
 //
 // Macro assembler
 //
@@ -823,17 +1032,6 @@ template <typename T>
 bool imm_fits_in(int64_t imm) {
     return (T)imm == imm;
 }
-
-/**
- * Helper macros for using relocations with local labels
- */
-#define RELOC_DECLARE_LABEL(name) \
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label{name}});
-#define RELOC_DECLARE_LABEL_AFTER(name) \
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{name}});
-#define RELOC_FIXUP_LABEL(name, pos) \
-    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}});
-
 
 template <typename T>
 void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm, llir::Register::Mask mask,
@@ -1240,15 +1438,15 @@ void codegen_ppc64le<T>::macro$loadstore(gen_context &, gpr_t,
 
 // Specialization of macro$loadstore for x86_64 targets
 template <>
-void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context &ctx, gpr_t reg,
+void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_t reg,
                      const llir::MemOp &mem, llir::LoadStore::Op op, llir::Register::Mask reg_mask,
                      const llir::Insn *insn) {
     assert(mem.arch == Architecture::X86_64);
-    auto update = insn ? insn->loadstore.update : llir::LoadStore::Update::NONE;
+    auto update = mem.update;
 
 // Helpers to call the appropriate loadstore op depending on whether `update` is set or not
-#define LOADSTORE_DISP(op, ...) ((update == llir::LoadStore::Update::PRE) ? ctx.assembler->op ## u(__VA_ARGS__) : ctx.assembler->op(__VA_ARGS__))
-#define LOADSTORE_INDEXED(op, ...) ((update == llir::LoadStore::Update::PRE) ? ctx.assembler->op ## ux(__VA_ARGS__) : ctx.assembler->op ## x(__VA_ARGS__))
+#define LOADSTORE_DISP(op, ...) ((update == llir::MemOp::Update::PRE) ? ctx.assembler->op ## u(__VA_ARGS__) : ctx.assembler->op(__VA_ARGS__))
+#define LOADSTORE_INDEXED(op, ...) ((update == llir::MemOp::Update::PRE) ? ctx.assembler->op ## ux(__VA_ARGS__) : ctx.assembler->op ## x(__VA_ARGS__))
 
     auto loadstore_disp = [&](gpr_t reg, gpr_t ra, int16_t disp) {
         if (op == llir::LoadStore::Op::LOAD) {
@@ -1376,7 +1574,7 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
     };
 
     auto &x86_64 = mem.x86_64;
-    typename target_traits_x86_64::RegisterAllocatorT::AllocatedGprT base, index;
+    typename register_allocator<TargetTraitsX86_64>::AllocatedGprT base, index;
 
     // Obtain GPRs for base and index if present
     if (x86_64.base.x86_64 != llir::X86_64Register::INVALID) {
@@ -1395,7 +1593,7 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
         index = ctx.reg_allocator().get_fixed_gpr(x86_64.index);
 
     // Sanity checks
-    if (update != llir::LoadStore::Update::NONE) {
+    if (update != llir::MemOp::Update::NONE) {
         // For loads/stores with update, only base should be present and disp should be non-zero
         assert(base);
         assert(!index);
@@ -1418,7 +1616,7 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
         }
     } else if (base) {
         // Only base is present - use a displacement load/store
-        if (update == llir::LoadStore::Update::POST) {
+        if (update == llir::MemOp::Update::POST) {
             // Special case for POST update - use 0 disp and add disp to base.gpr() after
             loadstore_disp_auto(reg, base.gpr(), 0);
             macro$alu$add_imm(ctx, base.gpr(), x86_64.disp);
@@ -1435,5 +1633,135 @@ void codegen_ppc64le<ppc64le::target_traits_x86_64>::macro$loadstore(gen_context
     }
 }
 
+template <typename T>
+void codegen_ppc64le<T>::macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target) {
+    // To re-enter native code, we just emit a branch to arch_leave_translated_code.
+    // Special considerations:
+    // * arch_leave_translated code won't save LR for us, so we have to do it
+    // * we need to store the target in runtime_context(r11).host_native_context.native_function_call_target
+    auto scratch = ctx.reg_allocator().allocate_gpr();
+
+    // Store target
+    macro$load_imm(*ctx.assembler, scratch.gpr(), (uint16_t)target, llir::Register::Mask::Full64, true);
+    ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, native_function_call_target));
+
+    // Load arch_leave_translated_code
+    ctx.assembler->ld(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, leave_translated_code_ptr));
+    ctx.assembler->mtspr(SPR::CTR, scratch.gpr());
+
+    // Save LR
+    ctx.assembler->mfspr(scratch.gpr(), SPR::LR);
+    ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, TRANSLATED_CTX_OFF(lr));
+
+    // Branch
+    ctx.assembler->bctrl();
+}
+
+
+/**
+ * macro_call_native function - Call a native ELFv2 function from translated code
+ *
+ * Address of native function must be in CTR+r12 before this thunk is executed.
+ * Return value of native function (r3) will be put into the first provided gpr argument.
+ * All non-volatile ABIRetrec registers must be assumed to be clobbered.
+ */
+template <typename T>
+template <typename... Args>
+void codegen_ppc64le<T>::macro$call_native_function(gen_context &ctx, Args... args) {
+    static_assert(std::conjunction_v<std::is_convertible<gpr_t, Args>...>, "Arguments must be GPRs");
+    static_assert(sizeof...(args) <= ARRAY_SIZE(ABIRetrec<T>::argument_regs));
+    assembler &a = *ctx.assembler;
+
+    // Arbitrarily chosen scratch registers that are volatile in RetrecABI and non-volatile in ELFv2
+    constexpr auto scratch1 = llir::PPC64Register::R20;
+    constexpr auto scratch2 = llir::PPC64Register::R21;
+    constexpr gpr_t scratch1_gpr = llir::PPC64RegisterGPRIndex(scratch1);
+    constexpr gpr_t scratch2_gpr = llir::PPC64RegisterGPRIndex(scratch2);
+
+    // Assert that the scratch registers are valid according to the ABIs in use
+    static_assert(!MAGIC_ARRAY_FIND_OCCURRENCES(ABIRetrec<T>::non_volatile_regs, scratch1));
+    static_assert(MAGIC_ARRAY_FIND_OCCURRENCES(ABIElfV2::non_volatile_regs, scratch1));
+    static_assert(!MAGIC_ARRAY_FIND_OCCURRENCES(ABIRetrec<T>::non_volatile_regs, scratch2));
+    static_assert(MAGIC_ARRAY_FIND_OCCURRENCES(ABIElfV2::non_volatile_regs, scratch2));
+
+    constexpr auto &difference = ABIComparator<ABIRetrec<T>, ABIElfV2>::non_volatile_regs_difference;
+
+    // Preserve old SP in scratch2
+    a.mr(scratch2_gpr, GPR_SP);
+
+    // Preserve all registers that are non-volatile in the retrec ABI but volatile in ELFv2
+    for (auto reg : difference) {
+        // Store the register on the stack using the correct instruction for its type
+        switch (llir::PPC64RegisterGetType(reg)) {
+            case llir::PPC64RegisterType::GPR:
+                a.stdu(llir::PPC64RegisterGPRIndex(reg), GPR_SP, -8);
+                break;
+
+            case llir::PPC64RegisterType::SPECIAL:
+                if (reg == llir::PPC64Register::CR) {
+                    a.mfcr(scratch1_gpr);
+                    a.stdu(scratch1_gpr, GPR_SP, -8);
+                } else { TODO(); }
+
+                break;
+
+            default:
+                TODO();
+        }
+    }
+
+    // Create an ELFv2 stack frame
+    a.addi(1, 1, -32);
+    a.addi(scratch1_gpr, 0, 0); // li scratch, 0
+    a.std(scratch1_gpr, 1, 0);
+
+    // Write a second backchain pointer if stack is misaligned
+    static_assert(magic::array_find_occurrences<difference.size()>(difference, llir::PPC64Register::CR));
+    a.andi_(3 /* scratch */, 1, 0xF); // clobbers CR
+    a.bc(BO::FIELD_SET, assembler::CR_EQ, 1*4);
+    a.stdu(scratch1_gpr, 1, -8);
+
+    // Load parameters
+    gpr_t parameters[] = {static_cast<gpr_t>(args)...};
+    for (size_t i = 0; i < sizeof...(args); i++) {
+        gpr_t cur = parameters[i];
+        gpr_t cur_elfv2 = llir::PPC64RegisterGPRIndex(ABIElfV2::argument_regs[i]);
+
+        if (cur != cur_elfv2)
+            a.mr(cur_elfv2, cur);
+    }
+
+    // Call function (r12, CTR already populated with target)
+    a.bctrl();
+
+    // Move result into first parameter
+    a.mr(parameters[0], 3);
+
+    // Restore SP and preserved registers
+    a.mr(GPR_SP, scratch2_gpr);
+    int16_t stack_offset = -8;
+    for (auto reg : difference) {
+        // Store the register on the stack using the correct instruction for its type
+        switch (llir::PPC64RegisterGetType(reg)) {
+            case llir::PPC64RegisterType::GPR:
+                a.ld(llir::PPC64RegisterGPRIndex(reg), GPR_SP, stack_offset);
+                stack_offset += -8;
+                break;
+
+            case llir::PPC64RegisterType::SPECIAL:
+                if (reg == llir::PPC64Register::CR) {
+                    a.ld(scratch1_gpr, GPR_SP, stack_offset);
+                    a.mtcr(scratch1_gpr);
+                    stack_offset += -8;
+                } else { TODO(); }
+
+                break;
+
+            default:
+                TODO();
+        }
+    }
+}
+
 // Explicitly instantiate for all supported traits
-template class retrec::codegen_ppc64le<ppc64le::target_traits_x86_64>;
+template class retrec::codegen_ppc64le<ppc64le::TargetTraitsX86_64>;

@@ -73,6 +73,9 @@ public:
     size_t size() const { return insns.size(); }
     typename Traits::InsnT &operator[](size_t i) { return insns[i]; }
 
+    // Accessors for output buffer
+    uint8_t *buf() const { return out_buf; }
+
     friend typename Traits::AssemblerT;
 
 private:

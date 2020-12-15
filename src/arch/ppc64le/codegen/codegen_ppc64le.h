@@ -4,6 +4,7 @@
 #include <llir.h>
 #include <codegen.h>
 #include <execution_context.h>
+#include <arch/ppc64le/codegen/abi.h>
 #include <arch/ppc64le/codegen/codegen_types.h>
 #include <arch/ppc64le/codegen/register_allocator.h>
 #include <arch/ppc64le/cpu_context_ppc64le.h>
@@ -46,12 +47,6 @@ namespace ppc64le {
  * This will hopefully be faster than storing the operation data in the runtime_context
  * and worth wasting 3 registers.
  */
-constexpr gpr_t GPR_FIXED_RUNTIME_CTX = 11;
-constexpr gpr_t GPR_FIXED_FLAG_OP1 = 14;
-constexpr gpr_t GPR_FIXED_FLAG_OP2 = 15;
-constexpr gpr_t GPR_FIXED_FLAG_RES = 16;
-constexpr gpr_t GPR_FIXED_FLAG_OP_TYPE = 17;
-
 constexpr uint32_t CR_LAZY = 1; // CR1
 constexpr uint32_t CR_LAZY_FIELD_OVERFLOW = CR_LAZY*4 + 3;
 constexpr uint32_t CR_LAZY_FIELD_CARRY = CR_LAZY*4 + 2;
@@ -93,10 +88,6 @@ enum class LastFlagOp : uint32_t {
     ADD = (1 << 8),
 };
 
-struct target_traits_x86_64 {
-    using RegisterAllocatorT = register_allocator_x86_64;
-};
-
 } // namespace ppc64le
 
 template <typename Traits>
@@ -105,18 +96,25 @@ class codegen_ppc64le final : public codegen {
     execution_context &econtext;
 
     /**
+     * Addresses of functions emitted to fixed function table
+     */
+    struct fixed_function_addresses {
+        uint32_t call;
+        uint32_t indirect_jmp;
+    } ff_addresses;
+
+    /**
      * All codegen state used in translation of a single code block
      */
     struct gen_context {
-        const lifted_llir_block &llir;
         std::unique_ptr<ppc64le::assembler> assembler;
         std::unique_ptr<ppc64le::instruction_stream> stream;
-        typename Traits::RegisterAllocatorT m_reg_allocator;
-
+        ppc64le::register_allocator<Traits> m_reg_allocator;
         // Map of (target binary vaddr) : (instruction stream offset) for branch targets
         std::unordered_map<uint64_t, size_t> local_branch_targets;
 
-        gen_context(const lifted_llir_block &llir_);
+        gen_context();
+        ~gen_context();
 
         auto &reg_allocator() { return m_reg_allocator; }
     };
@@ -125,6 +123,14 @@ class codegen_ppc64le final : public codegen {
 
     // All ALU flags that are stored in Rc=0 (i.e. not lazily evaluated)
     static constexpr llir::Alu::FlagArr llir$alu$all_rc0_flags = { llir::Alu::Flag::SIGN, llir::Alu::Flag::ZERO };
+
+    // Import register aliases from the ABI
+    static constexpr auto GPR_SP = ppc64le::ABIRetrec<Traits>::GPR_SP;
+    static constexpr auto GPR_FIXED_RUNTIME_CTX = ppc64le::ABIRetrec<Traits>::GPR_FIXED_RUNTIME_CTX;
+    static constexpr auto GPR_FIXED_FLAG_OP1 = ppc64le::ABIRetrec<Traits>::GPR_FIXED_FLAG_OP1;
+    static constexpr auto GPR_FIXED_FLAG_OP2 = ppc64le::ABIRetrec<Traits>::GPR_FIXED_FLAG_OP2;
+    static constexpr auto GPR_FIXED_FLAG_RES = ppc64le::ABIRetrec<Traits>::GPR_FIXED_FLAG_RES;
+    static constexpr auto GPR_FIXED_FLAG_OP_TYPE = ppc64le::ABIRetrec<Traits>::GPR_FIXED_FLAG_OP_TYPE;
 
     //
     // LLIR code generation functions
@@ -155,6 +161,12 @@ class codegen_ppc64le final : public codegen {
 
     // Dispatch to the appropriate code generation function
     void dispatch(gen_context &ctx, const llir::Insn &insn);
+
+    //
+    // Fixed helper functions - Emitted once per process in the function table
+    //
+    void fixed_helper$call$emit(gen_context &ctx);
+    void fixed_helper$indirect_jmp$emit(gen_context &ctx);
 
     // Resolve all relocations in a given translation context
     status_code resolve_relocations(gen_context &ctx);
@@ -230,6 +242,8 @@ class codegen_ppc64le final : public codegen {
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
     void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::MemOp &mem, llir::LoadStore::Op op,
                          llir::Register::Mask reg_mask, const llir::Insn *insn);
+    void macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target);
+    template <typename... Args> void macro$call_native_function(gen_context &ctx, Args... args);
 
 public:
     codegen_ppc64le(Architecture target_, execution_context &econtext_)

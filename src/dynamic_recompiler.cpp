@@ -25,7 +25,7 @@ status_code dynamic_recompiler::init() {
     // the correct architecture detected by the elf loader.
     switch (host) {
         case Architecture::ppc64le:
-            gen = std::make_unique<codegen_ppc64le<ppc64le::target_traits_x86_64>>(loader.target_arch(), *econtext);
+            gen = std::make_unique<codegen_ppc64le<ppc64le::TargetTraitsX86_64>>(loader.target_arch(), *econtext);
             break;
         default:
             TODO();

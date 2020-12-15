@@ -43,6 +43,7 @@ status_code execution_context::allocate_and_map_vaddr(VaddrLocation location, si
     // Map the allocated address space
     void *mem = mmap((void *)vaddr, size, prot, MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
     if (mem == (void *)-1) {
+        pr_debug("mmap failed at %p: %m\n", (void *)vaddr);
         vaddr_map.free(vaddr, size);
         return status_code::NOMEM;
     }

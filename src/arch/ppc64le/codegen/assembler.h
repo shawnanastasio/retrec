@@ -542,7 +542,7 @@ public:
     }
 
     void stdu(uint8_t rs, uint8_t ra, int16_t ds) {
-        ASM_LOG("Emitting std r%u, %d(r%u)\n", rs, ds, ra);
+        ASM_LOG("Emitting stdu r%u, %d(r%u)\n", rs, ds, ra);
         EMIT_INSN(Operation::STD, [=] {
             check_mask(ds, 0xFFFCU);
             return self->ds_form(62, rs, ra, ds, 1);

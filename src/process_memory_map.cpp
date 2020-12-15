@@ -51,13 +51,16 @@ uint64_t process_memory_map::allocate_high_vaddr(size_t size) {
 }
 
 uint64_t process_memory_map::allocate_low_vaddr(size_t size) {
-    if (size % getpagesize() != 0)
+    if (size % page_size != 0)
         return 0;
 
     // Same as allocate_high_vaddr, but pick the first region of the appropriate size
     for (size_t i=0; i<map.size() - 1; i++) {
-        if (map[i].end + size <= map[i+1].start) {
-            uint64_t new_start = map[i].end;
+        uint64_t new_start = map[i].end;
+        if (new_start % page_size)
+            new_start += page_size - (new_start % page_size);
+
+        if (new_start + size <= map[i+1].start) {
             map.emplace_back(new_start, new_start + size, Mapping::Type::USER);
             sort();
             return new_start;

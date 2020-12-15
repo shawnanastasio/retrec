@@ -48,6 +48,15 @@ struct MemOp {
     union {
         X86_64MemOp x86_64;
     };
+
+    // Specify whether the memory source register is updated with the newly
+    // calculated address.
+    enum class Update {
+        NONE, // Perform no update
+        PRE,  // Update source register with offset before dereferencing
+        POST  // Update source register with offset after dereferencing
+    } update;
+
 };
 
 #undef LLIR_ALLOW_INTERNAL_INCLUDE
@@ -61,14 +70,6 @@ struct LoadStore {
         STORE,
         LEA,
     } op;
-
-    // Specify whether the memory source register is updated with the newly
-    // calculated address.
-    enum class Update {
-        NONE, // Perform no update
-        PRE,  // Update source register with offset before dereferencing
-        POST  // Update source register with offset after dereferencing
-    } update;
 
     // Whether to perform sign extension
     bool sign_extension;
@@ -148,6 +149,9 @@ struct Branch {
         RELATIVE,
         ABSOLUTE,
     } target;
+
+    // Whether or not the branch should store the next Instruction Pointer in the destination operand
+    bool linkage;
 };
 
 //
@@ -239,12 +243,6 @@ inline std::string to_string(const LoadStore &loadstore) {
         case LoadStore::Op::LEA: ret += "LEA("; break;
     }
 
-    ret += "update=";
-    switch (loadstore.update) {
-        case LoadStore::Update::NONE: ret += "NONE"; break;
-        case LoadStore::Update::PRE: ret += "PRE"; break;
-        case LoadStore::Update::POST: ret += "POST"; break;
-    }
     ret += ", signext=";
     ret += loadstore.sign_extension ? "T" : "F";
     ret += ")";
@@ -352,15 +350,27 @@ inline std::string to_string(const Register &reg) {
 
 template<>
 inline std::string to_string(const MemOp &memop) {
+    std::string ret;
     switch (memop.arch) {
         case Architecture::X86_64:
-            return "Segment=" + to_string(memop.x86_64.segment) +
+            ret =  "Segment=" + to_string(memop.x86_64.segment) +
                    " Base=" + to_string(memop.x86_64.base) +
                    " Index=" + to_string(memop.x86_64.index) +
                    " Scale=" + std::to_string(memop.x86_64.scale) +
                    " Disp=" + std::to_string(memop.x86_64.disp);
+            break;
+
         case Architecture::ppc64le: TODO();
     }
+
+    ret += "update=";
+    switch (memop.update) {
+        case MemOp::Update::NONE: ret += "NONE"; break;
+        case MemOp::Update::PRE: ret += "PRE"; break;
+        case MemOp::Update::POST: ret += "POST"; break;
+    }
+
+    return ret;
 }
 
 template<>

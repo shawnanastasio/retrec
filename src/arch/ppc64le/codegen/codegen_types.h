@@ -134,7 +134,6 @@ enum class SPR : uint16_t {
     CTR = 9
 };
 
-
 // Annotated types for assembler operands. Allows inspection code (like relocation) to determine
 // parameter uses without hardcoding table of per-instruction meanings.
 //

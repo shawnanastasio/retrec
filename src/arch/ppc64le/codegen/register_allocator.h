@@ -39,7 +39,8 @@ public:
 /**
  * Register allocator for X86_64 targets
  */
-class register_allocator_x86_64 {
+template <typename TargetTraits>
+class register_allocator {
     // Allocation status of GPRs. True = reserved, false = free.
     struct RegisterInfo {
         enum class State {
@@ -52,13 +53,14 @@ class register_allocator_x86_64 {
     // Statically allocated GPRs
     static struct static_allocation_set {
         static_allocation_set();
+        using TargetRegisterT = typename TargetTraits::RegisterT;
 
         // Maps a given x86_64 register to a reserved ppc64le register, if available
-        gpr_t allocations[(size_t)llir::X86_64Register::MAXIMUM - 1];
+        gpr_t allocations[(size_t)TargetRegisterT::MAXIMUM - 1];
 
         // allocations doesn't reserve space for the invalid register index 0, so subtract 1 to get index
-        size_t reserved_index(const llir::Register &reg) { return (size_t)reg.x86_64 - 1; }
-        size_t reserved_index(llir::X86_64Register reg) { return (size_t)reg - 1; }
+        size_t reserved_index(const llir::Register &reg) { return (size_t)reg.x86_64 - 1; /* FIXME: not hardcoded to x86_64 */ }
+        size_t reserved_index(TargetRegisterT reg) { return (size_t)reg - 1; }
 
         bool is_reserved(gpr_t gpr) {
             for (size_t i=0; i<ARRAY_SIZE(allocations); i++)
@@ -69,12 +71,12 @@ class register_allocator_x86_64 {
     } static_allocations;
 
 public:
-    using AllocatedGprT = allocated_gpr<register_allocator_x86_64>;
+    using AllocatedGprT = allocated_gpr<register_allocator<TargetTraits>>;
     friend AllocatedGprT;
 
-    register_allocator_x86_64();
-    ~register_allocator_x86_64();
-    DISABLE_COPY_AND_MOVE(register_allocator_x86_64)
+    register_allocator();
+    ~register_allocator();
+    DISABLE_COPY_AND_MOVE(register_allocator)
 
     AllocatedGprT allocate_gpr();
     AllocatedGprT get_fixed_gpr(const llir::Register &reg);

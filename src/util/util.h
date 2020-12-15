@@ -82,6 +82,11 @@ constexpr std::remove_reference_t<R> ref_cast(T val) {
     return static_cast<std::remove_reference_t<R>>(val);
 }
 
+template <typename EnumT>
+constexpr std::underlying_type_t<EnumT> enum_cast(EnumT val) {
+    return static_cast<std::underlying_type_t<EnumT>>(val);
+}
+
 //
 // Logging
 //

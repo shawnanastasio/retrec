@@ -10,6 +10,7 @@ add_executable(retrec
     allocators.cpp
     allocators.h
     arch/arch.h
+    arch/ppc64le/codegen/abi.h
     arch/ppc64le/codegen/assembler.cpp
     arch/ppc64le/codegen/assembler.h
     arch/ppc64le/codegen/codegen_ppc64le.cpp
@@ -52,6 +53,8 @@ add_executable(retrec
     util/magic.h
     util/util.cpp
     util/util.h
+    virtual_address_mapper.cpp
+    virtual_address_mapper.h
 )
 
 target_link_libraries(retrec PUBLIC ${LIBELF_LIBRARIES} ${CAPSTONE_LIBRARIES})

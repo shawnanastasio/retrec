@@ -3,9 +3,16 @@
 #include <util/util.h>
 #include <arch/x86_64/cpu_context_x86_64.h>
 #include <arch/ppc64le/cpu_context_ppc64le.h>
+#include <virtual_address_mapper.h>
+
+#include <unordered_map>
 
 namespace retrec {
 
+
+/**
+ * Data accessed by translated code and retrec runtime
+ */
 struct runtime_context_ppc64le {
     cpu_context_ppc64le host_native_context;     // Host CPU context when in native code
     cpu_context_ppc64le host_translated_context; // Host CPU context when in translated code
@@ -15,10 +22,16 @@ struct runtime_context_ppc64le {
     // Storage used for communication between translated and native code
     //
 
+    // Pointers to virtual_address_mapper for use with things like indirect call resolution
+    virtual_address_mapper *vm_lut;
+    uint64_t (virtual_address_mapper::* vm_lut_lookup_and_update_call_cache)(uint64_t, uint64_t, uint64_t);
+    uint64_t (virtual_address_mapper::* vm_lut_lookup_check_call_cache)(uint64_t);
+
     // If the translated code wishes to call into native code, it will set the target here
     enum class NativeTarget : uint16_t /* fit in an instruction immediate field */ {
         INVALID,
         SYSCALL, // Execute a syscall
+        CALL,    // Emulate a CALL instruction
     } native_function_call_target;
 
     // Target CPU emulated context
@@ -38,48 +51,6 @@ namespace ppc64le {
 
 status_code runtime_context_init(runtime_context_ppc64le *, Architecture, translated_code_region *, void *);
 status_code runtime_context_execute(runtime_context_ppc64le *);
-static inline int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, llir::X86_64Register reg) {
-    // For statically allocated registers, return the corresponding ppc64 register from the translated context.
-    // Otherwise, return the register from the x86_64_ucontext
-    switch (reg) {
-        case llir::X86_64Register::RSP:
-            return &ctx->host_translated_context.gprs[1];
-        case llir::X86_64Register::RDI:
-            return &ctx->host_translated_context.gprs[3];
-        case llir::X86_64Register::RSI:
-            return &ctx->host_translated_context.gprs[4];
-        case llir::X86_64Register::RDX:
-            return &ctx->host_translated_context.gprs[5];
-        case llir::X86_64Register::RCX:
-            return &ctx->host_translated_context.gprs[6];
-        case llir::X86_64Register::R8:
-            return &ctx->host_translated_context.gprs[7];
-        case llir::X86_64Register::R9:
-            return &ctx->host_translated_context.gprs[8];
-        case llir::X86_64Register::RAX:
-            return &ctx->host_translated_context.gprs[9];
-        case llir::X86_64Register::R10:
-            return &ctx->host_translated_context.gprs[23];
-        case llir::X86_64Register::R11:
-            return &ctx->host_translated_context.gprs[24];
-        case llir::X86_64Register::R12:
-            return &ctx->host_translated_context.gprs[25];
-        case llir::X86_64Register::R13:
-            return &ctx->host_translated_context.gprs[26];
-        case llir::X86_64Register::R14:
-            return &ctx->host_translated_context.gprs[27];
-        case llir::X86_64Register::R15:
-            return &ctx->host_translated_context.gprs[28];
-        case llir::X86_64Register::RBX:
-            return &ctx->host_translated_context.gprs[29];
-        case llir::X86_64Register::RBP:
-            return &ctx->host_translated_context.gprs[30];
-
-        default:
-            return ctx->x86_64_ucontext.get_reg(reg);
-    }
-}
-void syscall_native_callback(runtime_context_ppc64le *);
 
 };
 
