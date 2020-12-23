@@ -134,7 +134,7 @@ class assembler {
 
     status_code write32(uint32_t x);
 
-    status_code b_form(uint8_t po, uint8_t bo, uint8_t bi, uint16_t bd, uint8_t aa, uint8_t lk);
+    status_code b_form(uint8_t po, uint8_t bo, uint8_t bi, int16_t bd, uint8_t aa, uint8_t lk);
     status_code d_form(uint8_t po, uint8_t rt, uint8_t ra, int16_t i);
     status_code ds_form(uint8_t po, uint8_t rs, uint8_t ra, int16_t ds, uint8_t xo);
     status_code dx_form(uint8_t po, uint8_t rt, int16_t d, uint8_t xo);
@@ -239,10 +239,10 @@ public:
             return self->b_form(16, (uint8_t)bo, bi, target>>2, aa, lk);
         }, bo, bi, target, aa, lk);
     }
-    void bc(BO bo, uint8_t bi, uint16_t target)   { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)0); }
-    void bca(BO bo, uint8_t bi, uint16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)0); }
-    void bcl(BO bo, uint8_t bi, uint16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)1); }
-    void bcla(BO bo, uint8_t bi, uint16_t target) { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)1); }
+    void bc(BO bo, uint8_t bi, int16_t target)   { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)0); }
+    void bca(BO bo, uint8_t bi, int16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)0); }
+    void bcl(BO bo, uint8_t bi, int16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)1); }
+    void bcla(BO bo, uint8_t bi, int16_t target) { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)1); }
 
     void bcctr_internal(BO bo, uint8_t bi, uint8_t bh, bool lk) {
         ASM_LOG("Emitting bcctr%s %d %d %d\n", lk?"l":"", (uint8_t)bo, bi, bh);

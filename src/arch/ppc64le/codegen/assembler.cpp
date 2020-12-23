@@ -15,7 +15,7 @@ status_code assembler::write32(uint32_t x) {
     return stream->write32(x);
 }
 
-status_code assembler::b_form(uint8_t po, uint8_t bo, uint8_t bi, uint16_t bd, uint8_t aa, uint8_t lk) {
+status_code assembler::b_form(uint8_t po, uint8_t bo, uint8_t bi, int16_t bd, uint8_t aa, uint8_t lk) {
     constexpr uint16_t BD_MASK = 0b11111111111111U;
     check_mask(po, PO_MASK);
     check_mask(bo, REG_MASK);
