@@ -232,6 +232,7 @@ inline std::string to_string(const Insn::Class &iclass) {
         case Insn::Class::BRANCH: return "Branch";
         case Insn::Class::INTERRUPT: return "Interrupt";
     }
+    ASSERT_NOT_REACHED();
 }
 
 template<>
@@ -257,6 +258,7 @@ inline std::string to_string(const Alu &alu) {
         case Alu::Op::MULT: return "MULT";
         case Alu::Op::LOAD_IMM: return "LOAD_IMM";
     }
+    ASSERT_NOT_REACHED();
 }
 
 template <>
@@ -294,6 +296,7 @@ inline std::string to_string(const Interrupt &interrupt) {
     switch (interrupt.op) {
         case Interrupt::Op::SYSCALL: return "SYSCALL";
     }
+    ASSERT_NOT_REACHED();
 }
 
 template<>
@@ -325,6 +328,7 @@ inline std::string to_string(const X86_64Register &reg) {
         case llir::X86_64Register::ES: return "ES";
         case llir::X86_64Register::MAXIMUM: return "INVALID";
     }
+    ASSERT_NOT_REACHED();
 }
 
 template<>
@@ -337,6 +341,7 @@ inline std::string to_string(const Register::Mask &mask) {
         case Register::Mask::LowLowLow8: return "LowLowLow8";
         case Register::Mask::Special: return "Special";
     }
+    ASSERT_NOT_REACHED();
 }
 
 template<>
@@ -346,6 +351,7 @@ inline std::string to_string(const Register &reg) {
             return to_string(reg.x86_64) + "(" + to_string(reg.mask) + ")";
         case Architecture::ppc64le: TODO();
     }
+    ASSERT_NOT_REACHED();
 }
 
 template<>
@@ -380,6 +386,7 @@ inline std::string to_string(const Operand &operand) {
         case Operand::Type::MEM: return std::string("Memory(") + to_string(operand.memory) + ")";
         case Operand::Type::REG: return std::string("Reg=") + to_string(operand.reg);
     }
+    ASSERT_NOT_REACHED();
 }
 
 template <>
