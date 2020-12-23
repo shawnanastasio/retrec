@@ -43,13 +43,32 @@ public:
         static_assert(sizeof...(parameters_) <= 6, "Too many insn parameters provided!");
     }
 
+    ~instruction_stream_entry();
+
     instruction_stream_entry(instruction_stream_entry&& other)
         : aux(std::move(other.aux)), op(other.op),
           emit(std::move(other.emit)), parameters(std::move(other.parameters)) {}
-    ~instruction_stream_entry();
+    instruction_stream_entry &operator=(instruction_stream_entry &&other) {
+        std::swap(aux, other.aux);
+        std::swap(op, other.op);
+        std::swap(emit, other.emit);
+        std::swap(parameters, other.parameters);
+        return *this;
+    }
+
+    /**
+     * Replaces our operation+callback+parameters with another instruction_stream_entry's.
+     * Unlike the move constructor, our auxiliary data is preserved.
+     */
+    void replace_with(instruction_stream_entry&& other) {
+        assert(!other.aux);
+        std::swap(op, other.op);
+        std::swap(emit, other.emit);
+        std::swap(parameters, other.parameters);
+    }
+
     instruction_stream_entry(const instruction_stream_entry& other) = delete;
     instruction_stream_entry &operator=(const instruction_stream_entry &other) = delete;
-    instruction_stream_entry &operator=(instruction_stream_entry &&other) = delete;
 
     /**
      * Emit the instruction using the provided assembler.
