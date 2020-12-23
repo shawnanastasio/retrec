@@ -14,7 +14,7 @@
 #include <cstdint>
 
 // Comment out to disable log spam
-#define ASM_LOG(...) pr_debug(__VA_ARGS__)
+#define ASM_LOG(...) do if (!quiet) { pr_debug(__VA_ARGS__); } while (0)
 
 #ifndef ASM_LOG
 #define ASM_LOG(...)
@@ -131,6 +131,7 @@ class instruction_stream final : public retrec::instruction_stream<instruction_s
  */
 class assembler {
     instruction_stream *stream { nullptr };
+    bool quiet { false };
 
     status_code write32(uint32_t x);
 
@@ -177,6 +178,7 @@ public:
 
     void set_stream(instruction_stream *stream_) { stream = stream_; }
     auto &get_stream() { return stream; }
+    void set_quiet(bool val) { quiet = val; }
 
     //
     // Book I
