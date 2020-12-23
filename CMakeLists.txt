@@ -9,8 +9,9 @@ message(STATUS "Detected host arch: ${HOST_ARCH}")
 #
 # User configurable options
 #
-option(MIN_LOG_LEVEL "MIN_LOG_LEVEL" "-1")
-if(NOT ${MIN_LOG_LEVEL})
+set(MIN_LOG_LEVEL AUTO CACHE STRING "Set minimum log level {AUTO, 0, 1, 2, 3}")
+set_property(CACHE MIN_LOG_LEVEL PROPERTY STRINGS "AUTO" "0" "1" "2" "3")
+if(${MIN_LOG_LEVEL} MATCHES "AUTO")
     if (CMAKE_BUILD_TYPE MATCHES "Debug")
         # Set min log level to lowest for debug builds
         set(MIN_LOG_LEVEL 0)
@@ -27,9 +28,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRETREC_MINIMUM_LOG_LEVEL=${MIN_LOG_LEV
 #
 
 if (CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -DDEBUG_BUILD=1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -DDEBUG_BUILD=1 -Werror=switch")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -DDEBUG_BUILD=0")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -DDEBUG_BUILD=0")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
