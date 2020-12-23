@@ -66,14 +66,11 @@ status_code disassembler::init() {
 
 status_code disassembler::disassemble_region(const void *code, size_t max_length, uint64_t ip,
                                              std::vector<llir::Insn> &llir_out) {
-    cs_insn *insns_tmp;
-    size_t count = cs_disasm(capstone_handle, (const uint8_t *)code, max_length, ip, 0, &insns_tmp);
-    unique_cs_insn_arr insns(insns_tmp, cs_insn_deleter(count));
-
+    cs_insn *cur = cs_malloc(capstone_handle);
+    unique_cs_insn_arr insns(cur, cs_insn_deleter(1));
     std::vector<llir::Insn> llir_insns;
 
-    for (size_t i=0; i<count; i++) {
-        cs_insn *cur = &insns[i];
+    while (cs_disasm_iter(capstone_handle, (const uint8_t **)&code, &max_length, &ip, cur)) {
         cs_detail *detail = cur->detail;
         assert(detail);
 
