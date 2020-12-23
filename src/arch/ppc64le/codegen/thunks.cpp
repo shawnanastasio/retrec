@@ -17,9 +17,15 @@
 static_assert(offsetof(retrec::runtime_context_ppc64le, host_translated_context) ==
               RC_HOST_TRANSLATED_CONTEXT_OFFSET,
               "Invalid retrec::runtime_context_ppc64le::host_translated_context offset"
-              " Did you change the struct?\n");
+              " Did you change the struct?");
+
+#define RC_FLUSH_ICACHE_OFFSET 1488
+static_assert(offsetof(retrec::runtime_context_ppc64le, flush_icache) == RC_FLUSH_ICACHE_OFFSET,
+              "Invalid retrec::runtime_context_ppc64le::flush_icache offset"
+              " Did you change the struct?");
+
 static_assert(offsetof(retrec::runtime_context_ppc64le, host_native_context) == 0,
-              "host_native_context must be the first member in runtime_context_ppc64le\n");
+              "host_native_context must be the first member in runtime_context_ppc64le");
 
 #define CC_GPRS_OFFSET 0
 #define CC_LR_OFFSET (CC_GPRS_OFFSET + (32 * 8))
@@ -179,16 +185,34 @@ __asm__(
     "ld 31," REG_ARR_OFF(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_GPRS_OFFSET, 31) "(4)\n"
 
     // Restore LR
-    "ld 5," STR(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_LR_OFFSET) "(4)\n"
-    "mtlr 5\n"
+    "ld 3," STR(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_LR_OFFSET) "(4)\n"
+    "mtlr 3\n"
+
+    // Invalidate instruction cache if requested
+    "lbz 3, " STR(RC_FLUSH_ICACHE_OFFSET) "(4)\n"
+    "cmplwi 3, 0\n"
+
+    // Load NIP into CTR
+    "ld 3, " STR(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_NIP_OFFSET) "(4)\n"
+    "mtctr 3\n"
+
+    "beq 1f\n" // skip invalidation
+
+    // Invalid icache using sequence on page 842 of ISA 3.0 PDF
+    "dcbst 0, 3\n"
+    "sync\n"
+    "icbi 0, 3\n"
+    "isync\n"
+
+    // Unset flush_icache flag
+    "li 3, 0\n"
+    "stb 3, " STR(RC_FLUSH_ICACHE_OFFSET) "(4)\n"
 
     // Restore CR
-    "ld 5," STR(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_CR_OFFSET) "(4)\n"
-    "mtcr 5\n"
+    "1: ld 3," STR(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_CR_OFFSET) "(4)\n"
+    "mtcr 3\n"
 
-    // Load NIP into CTR, restore GPR3/4, branch to target
-    "ld 5, " STR(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_NIP_OFFSET) "(4)\n"
-    "mtctr 5\n"
+    // Restore last GPRs and jump to code
     "ld 3," REG_ARR_OFF(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_GPRS_OFFSET, 3) "(4)\n"
     "ld 4," REG_ARR_OFF(RC_HOST_TRANSLATED_CONTEXT_OFFSET + CC_GPRS_OFFSET, 4) "(4)\n"
 
