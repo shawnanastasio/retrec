@@ -889,12 +889,25 @@ public:
         });
     }
 
+    //
+    // Other
+    //
+
     // Guaranteed invalid instruction
     void invalid() {
         ASM_LOG("Emitting invalid instruction\n");
         EMIT_INSN(Operation::INVALID, [=] {
             return self->write32(0x00000000);
         });
+    }
+
+
+    // Emit a raw u32 value to the instruction stream
+    void u32(uint32_t val) {
+        ASM_LOG("Emitting raw u32 constant: 0x%x\n", val);
+        EMIT_INSN(Operation::U32, [=] {
+            return self->write32(val);
+        }, val);
     }
 
 #undef EMIT_INSN
