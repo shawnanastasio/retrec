@@ -17,18 +17,19 @@ namespace retrec {
 
 enum class status_code {
     SUCCESS,
+    BADACCESS,
+    BADALIGN,
     BADARCH,
+    BADBRANCH,
     BADELF,
     BADFILE,
-    NOMEM,
-    UNIMPL_INSN,
-    OVERFLOW,
-    BADALIGN,
-    OVERLAP,
     DEFER,
-
-    // Code generation errors
-    BADBRANCH,
+    HALT,
+    NOMEM,
+    OVERFLOW,
+    OVERLAP,
+    UNIMPL_INSN,
+    UNTRANSLATED,
 };
 const char *status_code_str(status_code code);
 

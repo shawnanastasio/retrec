@@ -65,7 +65,7 @@ status_code disassembler::init() {
 }
 
 status_code disassembler::disassemble_region(const void *code, size_t max_length, uint64_t ip,
-                                             std::vector<llir::Insn> &llir_out) {
+                                             std::vector<llir::Insn> &llir_out, Mode mode) {
     cs_insn *cur = cs_malloc(capstone_handle);
     unique_cs_insn_arr insns(cur, cs_insn_deleter(1));
     std::vector<llir::Insn> llir_insns;
@@ -83,6 +83,13 @@ status_code disassembler::disassemble_region(const void *code, size_t max_length
         if (res != status_code::SUCCESS) {
             pr_error("Failed to lift instruction!\n");
             return res;
+        }
+
+        if (mode == Mode::PARTIAL) {
+            // In partial mode, we need to stop whenever a branch is encountered
+            auto last_insn = llir_insns.end() - 1;
+            if (last_insn->iclass == llir::Insn::Class::BRANCH)
+                break;
         }
 
         pr_debug("LLIR: %s\n", llir::to_string(*(llir_insns.end() - 1)).c_str());

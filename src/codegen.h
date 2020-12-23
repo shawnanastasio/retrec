@@ -9,20 +9,27 @@
 
 namespace retrec {
 
+class virtual_address_mapper; // Forward
+
 class lifted_llir_block {
 public:
-    enum class Flags : uint32_t {
-        FULL_FUNCTION = (1 << 0), // Block is a full function lifted from the target executable
+    // Declared using struct+enum instead of C++11 scoped enums to allow more
+    // ergonomic usage as a bit-field.
+    struct Flags {
+        enum Type : uint32_t {
+            NONE,
+            FULL_FUNCTION = (1 << 0), // Block is a full function lifted from the target executable
+        };
     };
 
-    lifted_llir_block(std::vector<llir::Insn> &&insns_, Flags flags_) : insns(insns_), flags(flags_) {}
+    lifted_llir_block(std::vector<llir::Insn> &&insns_, Flags::Type flags_) : insns(insns_), flags(flags_) {}
 
     const std::vector<llir::Insn> &get_insns() const { return insns; }
-    Flags get_flags() const { return flags; }
+    Flags::Type get_flags() const { return flags; }
 
 private:
     std::vector<llir::Insn> insns;
-    Flags flags;
+    Flags::Type flags;
 };
 
 class translated_code_region {
@@ -41,6 +48,8 @@ class codegen {
 public:
     virtual status_code init() = 0;
     virtual status_code translate(const lifted_llir_block& insns, std::optional<translated_code_region> &out) = 0;
+    virtual uint64_t get_last_untranslated_access(runtime_context &rctx) = 0;
+    virtual status_code patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) = 0;
     virtual ~codegen() {}
 };
 

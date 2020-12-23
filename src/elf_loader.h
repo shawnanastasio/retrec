@@ -31,27 +31,41 @@ public:
     status_code init();
     status_code load_all();
 
-    struct symbol {
+    struct Symbol {
         std::string name;
         uint8_t info;
         uint8_t other;
         uint64_t shndx;
         uint64_t value;
         uint64_t size;
+        enum class Bind {
+            LOCAL = 0,
+            GLOBAL = 1,
+            WEAK = 2,
+            NUM = 3,
+            GNU_UNIQUE = 10,
+
+            _ANY = 255
+        } bind;
     };
 
-    [[nodiscard]] const symbol *lookup(uint64_t addr, uint64_t shndx) const;
-    [[nodiscard]] uint64_t get_symbol_size(const symbol &sym) const;
-    const void *get_symbol_data_ptr(const elf_loader::symbol &sym);
+    enum class LookupPolicy {
+        EXACT,    // Exact matches only
+        CONTAINS, // addr is within symbol start + size
+    };
+
+    [[nodiscard]] const Symbol *lookup(uint64_t addr, uint64_t shndx, Symbol::Bind bind, LookupPolicy policy) const;
+    [[nodiscard]] uint64_t get_symbol_size(const Symbol &sym) const;
+    const void *get_symbol_data_ptr(const elf_loader::Symbol &sym);
 
     [[nodiscard]] Architecture target_arch() const { return arch; }
     [[nodiscard]] uint64_t entrypoint() const { return ehdr.e_entry; }
-    [[nodiscard]] const std::vector<symbol> &symbol_table() const { return symbols; }
+    [[nodiscard]] const std::vector<Symbol> &symbol_table() const { return symbols; }
     [[nodiscard]] uint64_t text_section_index() const { return text_shndx; }
 
 
 private:
-    std::vector<symbol> symbols;
+    std::vector<Symbol> symbols;
 };
 
 }

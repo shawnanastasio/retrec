@@ -94,13 +94,20 @@ template <typename Traits>
 class codegen_ppc64le final : public codegen {
     Architecture target;
     execution_context &econtext;
+    virtual_address_mapper *vam;
 
     /**
      * Addresses of functions emitted to fixed function table
      */
     struct fixed_function_addresses {
         uint32_t call;
+        uint32_t call_direct;
+        uint32_t call_direct_rel;
         uint32_t indirect_jmp;
+        uint32_t jmp_direct_rel;
+        uint32_t syscall;
+        uint32_t trap_patch_call;
+        uint32_t trap_patch_jump;
     } ff_addresses;
 
     /**
@@ -112,8 +119,9 @@ class codegen_ppc64le final : public codegen {
         ppc64le::register_allocator<Traits> m_reg_allocator;
         // Map of (target binary vaddr) : (instruction stream offset) for branch targets
         std::unordered_map<uint64_t, size_t> local_branch_targets;
+        virtual_address_mapper *vam;
 
-        gen_context();
+        gen_context(virtual_address_mapper *);
         ~gen_context();
 
         auto &reg_allocator() { return m_reg_allocator; }
@@ -132,6 +140,26 @@ class codegen_ppc64le final : public codegen {
     static constexpr auto GPR_FIXED_FLAG_RES = ppc64le::ABIRetrec<Traits>::GPR_FIXED_FLAG_RES;
     static constexpr auto GPR_FIXED_FLAG_OP_TYPE = ppc64le::ABIRetrec<Traits>::GPR_FIXED_FLAG_OP_TYPE;
 
+    // The number of instructions needed to patch in a direct branch with and without linkage, respectively.
+    // This accounts for 2 instructions to load a 32-bit immediate code buffer address and 1 bla to a fixed
+    // function helper.
+    //
+    // In the future if we support a larger memory model with code buffers out of the 32-bit address space,
+    // these will have to be updated along with the corresponding relocation/patch code.
+    static constexpr size_t DIRECT_CALL_PATCH_INSN_COUNT = 3;
+    static constexpr size_t DIRECT_JMP_PATCH_INSN_COUNT = 3;
+
+    struct pcrel_branch_patch_offsets {
+        size_t imm_insn_count;     // Amount of instructions required to load original immediate
+        size_t new_imm_insn_count; // Amount of instructions required to load immediate after subtracting PCrel offset
+        size_t new_offset;         // New target with subtracted PCrel offset
+        size_t middle_nops;        // Amount of NOPs required between load_imm and bla
+        size_t end_nops;           // Amount of NOPs required after bla
+    };
+
+    // Helper for calculating offsets for a PC-relative branch patch
+    pcrel_branch_patch_offsets calculate_pcrel_branch_patch_offsets(size_t patch_insn_count, int64_t target_off);
+
     //
     // LLIR code generation functions
     //
@@ -144,6 +172,7 @@ class codegen_ppc64le final : public codegen {
     void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op);
     llir::Alu::FlagArr llir$alu$helper$preserve_flags(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$helper$restore_flags(gen_context &ctx, llir::Alu::FlagArr &flags);
+    size_t llir$alu$helper$load_imm_insn_count(int64_t val);
 
     void llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$sub(gen_context &ctx, const llir::Insn &insn);
@@ -162,11 +191,19 @@ class codegen_ppc64le final : public codegen {
     // Dispatch to the appropriate code generation function
     void dispatch(gen_context &ctx, const llir::Insn &insn);
 
+    // Emit the end-of-block epilogue
+    void emit_epilogue(gen_context &ctx, const lifted_llir_block &llir);
+
     //
     // Fixed helper functions - Emitted once per process in the function table
     //
     void fixed_helper$call$emit(gen_context &ctx);
+    void fixed_helper$call_direct$emit(gen_context &ctx, bool rel);
     void fixed_helper$indirect_jmp$emit(gen_context &ctx);
+    void fixed_helper$jmp_direct_rel$emit(gen_context &ctx);
+    void fixed_helper$syscall$emit(gen_context &ctx);
+    void fixed_helper$trap_patch_call$emit(gen_context &ctx);
+    void fixed_helper$trap_patch_jump$emit(gen_context &ctx);
 
     // Resolve all relocations in a given translation context
     status_code resolve_relocations(gen_context &ctx);
@@ -181,6 +218,15 @@ class codegen_ppc64le final : public codegen {
     }
     static bool rel16_in_range(uint64_t my_address, uint64_t target) {
         return rel_off_in_range(INT16_MIN, INT16_MAX, my_address, target);
+    }
+
+    /**
+     * Small helper to determine if a given int64_t immediate can be losslessly converted
+     * into integral type `T`.
+     */
+    template <typename T>
+    bool imm_fits_in(int64_t imm) {
+        return static_cast<T>(imm) == imm;
     }
 
     static inline uint16_t build_flag_op_data(ppc64le::LastFlagOp op, llir::Register::Mask mask) {
@@ -242,17 +288,21 @@ class codegen_ppc64le final : public codegen {
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
     void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::MemOp &mem, llir::LoadStore::Op op,
                          llir::Register::Mask reg_mask, const llir::Insn *insn);
-    void macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target);
+    void macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target, bool linkage = true);
     template <typename... Args> void macro$call_native_function(gen_context &ctx, Args... args);
+    void macro$nops(ppc64le::assembler &assembler, size_t count);
+    void macro$nop$relocation(gen_context &ctx, size_t count, ppc64le::relocation &&reloc);
 
 public:
-    codegen_ppc64le(Architecture target_, execution_context &econtext_)
-        : target(target_), econtext(econtext_)
+    codegen_ppc64le(Architecture target_, execution_context &econtext_, virtual_address_mapper *vam_)
+        : target(target_), econtext(econtext_), vam(vam_)
     {
     }
 
     status_code init() override;
     status_code translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) override;
+    uint64_t get_last_untranslated_access(runtime_context &rctx) override;
+    status_code patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) override;
 };
 
 }

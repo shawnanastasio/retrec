@@ -39,9 +39,14 @@ public:
         loader(loader_) {}
     ~disassembler();
 
+    enum class Mode {
+        FULL_FUNCTION, // Disassemble an entire function
+        PARTIAL,       // Disassemble until the first branch insn
+    };
+
     status_code init();
     status_code disassemble_region(const void *code, size_t max_length, uint64_t ip,
-                                   std::vector<llir::Insn> &llir_out);
+                                   std::vector<llir::Insn> &llir_out, Mode mode);
 };
 
 }

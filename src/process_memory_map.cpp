@@ -32,38 +32,29 @@ status_code process_memory_map::init() {
     return status_code::SUCCESS;
 }
 
-uint64_t process_memory_map::allocate_high_vaddr(size_t size) {
-    if (size % getpagesize() != 0)
-        return 0;
-
-    // Current algorithm: go through process_memory_map and subtract size from
-    // the first 0x7fff* mapping. This is pretty stupid but it's good enough for now.
-    for (auto &mapping : map) {
-        if (mapping.start >= 0x7fff00000000) {
-            uint64_t new_start = mapping.start - size;
-            map.emplace_back(new_start, new_start + size, Mapping::Type::USER);
-            sort();
-            return new_start;
-        }
-    }
-
-    return 0;
-}
-
-uint64_t process_memory_map::allocate_low_vaddr(size_t size) {
+uint64_t process_memory_map::allocate_vaddr_in_range(size_t size, Range range) {
     if (size % page_size != 0)
         return 0;
+    if (range.low % page_size != 0)
+        return 0;
+    if (range.high - range.low < size)
+        return 0;
 
-    // Same as allocate_high_vaddr, but pick the first region of the appropriate size
-    for (size_t i=0; i<map.size() - 1; i++) {
-        uint64_t new_start = map[i].end;
-        if (new_start % page_size)
-            new_start += page_size - (new_start % page_size);
-
-        if (new_start + size <= map[i+1].start) {
-            map.emplace_back(new_start, new_start + size, Mapping::Type::USER);
+    // Scan through address space at start of new account
+    uint64_t cur_start = range.low;
+    while (cur_start + size <= range.high) {
+        // See if mapping already exists at this address
+        auto mapping_opt = find(cur_start, size, nullptr, FindPolicy::CONTAINS);
+        if (mapping_opt) {
+            // It does - skip to the match's end
+            cur_start = mapping_opt->end;
+        } else {
+            // It doesn't - we can use this region
+            uint64_t cur_end = cur_start + size;
+            map.emplace_back(cur_start, cur_end, Mapping::Type::USER);
+            assert(cur_end % page_size == 0);
             sort();
-            return new_start;
+            return cur_start;
         }
     }
 
@@ -81,25 +72,26 @@ void process_memory_map::mark_allocated(Mapping entry) {
     sort();
 }
 
-bool process_memory_map::contains(uint64_t addr, uint64_t len) const {
-    for (const auto &cur : map) {
-        // FIXME: This doesn't properly handle a conflict spread across multiple mappings
-        if (cur.start <= addr && addr < cur.end)
-            return true;
-        else if (cur.start <= (addr+len) && (addr+len) < cur.end)
-            return true;
-    }
-
-    return false;
-}
-
-std::optional<process_memory_map::Mapping> process_memory_map::find(uint64_t addr, uint64_t len, size_t *index_out) {
+std::optional<process_memory_map::Mapping> process_memory_map::find(uint64_t addr, uint64_t len, size_t *index_out,
+                                                                    FindPolicy policy) {
     size_t i = 0;
     for (auto &cur : map) {
-        if (cur.start == addr && cur.end == len + addr) {
-            if (index_out)
-                *index_out = i;
-            return cur;
+        switch (policy) {
+            case FindPolicy::EXACT:
+                if (cur.start == addr && cur.end == len + addr) {
+                    if (index_out)
+                        *index_out = i;
+                    return cur;
+                }
+                break;
+
+            case FindPolicy::CONTAINS:
+                if (cur.start <= addr && (addr + len) <= cur.end) {
+                    if (index_out)
+                        *index_out = i;
+                    return cur;
+                }
+                break;
         }
 
         ++i;

@@ -6,10 +6,12 @@
 #include <disassembler.h>
 #include <execution_context.h>
 #include <codegen.h>
+#include <virtual_address_mapper.h>
 #include <arch/ppc64le/codegen/codegen_ppc64le.h>
 
 #include <memory>
 #include <variant>
+#include <list>
 
 namespace retrec {
 
@@ -21,8 +23,16 @@ class dynamic_recompiler {
     disassembler disasm;
 
     std::unique_ptr<codegen> gen;
+    std::list<translated_code_region> translated_regions;
+    virtual_address_mapper vam;
 
-    std::variant<status_code, translated_code_region> translate_elf_function(const elf_loader::symbol &symbol);
+    //
+    // Translation helpers
+    //
+    status_code translate_elf_function(const elf_loader::Symbol &symbol);
+    status_code translate_raw_code_block(uint64_t vaddr);
+    status_code translate_referenced_address(uint64_t address, uint64_t *resolved_out);
+    status_code runtime_handle_untranslated_access();
 
 public:
     dynamic_recompiler(Architecture host_, mapped_file binary_) :
@@ -33,6 +43,9 @@ public:
     {
     }
 
+    //
+    // Public functions
+    //
     status_code init();
     status_code execute();
 };

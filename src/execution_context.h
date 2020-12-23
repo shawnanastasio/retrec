@@ -40,22 +40,27 @@ public:
         HIGH, // 0x7fff+
     };
 
+    static constexpr process_memory_map::Range HIGH_MEM_RANGE = {0x7fff00000000, 0x7fffffffffff};
+    static constexpr process_memory_map::Range LOW_MEM_RANGE  = {0x10000, 0xfffeffff};
+
     //
     // Accessors
     //
     process_memory_map &map() { return vaddr_map; }
     simple_placement_allocator &get_code_allocator() { return code_allocator; }
     void *get_region_ptr(uint64_t ptr);
+    auto &runtime_ctx() { assert(runtime_context); return *runtime_context; }
 
     //
     // Functions
     //
-    status_code allocate_and_map_vaddr(VaddrLocation location, size_t size, int prot, void **region_out);
+    status_code allocate_and_map_vaddr(process_memory_map::Range range, size_t size, int prot, void **region_out);
     status_code allocate_new_stack(size_t size, void **stack_out);
-    status_code allocate_region(uint64_t start, size_t len, int prot, void **region_out);
+    status_code allocate_region(uint64_t start, size_t len, int prot, void **region_out,
+                                process_memory_map::Mapping::Type type = process_memory_map::Mapping::Type::USER);
     status_code protect_region(uint64_t start, size_t len, int prot);
-    status_code initialize_runtime_context(Architecture target_arch, translated_code_region *entry);
-    void enter_translated_code();
+    status_code initialize_runtime_context(Architecture target_arch, void *entry, virtual_address_mapper *vam);
+    status_code enter_translated_code();
 };
 
 }

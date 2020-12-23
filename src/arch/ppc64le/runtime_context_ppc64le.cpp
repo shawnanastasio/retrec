@@ -15,7 +15,6 @@ using NativeTarget = runtime_context_ppc64le::NativeTarget;
 //
 
 static void native_callback$syscall(runtime_context_ppc64le *ctx);
-static void native_callback$call(runtime_context_ppc64le *ctx);
 
 template <typename TargetTraits>
 int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTraits::RegisterT reg) {
@@ -35,15 +34,14 @@ int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTr
     }
 }
 
-status_code ppc64le::runtime_context_init(runtime_context_ppc64le *ctx, Architecture target_arch,
-                                          translated_code_region *code, void *stack) {
-    memset(ctx, 0, sizeof(runtime_context_ppc64le));
-    ctx->arch = target_arch;
-    ctx->leave_translated_code_ptr = arch_leave_translated_code;
+status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam) {
+    memset(this, 0, sizeof(runtime_context_ppc64le));
+    arch = target_arch;
+    leave_translated_code_ptr = arch_leave_translated_code;
 
     switch (target_arch) {
         case Architecture::X86_64:
-            *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RSP) = (uint64_t)stack;
+            *runtime_context_get_reg<TargetTraitsX86_64>(this, llir::X86_64Register::RSP) = (uint64_t)stack;
             break;
 
         default:
@@ -51,51 +49,51 @@ status_code ppc64le::runtime_context_init(runtime_context_ppc64le *ctx, Architec
     }
 
     // Setup virtual address mapper
-    ctx->vm_lut = &g_virtual_address_mapper;
-    ctx->vm_lut_lookup_and_update_call_cache = &virtual_address_mapper::lookup_and_update_call_cache;
-    ctx->vm_lut_lookup_check_call_cache = &virtual_address_mapper::lookup_check_call_cache;
+    this->vam = vam;
+    vam_lookup_and_update_call_cache = &virtual_address_mapper::lookup_and_update_call_cache;
+    vam_lookup_check_call_cache = &virtual_address_mapper::lookup_check_call_cache;
 
     // HAddrT lookup_check_call_cache(VAddrT target);
     // Setup special registers
-    ctx->host_translated_context.gprs[11] = (uint64_t)ctx; // R11 - runtime_context pointer
-    ctx->host_translated_context.nip = (uint64_t)code->code();
-    __asm__ volatile("mr %0, 13\n" : "=r"(ctx->host_translated_context.gprs[13]));
+    host_translated_context.gprs[11] = (uint64_t)this; // R11 - runtime_context pointer
+    host_translated_context.nip = (uint64_t)entry;
+    asm volatile("mr %0, 13\n" : "=r"(host_translated_context.gprs[13]));
 
     return status_code::SUCCESS;
 }
 
-status_code ppc64le::runtime_context_execute(runtime_context_ppc64le *ctx) {
+status_code runtime_context_ppc64le::execute() {
     for (;;) {
-        arch_enter_translated_code(nullptr, ctx);
+        pr_debug("Entering translated code at 0x%lx\n", host_translated_context.nip);
+        arch_enter_translated_code(nullptr, this);
+        pr_debug("Left translated code\n");
 
-        if (ctx->native_function_call_target != runtime_context_ppc64le::NativeTarget::INVALID) {
-            // If the translated code wanted to call a native function, do so and resume
-            switch (ctx->native_function_call_target) {
-                case NativeTarget::SYSCALL:
-                    native_callback$syscall(ctx);
-                    break;
-
-                case NativeTarget::CALL:
-                    native_callback$call(ctx);
-                    break;
-
-                case NativeTarget::INVALID:
-                    ASSERT_NOT_REACHED();
-            }
-            ctx->native_function_call_target = runtime_context_ppc64le::NativeTarget::INVALID;
-
-            if (ctx->should_exit) {
-                pr_info("Emulation halted after native function call.\n");
-                pr_info("Exit code: %d\n", ctx->exit_code);
+        // If the translated code wanted to call a native function, do so and resume
+        switch (native_function_call_target) {
+            case NativeTarget::SYSCALL:
+                native_callback$syscall(this);
                 break;
-            }
-        } else {
-            // Left translated code without requesting a function call - translated code is done executing
+
+            case NativeTarget::CALL:
+            case NativeTarget::PATCH_CALL:
+            case NativeTarget::PATCH_JUMP:
+                // Translated code attempted to branch to untranslated code
+                return status_code::UNTRANSLATED;
+
+            case NativeTarget::INVALID:
+                pr_debug("BUG: Translated code trapped to runtime without specifying a valid NativeTarget\n");
+                ASSERT_NOT_REACHED();
+        }
+        native_function_call_target = runtime_context_ppc64le::NativeTarget::INVALID;
+
+        if (should_exit) {
+            pr_info("Emulation halted after native function call.\n");
+            pr_info("Exit code: %d\n", exit_code);
             break;
         }
     }
 
-    return status_code::SUCCESS;
+    return status_code::HALT;
 }
 
 //
@@ -129,8 +127,4 @@ static void native_callback$syscall(runtime_context_ppc64le *ctx) {
         default:
             TODO();
     }
-}
-
-static void native_callback$call([[maybe_unused]] runtime_context_ppc64le *ctx) {
-    TODO();
 }

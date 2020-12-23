@@ -160,15 +160,24 @@ enum class LabelPosition {
 
 struct relocation {
     // Fill in the relative offset to an absolute target virtual address
-    struct imm_rel_vaddr_fixup { uint64_t abs_vaddr; };
+    struct imm_rel_vaddr_fixup { uint64_t vaddr; };
 
     // Helpers for declaring labels and referencing them
     struct imm_rel_label_fixup { std::string label_name; LabelPosition position; };
     struct declare_label { std::string label_name; };
     struct declare_label_after { std::string label_name; };
 
+    // Emit a direct call to a given virtual address
+    struct imm_rel_direct_call { uint64_t vaddr; };
+
+    // Emit a direct jmp to a given virtual address
+    struct imm_rel_direct_jmp { uint64_t vaddr; };
+
+    using DataT = std::variant<imm_rel_vaddr_fixup, imm_rel_label_fixup, declare_label,
+                               declare_label_after, imm_rel_direct_call, imm_rel_direct_jmp>;
+
     size_t insn_cnt; // Number of instructions reserved for this Relocation
-    std::variant<imm_rel_vaddr_fixup, imm_rel_label_fixup, declare_label, declare_label_after> data;
+    DataT data;      // Relocation-specific data
 };
 
 // Auxiliary data that can be attached to an instruction stream entry

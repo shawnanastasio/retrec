@@ -15,12 +15,13 @@ namespace retrec {
 class process_memory_map {
 public:
     struct Mapping {
-        uint64_t start;
-        uint64_t end;
+        uint64_t start; // inclusive
+        uint64_t end;   // exclusive
 
         enum class Type {
             SYSTEM, // Allocated by the system/runtime
             USER,   // Allocated by us
+            ELF,    // Part of the mapped target ELF
         } type;
 
         int prot;
@@ -31,14 +32,26 @@ public:
             : start(start_), end(end_), type(type_), prot(prot_) {}
     };
 
+    struct Range {
+        uint64_t low;  // inclusive
+        uint64_t high; // exclusive
+    };
+
+    enum class FindPolicy {
+        EXACT,    // Exact matches only
+        CONTAINS, // addr is within [start, end)
+    };
+
     explicit process_memory_map(pid_t pid_);
     status_code init();
 
-    uint64_t allocate_high_vaddr(size_t size);
-    uint64_t allocate_low_vaddr(size_t size);
+    // Accessors for internal map
+    const auto &operator[](size_t i) const { return map[i]; }
+    auto size() const { return map.size(); }
+
+    uint64_t allocate_vaddr_in_range(size_t size, Range range);
     void mark_allocated(Mapping entry);
-    bool contains(uint64_t addr, uint64_t len) const;
-    std::optional<Mapping> find(uint64_t addr, uint64_t len, size_t *index_out = nullptr);
+    std::optional<Mapping> find(uint64_t addr, uint64_t len, size_t *index_out, FindPolicy = FindPolicy::EXACT);
     void free(uint64_t addr, uint64_t len);
 
 private:

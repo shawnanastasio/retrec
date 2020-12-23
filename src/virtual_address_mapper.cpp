@@ -3,11 +3,6 @@
 
 using namespace retrec;
 
-/**
- * Global address mapper instance
- */
-virtual_address_mapper retrec::g_virtual_address_mapper;
-
 virtual_address_mapper::virtual_address_mapper() {}
 
 /**
@@ -37,12 +32,15 @@ auto virtual_address_mapper::lookup(VAddrT vaddr) -> HAddrT {
 auto virtual_address_mapper::lookup_and_update_call_cache(VAddrT target, VAddrT ret_vaddr,
                                                                HAddrT ret_haddr) -> HAddrT {
     // Try to insert return's address into the call cache
-    for (auto &entry : call_cache) {
-        if (!entry.valid) {
-            entry.valid = true;
-            entry.vaddr = ret_vaddr;
-            entry.haddr = ret_haddr;
-            break;
+    if (free_cache_entries > 0) {
+        for (auto &entry : call_cache) {
+            if (!entry.valid) {
+                free_cache_entries--;
+                entry.valid = true;
+                entry.vaddr = ret_vaddr;
+                entry.haddr = ret_haddr;
+                break;
+            }
         }
     }
 
@@ -61,12 +59,15 @@ auto virtual_address_mapper::lookup_and_update_call_cache(VAddrT target, VAddrT 
  */
 auto virtual_address_mapper::lookup_check_call_cache(VAddrT target) -> HAddrT {
     // Check the call cache
-    for (auto &entry : call_cache) {
-        if (entry.valid && entry.vaddr == target) {
-            // Invalidate the entry and return the haddr. In the future the
-            // cache should probably be more clever.
-            entry.valid = false;
-            return entry.haddr;
+    if (free_cache_entries != CALL_CACHE_SIZE) {
+        for (auto &entry : call_cache) {
+            if (entry.valid && entry.vaddr == target) {
+                // Invalidate the entry and return the haddr. In the future the
+                // cache should probably be more clever.
+                entry.valid = false;
+                free_cache_entries++;
+                return entry.haddr;
+            }
         }
     }
 

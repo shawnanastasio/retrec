@@ -19,13 +19,36 @@ using namespace retrec::ppc64le;
                                               offsetof(cpu_context_ppc64le, member))
 
 template <typename T>
+codegen_ppc64le<T>::gen_context::gen_context(virtual_address_mapper *vam_) : vam(vam_) {
+    assembler = std::make_unique<ppc64le::assembler>();
+    stream = std::make_unique<ppc64le::instruction_stream>(*assembler);
+    assembler->set_stream(&*stream);
+}
+
+template <typename T>
+codegen_ppc64le<T>::gen_context::~gen_context() {
+    if (!vam)
+        // Temporary constructor (no virtual address map), skip everything
+        return;
+
+    uint64_t base_addr = (uint64_t)stream->buf();
+    assert(base_addr);
+
+    // Insert all local (vaddr:haddr) pairs into the global virtual target map
+    for (auto &pair : local_branch_targets) {
+        vam->insert(pair.first, base_addr + pair.second*INSN_SIZE);
+    }
+}
+
+template <typename T>
 status_code codegen_ppc64le<T>::init() {
     constexpr size_t FUNCTION_TABLE_SIZE = 0x10000; // 64K
 
     // Allocate a function table at an address that can fit in the AA=1 LI field of I-form branch instructions
+    constexpr process_memory_map::Range LI_RANGE = {0x10000, 0x3ff0000};
     void *function_table;
-    auto res = econtext.allocate_and_map_vaddr(execution_context::VaddrLocation::LOW, FUNCTION_TABLE_SIZE,
-                                               PROT_READ | PROT_WRITE | PROT_EXEC, &function_table);
+    auto res = econtext.allocate_and_map_vaddr(LI_RANGE, FUNCTION_TABLE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
+                                               &function_table);
     if (res != status_code::SUCCESS) {
         pr_debug("Failed to allocate function table: %s\n", status_code_str(res));
         return res;
@@ -37,7 +60,7 @@ status_code codegen_ppc64le<T>::init() {
     }
 
     // First pass: Generate all fixed functions
-    gen_context ctx;
+    gen_context ctx(vam);
 
     auto alignment_padding = [&] {
         while (ctx.stream->size() & 0b11)
@@ -49,9 +72,39 @@ status_code codegen_ppc64le<T>::init() {
     fixed_helper$call$emit(ctx);
     alignment_padding();
 
+    /* call_direct */
+    uint32_t call_direct_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$call_direct$emit(ctx, false);
+    alignment_padding();
+
+    /* call_direct_rel */
+    uint32_t call_direct_rel_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$call_direct$emit(ctx, true);
+    alignment_padding();
+
     /* indirect_jmp */
     uint32_t indirect_jmp_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
     fixed_helper$indirect_jmp$emit(ctx);
+    alignment_padding();
+
+    /* jmp_direct_rel */
+    uint32_t jmp_direct_rel_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$jmp_direct_rel$emit(ctx);
+    alignment_padding();
+
+    /* syscall */
+    uint32_t syscall_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$syscall$emit(ctx);
+    alignment_padding();
+
+    /* trap_patch_call */
+    uint32_t trap_patch_call_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$trap_patch_call$emit(ctx);
+    alignment_padding();
+
+    /* trap_patch_jump */
+    uint32_t trap_patch_jump_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$trap_patch_jump$emit(ctx);
     alignment_padding();
 
     // Second pass: resolve relocations
@@ -72,43 +125,29 @@ status_code codegen_ppc64le<T>::init() {
 
     // Fill in function addresses
     ff_addresses.call = (uint32_t)(uintptr_t)function_table + call_offset;
+    ff_addresses.call_direct = (uint32_t)(uintptr_t)function_table + call_direct_offset;
+    ff_addresses.call_direct_rel = (uint32_t)(uintptr_t)function_table + call_direct_rel_offset;
     ff_addresses.indirect_jmp = (uint32_t)(uintptr_t)function_table + indirect_jmp_offset;
+    ff_addresses.jmp_direct_rel = (uint32_t)(uintptr_t)function_table + jmp_direct_rel_offset;
+    ff_addresses.syscall = (uint32_t)(uintptr_t)function_table + syscall_offset;
+    ff_addresses.trap_patch_call = (uint32_t)(uintptr_t)function_table + trap_patch_call_offset;
+    ff_addresses.trap_patch_jump = (uint32_t)(uintptr_t)function_table + trap_patch_jump_offset;
 
     pr_debug("Emitted function table to %p\n", function_table);
     return status_code::SUCCESS;
 }
 
 template <typename T>
-codegen_ppc64le<T>::gen_context::gen_context() {
-    assembler = std::make_unique<ppc64le::assembler>();
-    stream = std::make_unique<ppc64le::instruction_stream>(*assembler);
-    assembler->set_stream(&*stream);
-}
-
-template <typename T>
-codegen_ppc64le<T>::gen_context::~gen_context() {
-    uint64_t base_addr = (uint64_t)stream->buf();
-    assert(base_addr);
-
-    // Insert all local (vaddr:haddr) pairs into the global virtual target map
-    for (auto &pair : local_branch_targets) {
-        g_virtual_address_mapper.insert(pair.first, base_addr + pair.second*INSN_SIZE);
-    }
-}
-
-template <typename T>
 status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) {
-    pr_debug("vmx offset: %zu\n", offsetof(cpu_context_ppc64le, vmx));
-    pr_debug("host_translated_context offset: %zu\n",
-                    offsetof(runtime_context_ppc64le, host_translated_context));
-
     // First pass: dispatch and translate all LLIR instructions
-    gen_context ctx;
+    gen_context ctx(vam);
     for (const llir::Insn &insn : llir.get_insns()) {
         dispatch(ctx, insn);
     }
+    emit_epilogue(ctx, llir);
 
     // Second pass: resolve relocations
+    pr_debug("Resolving relocations!\n");
     status_code res = resolve_relocations(ctx);
     if (res != status_code::SUCCESS) {
         pr_error("Failed to resolve relocations for generated code: %s!\n", status_code_str(res));
@@ -134,6 +173,168 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
 
     return status_code::SUCCESS;
 }
+
+template <typename T>
+void codegen_ppc64le<T>::emit_epilogue(gen_context &ctx, const lifted_llir_block &llir) {
+    // The epilogue is reached when the block falls through to the end without branching elsewhere.
+    // Emit a patched direct jmp to the address that is 1 past the last instruction in the block.
+    auto last_insn = (llir.get_insns().end() - 1);
+    uint64_t target_vaddr = last_insn->address + last_insn->size;
+    macro$nop$relocation(ctx, DIRECT_JMP_PATCH_INSN_COUNT,
+                         relocation{DIRECT_JMP_PATCH_INSN_COUNT, relocation::imm_rel_direct_jmp{target_vaddr}});
+}
+
+template <typename T>
+uint64_t codegen_ppc64le<T>::get_last_untranslated_access(runtime_context &rctx) {
+    switch (rctx.native_function_call_target) {
+        case runtime_context_ppc64le::NativeTarget::CALL:
+            // Trap was for a CALL, so the target is in R0 (see fixed_helper$call)
+            return rctx.host_translated_context.gprs[0];
+
+        case runtime_context_ppc64le::NativeTarget::PATCH_CALL:
+        case runtime_context_ppc64le::NativeTarget::PATCH_JUMP:
+            // Trap was for a patch, the target is directly stored in the instruction stream
+            return *(uint64_t *)rctx.host_translated_context.nip;
+
+        default:
+            TODO();
+    }
+}
+
+template <typename T>
+auto codegen_ppc64le<T>::calculate_pcrel_branch_patch_offsets(size_t patch_insn_count, int64_t target_off)
+                                                              -> pcrel_branch_patch_offsets {
+    pcrel_branch_patch_offsets res;
+
+    // Recalculate the offset to be relative to bla's new LR, not the relocation's position
+    res.imm_insn_count = llir$alu$helper$load_imm_insn_count(target_off);
+    size_t tmp_end_nops = patch_insn_count - res.imm_insn_count - 1; /* 1 for bla */
+    res.new_offset = target_off - res.imm_insn_count*INSN_SIZE - tmp_end_nops*INSN_SIZE;
+    res.new_imm_insn_count = llir$alu$helper$load_imm_insn_count(res.new_offset);
+    if (res.new_imm_insn_count > res.imm_insn_count) {
+        // Sometimes modifying the immediate will affect the number of instructions required
+        // to store it. In these cases, the original count must be the larger of the two and
+        // the gap can be filled with NOPs.
+        res.imm_insn_count = res.new_imm_insn_count;
+
+        size_t tmp_end_nops = patch_insn_count - res.imm_insn_count - 1; /* 1 for bla */
+        res.new_offset = target_off - res.imm_insn_count*INSN_SIZE - tmp_end_nops*INSN_SIZE;
+        res.new_imm_insn_count = llir$alu$helper$load_imm_insn_count(res.new_offset);
+
+        assert(res.new_imm_insn_count <= res.imm_insn_count);
+    }
+    assert(res.new_imm_insn_count <= patch_insn_count - 1 /* 1 for bla */);
+
+    // Calculate amount of padding NOPs required
+    res.middle_nops = res.imm_insn_count - res.new_imm_insn_count;
+    res.end_nops = patch_insn_count - res.new_imm_insn_count - res.middle_nops - 1; /* 1 for bla */
+
+    return res;
+}
+
+template <typename T>
+status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) {
+    int64_t &nip = rctx.host_translated_context.nip;
+
+    switch (rctx.native_function_call_target) {
+        case runtime_context_ppc64le::NativeTarget::PATCH_CALL:
+        {
+            pr_debug("Patching in DIRECT_CALL to host address 0x%lx\n", resolved_haddr);
+            gen_context tmp_ctx(nullptr);
+
+            // Load translated target into r0 and call relevant fixed_helper
+            int64_t target_off = resolved_haddr - (nip - INSN_SIZE);
+
+            // Recalculate the offset to be relative to bla's new LR, not the relocation's position
+            auto offs = calculate_pcrel_branch_patch_offsets(DIRECT_CALL_PATCH_INSN_COUNT, target_off);
+
+            // Load the immediate offset
+            macro$load_imm(*tmp_ctx.assembler, 0, offs.new_offset, llir::Register::Mask::Full64, true);
+
+            // Fill in NOPs if required to pad immediate's offset from the branch
+            macro$nops(*tmp_ctx.assembler, offs.middle_nops);
+
+            // Branch to $call_direct_rel
+            tmp_ctx.assembler->bla(ff_addresses.call_direct_rel);
+
+            // Fill in NOPs at the end
+            macro$nops(*tmp_ctx.assembler, offs.end_nops);
+
+            // Emit instructions to nip-4
+            uint8_t *buffer_start = (uint8_t *)nip - INSN_SIZE;
+            status_code res = tmp_ctx.stream->emit_all_to_buf(buffer_start, DIRECT_CALL_PATCH_INSN_COUNT*INSN_SIZE);
+            if (res != status_code::SUCCESS) {
+                pr_error("Failed to emit direct call patch: %s\n", status_code_str(res));
+                return res;
+            }
+
+            // Rewind NIP to execute newly patched code
+            nip = nip - INSN_SIZE;
+            rctx.flush_icache = true;
+            break;
+        }
+
+        case runtime_context_ppc64le::NativeTarget::PATCH_JUMP:
+        {
+            pr_debug("Patching in DIRECT_JUMP to host address 0x%lx\n", resolved_haddr);
+            gen_context tmp_ctx(nullptr);
+
+            // Load translated target into r0 and call relevant fixed_helper
+            int64_t target_off = resolved_haddr - (nip - INSN_SIZE);
+
+            if (target_off >= INT26_MIN && target_off <= INT26_MAX) {
+                // Patch in a single b
+                tmp_ctx.assembler->b((rel_off_26bit)target_off);
+                macro$nops(*tmp_ctx.assembler, DIRECT_JMP_PATCH_INSN_COUNT - 1);
+            } else {
+                // Recalculate the offset to be relative to bla's new LR, not the relocation's position
+                auto offs = calculate_pcrel_branch_patch_offsets(DIRECT_JMP_PATCH_INSN_COUNT, target_off);
+
+                // Load the immediate offset
+                macro$load_imm(*tmp_ctx.assembler, 0, offs.new_offset, llir::Register::Mask::Full64, true);
+
+                // Fill in NOPs if required to pad immediate's offset from the branch
+                macro$nops(*tmp_ctx.assembler, offs.middle_nops);
+
+                // Branch to $jmp_direct_rel
+                tmp_ctx.assembler->bla(ff_addresses.jmp_direct_rel);
+
+                // Fill in NOPs at the end
+                macro$nops(*tmp_ctx.assembler, offs.end_nops);
+            }
+
+            // Emit instructions to nip-4
+            uint8_t *buffer_start = (uint8_t *)nip - INSN_SIZE;
+            status_code res = tmp_ctx.stream->emit_all_to_buf(buffer_start, DIRECT_CALL_PATCH_INSN_COUNT*INSN_SIZE);
+            if (res != status_code::SUCCESS) {
+                pr_error("Failed to emit direct call patch: %s\n", status_code_str(res));
+                return res;
+            }
+
+            // Rewind NIP to execute newly patched code
+            nip = nip - INSN_SIZE;
+            rctx.flush_icache = true;
+            break;
+        }
+
+        default:
+            // No patch nnecessary, just set NIP to the provided target and return
+            nip = resolved_haddr;
+            break;
+    }
+
+    return status_code::SUCCESS;
+}
+
+/**
+ * Helper macros for using relocations with local labels
+ */
+#define RELOC_DECLARE_LABEL(name) \
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label{name}});
+#define RELOC_DECLARE_LABEL_AFTER(name) \
+    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{name}});
+#define RELOC_FIXUP_LABEL(name, pos) \
+    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}});
 
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
@@ -267,9 +468,9 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
              * imm_rel_vaddr_fixup - Modify the instruction's rel_off* field to point to
              * the relative address corresponding to the provided absolute target virtual address.
              */
-            auto target_index_it = ctx.local_branch_targets.find(data.abs_vaddr);
+            auto target_index_it = ctx.local_branch_targets.find(data.vaddr);
             if (target_index_it == ctx.local_branch_targets.end()) {
-                pr_error("Unable to resolve Immediate Branch to target 0x%x\n", target);
+                pr_error("Unable to resolve Immediate Branch to target 0x%lx\n", data.vaddr);
                 return status_code::BADBRANCH;
             }
             size_t target_index = target_index_it->second;
@@ -287,13 +488,11 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
              * imm_rel_label_fixup - Modify the instruction's rel_off* field to point to
              * the relative address corresponding to the provided label.
              */
-            if (first_pass) {
+            if (first_pass)
                 // We only want to run on the second pass after all labels have been emitted
                 return status_code::DEFER;
-            }
 
             auto &target_indexes = labels[data.label_name];
-            pr_debug("(%s) processing label fixup to %s\n", first_pass ? "first" : "second", data.label_name.c_str());
 
             std::optional<size_t> target_index;
             if (data.position == LabelPosition::BEFORE) {
@@ -312,6 +511,7 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
 
             if (!target_index) {
                 // Couldn't find suitable target label
+                pr_debug("imm_rel_label_fixup: Unable to find target label %s\n", data.label_name.c_str());
                 return status_code::BADBRANCH;
             }
 
@@ -337,6 +537,89 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
              * declare_label_after - Declare a label that points to the instruction *after* this one
              */
             labels[data.label_name].push_back(insn_i + 1);
+            return status_code::SUCCESS;
+        },
+
+        [&](const relocation::imm_rel_direct_call &data) -> status_code {
+            assert(first_pass);
+            /**
+             * imm_rel_direct_call - Emit a call to an immediate address
+             */
+            gen_context tmp_ctx(nullptr);
+
+            // First, see if the target address' translation is in this code block
+            auto target_index_it = ctx.local_branch_targets.find(data.vaddr);
+            if (target_index_it != ctx.local_branch_targets.end()) {
+                // Target is local, load its offset and emit a call to fixed_helper$call_direct_rel
+                size_t target_index = target_index_it->second;
+                int64_t target_off = target_index*INSN_SIZE - insn_i*INSN_SIZE;
+
+                auto offs = calculate_pcrel_branch_patch_offsets(DIRECT_CALL_PATCH_INSN_COUNT, target_off);
+
+                // Emit the patch
+                macro$load_imm(*tmp_ctx.assembler, 0, offs.new_offset, llir::Register::Mask::Full64, true);
+
+                // Fill in NOPs if required to pad immediate's offset from the branch
+                macro$nops(*tmp_ctx.assembler, offs.middle_nops);
+
+                // Emit branch to $call_direct_rel
+                tmp_ctx.assembler->bla(ff_addresses.call_direct_rel);
+            } else {
+                // Target is unknown, it will have to be patched at run-time through a trap.
+                // Emit a call to fixed_function$trap_patch_call, then store the unresolved
+                // vaddr as a raw u64 in the instruction stream for the runtime to read.
+                tmp_ctx.assembler->bla(ff_addresses.trap_patch_call);
+                tmp_ctx.assembler->u32(data.vaddr & 0xFFFFFFFF);
+                tmp_ctx.assembler->u32((uint32_t)((data.vaddr >> 32) & 0xFFFFFFFF));
+            }
+
+            // Make sure we didn't overshoot the allocated patch buffer
+            assert(tmp_ctx.stream->size() <= DIRECT_CALL_PATCH_INSN_COUNT);
+
+            // Move patched instructions into the main instruction stream
+            size_t new_stream_size = tmp_ctx.stream->size();
+            for (size_t i = 0; i < new_stream_size; i++) {
+                (*ctx.stream)[insn_i + i].replace_with(std::move((*tmp_ctx.stream)[i]));
+            }
+
+            return status_code::SUCCESS;
+        },
+
+        [&](const relocation::imm_rel_direct_jmp &data) -> status_code {
+            assert(first_pass);
+            /**
+             * imm_rel_direct_jmp - Emit a jump to an immediate address
+             */
+            gen_context tmp_ctx(nullptr);
+
+            // First, see if the target address' translation is in this code block
+            auto target_index_it = ctx.local_branch_targets.find(data.vaddr);
+            if (target_index_it != ctx.local_branch_targets.end()) {
+                size_t target_index = target_index_it->second;
+                int64_t target_off = target_index*INSN_SIZE - insn_i*INSN_SIZE;
+                assert(target_off >= INT26_MIN);
+                assert(target_off <= INT26_MAX);
+
+                // Emit a single b instruction
+                tmp_ctx.assembler->b((rel_off_26bit)target_off);
+
+                // FIXME: optimize away the NOPs after this insn
+            } else {
+                // Target is unknown, it will have to be patched at run-time.
+                tmp_ctx.assembler->bla(ff_addresses.trap_patch_jump);
+                tmp_ctx.assembler->u32(data.vaddr & 0xFFFFFFFF);
+                tmp_ctx.assembler->u32((uint32_t)((data.vaddr >> 32) & 0xFFFFFFFF));
+            }
+
+            // Make sure we didn't overshoot the allocated patch buffer
+            assert(tmp_ctx.stream->size() <= DIRECT_JMP_PATCH_INSN_COUNT);
+
+            // Move patched instructions into the main instruction stream
+            size_t new_stream_size = tmp_ctx.stream->size();
+            for (size_t i = 0; i < new_stream_size; i++) {
+                (*ctx.stream)[insn_i + i].replace_with(std::move((*tmp_ctx.stream)[i]));
+            }
+
             return status_code::SUCCESS;
         }
     };
@@ -578,6 +861,14 @@ void codegen_ppc64le<T>::llir$alu$helper$restore_flags(gen_context &ctx, llir::A
 }
 
 template <typename T>
+size_t codegen_ppc64le<T>::llir$alu$helper$load_imm_insn_count(int64_t val) {
+    gen_context tmp(nullptr);
+    tmp.assembler->set_quiet(true);
+    macro$load_imm(*tmp.assembler, 0, val, llir::Register::Mask::Full64, true);
+    return tmp.stream->size();
+}
+
+template <typename T>
 void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn) {
     pr_debug("alu$load_imm\n");
     assert(insn.dest_cnt == 1);
@@ -675,11 +966,14 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
         switch (insn.src[0].type) {
             case llir::Operand::Type::IMM:
             {
+                // Emit a relocation to directly branch to the correct offset. We don't need any fixed_helper
+                // calls because the target is known (direct) AND we don't need to touch the call cache.
+                //
+                // In the case of 26-bit relative targets, this will resolve to 1 instruction and 3 NOPs.
+                // Otherwise it will resolve to a load_imm, mtctr, bctr.
                 uint64_t target = resolve_branch_target(insn);
-
-                // Always emit a relocation. This could make optimizations in later passes easier.
-                ctx.assembler->b(0);
-                ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
+                macro$nop$relocation(ctx, DIRECT_JMP_PATCH_INSN_COUNT,
+                                     relocation{DIRECT_JMP_PATCH_INSN_COUNT, relocation::imm_rel_direct_jmp{target}});
                 break;
             }
 
@@ -691,44 +985,78 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
                 break;
 
             case llir::Operand::Type::REG:
-                TODO();
+                // Load operand into r0 and call fixed_helper$indirect_jmp
+                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg);
+                macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
+                                           insn.src[0].reg.mask, true, false);
+                ctx.assembler->bla(ff_addresses.indirect_jmp);
+                break;
         }
     } else {
-        // Unconditional branch with linkage i.e. CALL
+        // Unconditional branch with linkage, i.e. CALL
         assert(insn.dest_cnt == 1);
+        assert(insn.dest[0].type == llir::Operand::Type::MEM);
+
         switch (insn.src[0].type) {
             case llir::Operand::Type::IMM:
             {
-                // Populate arguments
-                // r0   - target vaddr
-                // lr   - return host address
-                // [sp] - return vaddr
+                // Write return vaddr to memory operand
+                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
+                uint64_t ret_vaddr = insn.address + insn.size;
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
+                                llir::Register::Mask::Full64, &insn);
+
+                // Emit a relocation that will load the target host address into 0 and try to bla to
+                // fixed_helper$call_direct_pcrel
+                //
+                // We bother with a relocation here because if the target has a locally-known mapping,
+                // we can use $call_direct_pcrel instead of $call which avoids the run-time vaddr lookup, so
+                // it should be much faster.
+                //
+                // In the future when we could add support for patching $call callers to $call_direct after the
+                // first call once the vaddr mapping is known which would probably make this useless.
+                uint64_t target = resolve_branch_target(insn);
+                macro$nop$relocation(ctx, DIRECT_CALL_PATCH_INSN_COUNT,
+                                     relocation{DIRECT_CALL_PATCH_INSN_COUNT, relocation::imm_rel_direct_call{target}});
+                break;
+            }
+
+            case llir::Operand::Type::REG:
+            {
+                // Load destination vaddr in r0
+                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg);
+                macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
+                                           insn.src[0].reg.mask, true, false);
 
                 // Write return vaddr to memory operand
                 auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
                 uint64_t ret_vaddr = insn.address + insn.size;
                 macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                //ctx.assembler->stdu(ret_vaddr_reg.gpr(), GPR_SP, -8);
-                assert(insn.dest[0].type == llir::Operand::Type::MEM);
                 macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
                                 llir::Register::Mask::Full64, &insn);
 
-                // target vaddr
-                uint64_t target_vaddr = insn.src[0].imm;
-                if (insn.branch.target == llir::Branch::Target::RELATIVE)
-                    target_vaddr += insn.address;
-
-                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), target_vaddr, llir::Register::Mask::Full64, true);
-                ctx.assembler->mr(0, ret_vaddr_reg.gpr());
-
-                // call
+                // Call fixed_helper$call
                 ctx.assembler->bla(ff_addresses.call);
                 break;
             }
 
-            case llir::Operand::Type::REG:
             case llir::Operand::Type::MEM:
-                TODO();
+            {
+                // Load destination vaddr in r0
+                macro$loadstore(ctx, 0, insn.src[0].memory, llir::LoadStore::Op::LOAD, llir::Register::Mask::Full64, &insn);
+
+                // Write return vaddr to memory operand
+                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
+                uint64_t ret_vaddr = insn.address + insn.size;
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
+                                llir::Register::Mask::Full64, &insn);
+
+                // Call fixed_helper$call
+                ctx.assembler->bla(ff_addresses.call);
+                break;
+            }
         }
     }
 }
@@ -740,7 +1068,7 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     assert(insn.dest_cnt == 0);
     assert(insn.src_cnt == 1);
 
-    uint64_t target = resolve_branch_target(insn);
+    //uint64_t target = resolve_branch_target(insn);
     uint8_t cr_field;
     BO bo;
 
@@ -844,11 +1172,37 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
             TODO();
     }
 
-    // With the condition determined, emit a relocation for a conditional branch
-    if (insn.src[0].type == llir::Operand::Type::IMM) {
-        ctx.assembler->bc(bo, cr_field, 0);
-        ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_vaddr_fixup{target}});
-    } else { TODO(); }
+    auto invert_bo = [](BO bo) -> BO {
+        switch (bo) {
+            case BO::ALWAYS:
+                return BO::ALWAYS;
+            case BO::FIELD_CLR:
+                return BO::FIELD_SET;
+            case BO::FIELD_SET:
+                return BO::FIELD_CLR;
+        }
+        ASSERT_NOT_REACHED();
+    };
+
+    // Now that the condition fields have been determined and lazily evaluated (if necessary),
+    // it's time to emit the branch. To make it easier to handle all operand types and reduce
+    // the number of required runtime patch and relocation types, we'll re-use the unconditional
+    // branch code to branch to the actual target, but we'll guard it with a local conditional
+    // branch.
+    //
+    // For example, a `beq TARGET` will get compiled to:
+    //   bne skip
+    //   b TARGET
+    //   skip:
+    //
+    // This way the `b TARGET` can use the same relocations and run-time patches without caring
+    // about the condition code.
+    //
+    // FIXME: In the future we should optimize for cases where the target is an immediate, local,
+    // and 26-bit rel addressable.
+    ctx.assembler->bc(invert_bo(bo), cr_field, 0); RELOC_FIXUP_LABEL("branch_conditional_skip", AFTER);
+    llir$branch$unconditional(ctx, insn);
+    RELOC_DECLARE_LABEL_AFTER("branch_conditional_skip");
 }
 
 template <typename T>
@@ -856,7 +1210,8 @@ void codegen_ppc64le<T>::llir$interrupt$syscall(gen_context &ctx, const llir::In
     pr_debug("interrupt$syscall\n");
     assert(insn.dest_cnt == 0 && insn.src_cnt == 0);
 
-    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::SYSCALL);
+    // Call the fixed_function syscall helper
+    ctx.assembler->bla(ff_addresses.syscall);
 }
 
 template <typename T>
@@ -902,16 +1257,6 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     macro$loadstore(ctx, reg.gpr(), memory_operand.memory, insn.loadstore.op, reg_mask, &insn);
 }
 
-/**
- * Helper macros for using relocations with local labels
- */
-#define RELOC_DECLARE_LABEL(name) \
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label{name}});
-#define RELOC_DECLARE_LABEL_AFTER(name) \
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{name}});
-#define RELOC_FIXUP_LABEL(name, pos) \
-    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}});
-
 //
 // Fixed helpers
 //
@@ -944,12 +1289,12 @@ void codegen_ppc64le<T>::fixed_helper$call$emit(gen_context &ctx) {
     auto &argument_regs = ABIRetrec<T>::argument_regs;
 
     // Load parameters
-    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut)); // this*
+    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vam)); // this*
     a.ld(llir::PPC64RegisterGPRIndex(argument_regs[1]), GPR_SP, 0);       // Return vaddr
     a.mfspr(llir::PPC64RegisterGPRIndex(argument_regs[2]), SPR::LR);      // Return haddr
 
     // Load entrypoint
-    a.ld(12, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut_lookup_and_update_call_cache));
+    a.ld(12, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vam_lookup_and_update_call_cache));
     a.mtspr(SPR::CTR, 12);
 
     // Perform call
@@ -971,6 +1316,87 @@ void codegen_ppc64le<T>::fixed_helper$call$emit(gen_context &ctx) {
     // fh_call_trap: Lookup failed - trap to runtime
     RELOC_DECLARE_LABEL_AFTER("fh_call_trap");
     macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::CALL);
+}
+
+/**
+ * fixed_helper$call_fixed$emit - Emit the fixed helper for emulating CALL to a known host address
+ *
+ * Routine description:
+ * Perform a direct call to the provided host virtual. Inserts the provided return address'
+ * {vaddr:haddr} pair to the call cache for easy lookup in the future. Does NOT call into retrec C++
+ * code, since the target host address is already known.
+ *
+ * `rel` parameter determines whether emitted routine will treat destination address as relative
+ * or not.
+ *
+ * Calling convention:
+ *   u64 [r1]   - target virtual address of return
+ *   lr         - translated address of return
+ *   r0         - host address of destination
+ *   CR_SCRATCH - clobbered internally
+ *
+ * All ABIRetrec volatile registers may be clobbered.
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$call_direct$emit(gen_context &ctx, bool rel) {
+    constexpr gpr_t GPR_TARGET_ADDR = 0;
+    assembler &a = *ctx.assembler;
+
+    {
+        // Check if call cache has available slots
+        auto vam_ptr = ctx.reg_allocator().allocate_gpr(); // Store pointer to virtual_address_mapper
+        auto cc_val = ctx.reg_allocator().allocate_gpr(); // Store dereferenced values
+        a.ld(vam_ptr.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vam));
+        a.ld(cc_val.gpr(), vam_ptr.gpr(), offsetof(virtual_address_mapper, free_cache_entries));
+        a.cmpldi(CR_SCRATCH, cc_val.gpr(), 0);
+        a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("fh_call_direct_skip_cache", AFTER);
+
+        // There are free slots, scan cache in a loop
+        a.addi(vam_ptr.gpr(), vam_ptr.gpr(), offsetof(virtual_address_mapper, call_cache));
+        auto idx = ctx.reg_allocator().allocate_gpr();
+        a.addi(idx.gpr(), 0, 0);
+        {
+            RELOC_DECLARE_LABEL_AFTER("fh_call_direct_scan_loop");
+
+            // Break if the valid flag is unset
+            a.lbzx(cc_val.gpr(), vam_ptr.gpr(), idx.gpr());
+            a.cmpldi(CR_SCRATCH, cc_val.gpr(), 0);
+            a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("fh_call_direct_found_cache_entry", AFTER);
+
+            // Increment index
+            a.addi(idx.gpr(), idx.gpr(), sizeof(virtual_address_mapper::call_cache_entry));
+
+            // Keep going if idx < sizeof(call_cache_entry)*CALL_CACHE_SIZE
+            a.cmpldi(CR_SCRATCH, idx.gpr(), virtual_address_mapper::CALL_CACHE_SIZE * sizeof(virtual_address_mapper::call_cache_entry));
+            a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_LT, 0); RELOC_FIXUP_LABEL("fh_call_direct_scan_loop", BEFORE);
+        }
+
+        // vam_ptr+idx points to a free cache entry, populate it with vaddr and haddr of return
+        a.addi(cc_val.gpr(), 0, 1); RELOC_DECLARE_LABEL("fh_call_direct_found_cache_entry");
+        a.stdux(cc_val.gpr(), idx.gpr(), vam_ptr.gpr()); // valid = 1
+        a.ld(cc_val.gpr(), GPR_SP, 0);
+        a.stdu(cc_val.gpr(), idx.gpr(), 8); // vaddr = *sp
+        a.mfspr(cc_val.gpr(), SPR::LR);
+        a.std(cc_val.gpr(), idx.gpr(), 8); // haddr = lr
+
+        // Decrement free_cache_entires and fall through to call
+        a.ld(cc_val.gpr(), vam_ptr.gpr(), offsetof(virtual_address_mapper, free_cache_entries));
+        a.addi(cc_val.gpr(), cc_val.gpr(), -1);
+        a.std(cc_val.gpr(), vam_ptr.gpr(), offsetof(virtual_address_mapper, free_cache_entries));
+    }
+
+    // Branch to target
+    RELOC_DECLARE_LABEL_AFTER("fh_call_direct_skip_cache");
+
+    if (rel) {
+        // If target is relative , add it to LR
+        auto tmp_reg = ctx.reg_allocator().allocate_gpr();
+        a.mfspr(tmp_reg.gpr(), SPR::LR);
+        a.add(GPR_TARGET_ADDR, GPR_TARGET_ADDR, tmp_reg.gpr());
+    }
+
+    a.mtspr(SPR::CTR, GPR_TARGET_ADDR);
+    a.bctr();
 }
 
 /**
@@ -996,10 +1422,10 @@ void codegen_ppc64le<T>::fixed_helper$indirect_jmp$emit(gen_context &ctx) {
     auto &argument_regs = ABIRetrec<T>::argument_regs;
 
     // Load parameters
-    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut)); // this*
+    a.ld(llir::PPC64RegisterGPRIndex(argument_regs[0]), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vam)); // this*
 
     // Load entrypoint
-    a.ld(12, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vm_lut_lookup_check_call_cache));
+    a.ld(12, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, vam_lookup_check_call_cache));
     a.mtspr(SPR::CTR, 12);
 
     // Perform call
@@ -1020,18 +1446,39 @@ void codegen_ppc64le<T>::fixed_helper$indirect_jmp$emit(gen_context &ctx) {
     macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::CALL);
 }
 
+/**
+ * Crappy trampoline to perform a relative branch to CTR
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$jmp_direct_rel$emit(gen_context &ctx) {
+    constexpr gpr_t GPR_TARGET_ADDR = 0;
+    assembler &a = *ctx.assembler;
+
+    auto tmp_reg = ctx.reg_allocator().allocate_gpr();
+    a.mfspr(tmp_reg.gpr(), SPR::LR);
+    a.add(GPR_TARGET_ADDR, GPR_TARGET_ADDR, tmp_reg.gpr());
+    a.mtspr(SPR::CTR, GPR_TARGET_ADDR);
+    a.bctr();
+}
+
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$syscall$emit(gen_context &ctx) {
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::SYSCALL, false);
+}
+
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$trap_patch_call$emit(gen_context &ctx) {
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::PATCH_CALL, false);
+}
+
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$trap_patch_jump$emit(gen_context &ctx) {
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::PATCH_JUMP, false);
+}
+
 //
 // Macro assembler
 //
-
-/**
- * Small helper to determine if a given int64_t immediate can be losslessly converted
- * into integral type `T`.
- */
-template <typename T>
-bool imm_fits_in(int64_t imm) {
-    return (T)imm == imm;
-}
 
 template <typename T>
 void codegen_ppc64le<T>::macro$load_imm(assembler &assembler, gpr_t dest, int64_t imm, llir::Register::Mask mask,
@@ -1634,7 +2081,7 @@ void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target) {
+void codegen_ppc64le<T>::macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target, bool linkage) {
     // To re-enter native code, we just emit a branch to arch_leave_translated_code.
     // Special considerations:
     // * arch_leave_translated code won't save LR for us, so we have to do it
@@ -1654,7 +2101,10 @@ void codegen_ppc64le<T>::macro$interrupt$trap(gen_context &ctx, runtime_context_
     ctx.assembler->std(scratch.gpr(), GPR_FIXED_RUNTIME_CTX, TRANSLATED_CTX_OFF(lr));
 
     // Branch
-    ctx.assembler->bctrl();
+    if (linkage)
+        ctx.assembler->bctrl();
+    else
+        ctx.assembler->bctr();
 }
 
 
@@ -1761,6 +2211,24 @@ void codegen_ppc64le<T>::macro$call_native_function(gen_context &ctx, Args... ar
                 TODO();
         }
     }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::macro$nops(ppc64le::assembler &assembler, size_t count) {
+    while (count--)
+        assembler.nop();
+}
+
+template <typename T>
+void codegen_ppc64le<T>::macro$nop$relocation(gen_context &ctx, size_t count, relocation &&reloc) {
+    assert(count);
+
+    // Emit first nop and attach relocation to it
+    ctx.assembler->nop();
+    ctx.stream->set_aux(true, std::forward<relocation>(reloc));
+
+    // Emit any extra nops
+    macro$nops(*ctx.assembler, count - 1);
 }
 
 // Explicitly instantiate for all supported traits

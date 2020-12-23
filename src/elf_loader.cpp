@@ -100,7 +100,7 @@ status_code elf_loader::init() {
             return status_code::BADELF;
 
         char *name = elf_strptr(elf, stridx, cur.st_name);
-        //pr_info("Got sym: %s : 0x%x\n", name, cur.st_value);
+        pr_debug("Got sym: %s : 0x%lx (size=%zu)\n", name, cur.st_value, cur.st_size);
 
         // Add to symbol table
         symbols.push_back({
@@ -109,7 +109,8 @@ status_code elf_loader::init() {
             /*.other = */ cur.st_other,
             /*.shndx = */ cur.st_shndx,
             /*.value = */ cur.st_value,
-            /*.size  = */ cur.st_size
+            /*.size  = */ cur.st_size,
+            /*.bind  = */ (Symbol::Bind)ELF64_ST_BIND(cur.st_info)
         });
     }
 
@@ -149,7 +150,8 @@ status_code elf_loader::load_all() {
 
                 // Load this section into the execution context
                 void *region;
-                auto res = econtext.allocate_region(aligned_start, phdr.p_memsz + alignment, PROT_READ | PROT_WRITE, &region);
+                auto res = econtext.allocate_region(aligned_start, phdr.p_memsz + alignment, PROT_READ | PROT_WRITE, &region,
+                                                    process_memory_map::Mapping::Type::ELF);
                 if (res == status_code::OVERLAP) {
                     pr_error("ELF PT_LOAD overlaps existing region.\n"
                                    "  The target binary was probably compiled with a different\n"
@@ -176,7 +178,6 @@ status_code elf_loader::load_all() {
                 assert(econtext.protect_region(aligned_start, phdr.p_memsz + alignment, flags) == status_code::SUCCESS);
 
                 pr_info("Loaded PT_LOAD segment at 0x%zx!\n", (uint64_t)region);
-
                 break;
             }
 
@@ -193,44 +194,39 @@ status_code elf_loader::load_all() {
     return status_code::SUCCESS;
 }
 
-const elf_loader::symbol *elf_loader::lookup(uint64_t addr, uint64_t shndx) const {
-    const elf_loader::symbol *match = nullptr;
+const elf_loader::Symbol *elf_loader::lookup(uint64_t addr, uint64_t shndx, Symbol::Bind bind, LookupPolicy policy) const {
+    const elf_loader::Symbol *match = nullptr;
     for (auto &e : symbols) {
         if (e.shndx != shndx)
             continue;
 
-        if (e.value >= addr) {
-            match = &e;
-            break;
+        if (bind != Symbol::Bind::_ANY && e.bind != bind)
+            continue;
+
+        switch (policy) {
+            case LookupPolicy::EXACT:
+                if (e.value == addr)
+                    match = &e;
+                break;
+            case LookupPolicy::CONTAINS:
+                if (e.value <= addr && addr < (e.value + get_symbol_size(e)))
+                    match = &e;
+                break;
         }
+        if (match)
+            break;
     }
 
     return match;
 }
 
-uint64_t elf_loader::get_symbol_size(const elf_loader::symbol &sym) const {
-    // If this symbol has a size, just use that
-    if (sym.size > 0)
-        return sym.size;
-
-    // Otherwise, use the start of the next symbol as a delimiter, or end of section
-    for (auto &e : symbols) {
-        // Only include symbols in the current section
-        if (e.shndx != sym.shndx)
-            continue;
-
-        if (e.value > sym.value) {
-            // Found a symbol ahead of us in the address space,
-            // Subtract our start from its' and use that as the size.
-            return e.value - sym.value;
-        }
-    }
-
-    // No symbol found, use end of section as delimiter
-    return text_shdr.sh_size - (sym.value - text_shdr.sh_addr);
+uint64_t elf_loader::get_symbol_size(const elf_loader::Symbol &sym) const {
+    // Simply return the symbol's size attribute. This is not guaranteed to be present,
+    // so callers must take care to ensure that size=0 cases are handled.
+    return sym.size;
 }
 
-const void *elf_loader::get_symbol_data_ptr(const elf_loader::symbol &sym) {
+const void *elf_loader::get_symbol_data_ptr(const elf_loader::Symbol &sym) {
     // Since we don't support PIC or anything fancy yet, just get the region from the
     // execution context.
     if (sym.shndx == text_shndx)
