@@ -98,6 +98,105 @@ AluTestCase = namedtuple("AluTestCase", ["width", "insn_str", "reg1_str", "reg2_
                                          "res_str", "f_genstrs", "f_gentest"],
                                         defaults=(None,None,None,None,None,None,None,alu_test_case_genstrs,alu_test_case_gentest))
 
+def get_mem_width_str(width):
+    return {
+        64: "qword",
+        32: "dword",
+        16: "word",
+        8: "byte"
+    }[width]
+
+def load_test_case_genstrs(test, n, f):
+    mem_width_str = get_mem_width_str(test.width)
+    width_str = mem_width_str
+    if test.reg1_preload_str:
+        cmp_reg = test.reg1_preload_str
+    else:
+        cmp_reg = test.reg1_str
+
+    f.write("    TEST_{}_STR_PASS: .ascii \"PASS: ({} {} ptr [&{}]) -> {} == {}\\n\"\n".format(n, test.insn_str, width_str, test.imm1_str, cmp_reg, test.res_str))
+    f.write("    TEST_{}_STR_PASS_LEN = . - TEST_{}_STR_PASS\n".format(n, n))
+    f.write("    TEST_{}_STR_FAIL: .ascii \"FAIL: ({} {} ptr [&{}]) -> {} != {}\\n\"\n".format(n, test.insn_str, width_str, test.imm1_str, cmp_reg, test.res_str))
+    f.write("    TEST_{}_STR_FAIL_LEN = . - TEST_{}_STR_FAIL\n".format(n, n))
+
+    f.write("    TEST_{}_IMM_STORAGE: ".format(n))
+    x = int(test.imm1_str, 0)
+    if mem_width_str == "qword":
+        f.write(".byte 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}\n".format(x & 0xFF, (x >> 8) & 0xFF,
+            (x >> 16) & 0xFF, (x >> 24) & 0xFF, (x >> 32) & 0xFF, (x >> 40) & 0xFF, (x >> 48) & 0xFF, (x >> 56) & 0xFF))
+    elif mem_width_str == "dword":
+        f.write(".byte 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}\n".format(x & 0xFF, (x >> 8) & 0xFF, (x >> 16) & 0xFF, (x >> 24) & 0xFF))
+    elif mem_width_str == "word":
+        f.write(".byte 0x{:x}, 0x{:x}\n".format(x & 0xFF, (x >> 8) & 0xFF))
+    elif mem_width_str == "byte":
+        f.write(".byte 0x{:x}\n".format(x & 0xFF))
+    else:
+        print("Invalid load width {}\n".format(mem_width_str))
+        sys.exit(1)
+
+
+def load_test_case_gentest(test, n, f):
+    mem_width_str = get_mem_width_str(test.width)
+    f.write("{}: # Test {}\n".format(n * 10, n))
+    if test.reg1_preload_str:
+        f.write("    mov {}, {}\n".format(test.reg1_preload_str, test.imm1_preload_str))
+    f.write("    {} {}, {} ptr [{}]\n".format(test.insn_str, test.reg1_str, mem_width_str, "TEST_{}_IMM_STORAGE".format(n)))
+    if test.reg1_preload_str:
+        cmp_reg = test.reg1_preload_str
+    else:
+        cmp_reg = test.reg1_str
+
+    if test.res_reg:
+        f.write("    mov {}, {}\n".format(test.res_reg, test.res_str))
+        f.write("    cmp {}, {}\n".format(cmp_reg, test.res_reg))
+    else:
+        f.write("    cmp {}, OFFSET {}\n".format(cmp_reg, test.res_str))
+    f.write("    je 1f\n")
+
+    # Fail
+    f.write("# Test {} FAIL\n".format(n))
+    f.write("    print TEST_{}_STR_FAIL, TEST_{}_STR_FAIL_LEN\n".format(n, n))
+    f.write("    jmp 2f\n")
+
+    # Success
+    f.write("1: # Test {} PASS\n".format(n))
+    f.write("    print TEST_{}_STR_PASS, TEST_{}_STR_PASS_LEN\n".format(n, n))
+    f.write("2:\n\n")
+
+
+LoadTestCase = namedtuple("LoadTestCase", ["width", "insn_str",
+                                           "reg1_preload_str", "imm1_preload_str",
+                                           "reg1_str", "imm1_str", "res_reg",
+                                           "res_str", "f_genstrs", "f_gentest"],
+                                          defaults=(None,None,None,None,None,None,None,load_test_case_genstrs,load_test_case_gentest))
+
+LOAD_TESTS = [
+    # Test plain loads of all widths
+    LoadTestCase(64, "mov", "", "", "rax", "0xDEADBEEFCAFEBABA", "rbx", "0xDEADBEEFCAFEBABA"),
+    LoadTestCase(32, "mov", "", "", "eax", "0xDEADBEEF", "ebx", "0xDEADBEEF"),
+    LoadTestCase(16, "mov", "", "", "ax", "0xBEEF", "bx", "0xBEEF"),
+    LoadTestCase(8, "mov", "", "", "ah", "0xDE", "bl", "0xDE"),
+    LoadTestCase(8, "mov", "", "", "al", "0xDE", "bl", "0xDE"),
+    
+    # Test aliased registers that don't clear (e.g. ax, ah, al)
+    LoadTestCase(16, "mov", "rax", "-1", "ax", "0x0000", "rbx", "0xFFFFFFFFFFFF0000"),
+    LoadTestCase(16, "mov", "rax", "0", "ax", "0xFFFF", "rbx", "0xFFFF"),
+    LoadTestCase(8, "mov", "rax", "-1", "ah", "0x00", "rbx", "0xFFFFFFFFFFFF00FF"),
+    LoadTestCase(8, "mov", "rax", "0", "ah", "0xFF", "rbx", "0xFF00"),
+    LoadTestCase(8, "mov", "rax", "-1", "al", "0x00", "rbx", "0xFFFFFFFFFFFFFF00"),
+    LoadTestCase(8, "mov", "rax", "0", "al", "0xFF", "rbx", "0x00FF"),
+
+    # Test zero extension (movzx)
+    LoadTestCase(16, "movzx", "", "", "rax", "0xCAFE", "", "0xCAFE"),
+    LoadTestCase(8, "movzx", "", "", "rax", "0xCA", "", "0xCA"),
+    LoadTestCase(16, "movzx", "", "", "eax", "0xCAFE", "", "0xCAFE"),
+    LoadTestCase(8, "movzx", "", "", "eax", "0xCA", "", "0xCA"),
+    LoadTestCase(8, "movzx", "", "", "ax", "0xCA", "", "0xCA"),
+
+    # Test zero extension on ax (shouldn't clear top 48 bits)
+    LoadTestCase(8, "movzx", "rax", "-1", "ax", "0xCA", "rbx", "0xFFFFFFFFFFFF00CA"),
+]
+
 ALU_TESTS = [
     # SUB
     AluTestCase(64, "sub", "rax", "rbx", "100", "99", "1"),
@@ -366,6 +465,7 @@ SUITES = {
     "GREATER_EQ" : GREATER_EQ_TESTS,
     "GREATER" : GREATER_TESTS,
     "ALU" : ALU_TESTS,
+    "LOAD" : LOAD_TESTS,
 }
 
 def width_to_cast(width):
@@ -384,6 +484,7 @@ def generate_tests(suites, f):
             n = n + 1
 
     f.write(".text\n")
+    f.write(".type _start, @function\n")
     f.write(".global _start\n")
     f.write("_start:\n")
 
@@ -394,9 +495,10 @@ def generate_tests(suites, f):
             test.f_gentest(test, n, f)
             n = n + 1
 
-
     # Write epilog
     f.write(ASM_EPILOG)
+
+    f.write(".size _start, .-_start\n")
 
 
 def main():

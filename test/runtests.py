@@ -43,7 +43,7 @@ def main():
     retrec = sys.argv[1]
 
     # Enumerate tests
-    tests = glob.glob("*.bin")
+    tests = glob.glob("**/*.bin")
     fails = []
     total_passes = 0
     for test in tests:

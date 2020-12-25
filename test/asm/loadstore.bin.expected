@@ -1,0 +1,7 @@
+PASS: BYTE memcpy worked!
+PASS: WORD memcpy worked!
+PASS: DWORD memcpy worked!!
+PASS: QWORD memcpy worked....!!
+PASS: Load to aliased register (ah) worked!
+PASS: Load to aliased register (al) worked!
+PASS: Load to aliased register (ax) worked!
