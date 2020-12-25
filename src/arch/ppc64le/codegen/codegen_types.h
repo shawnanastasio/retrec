@@ -15,15 +15,15 @@
  * the first field is actually used.
  */
 #define PPC64LE_ENUMERATE_OPERATIONS(x) \
-    x(ADD, assembler::add_internal) \
+    x(ADD, assembler::add) \
     x(ADDI, assembler::addi) \
     x(ADDIS, assembler::addis) \
     x(ADDPCIS, assembler::addpcis) \
     x(AND, assembler::_and) \
     x(ANDI_, assembler::andi_) \
-    x(B, assembler::b_internal) \
-    x(BC, assembler::bc_internal) \
-    x(BCCTR, assembler::bcctr_internal) \
+    x(B, assembler::b) \
+    x(BC, assembler::bc) \
+    x(BCCTR, assembler::bcctr) \
     x(CMP, assembler::cmp) \
     x(CMPI, assembler::cmpi) \
     x(CMPL, assembler::cmpl) \

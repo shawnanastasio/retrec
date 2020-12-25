@@ -600,60 +600,55 @@ public:
     }
     void lnia(uint8_t rt) { addpcis(rt, 0); }
 
-    void add_internal(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_ov, bool modify_cr) {
+    void add(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_ov = false, bool modify_cr = false) {
         ASM_LOG("Emitting add%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
         EMIT_INSN(Operation::ADD, [=] {
             return self->xo_form(31, rt, ra, rb, modify_ov, 266, modify_cr);
         }, rt, ra, rb, modify_ov, modify_cr);
     }
-    void add(uint8_t rt, uint8_t ra, uint8_t rb)   { add_internal(rt, ra, rb, 0, 0); }
-    void add_(uint8_t rt, uint8_t ra, uint8_t rb)  { add_internal(rt, ra, rb, 0, 1); }
-    void addo(uint8_t rt, uint8_t ra, uint8_t rb)  { add_internal(rt, ra, rb, 1, 0); }
-    void addo_(uint8_t rt, uint8_t ra, uint8_t rb) { add_internal(rt, ra, rb, 1, 1); }
+    void add_(uint8_t rt, uint8_t ra, uint8_t rb)  { add(rt, ra, rb, 0, 1); }
+    void addo(uint8_t rt, uint8_t ra, uint8_t rb)  { add(rt, ra, rb, 1, 0); }
+    void addo_(uint8_t rt, uint8_t ra, uint8_t rb) { add(rt, ra, rb, 1, 1); }
 
-    void sub_internal(uint8_t rt, uint8_t rb, uint8_t ra, bool modify_ov, bool modify_cr) {
+    void sub(uint8_t rt, uint8_t rb, uint8_t ra, bool modify_ov = false, bool modify_cr = false) {
         ASM_LOG("Emitting sub%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, rb, ra);
         EMIT_INSN(Operation::SUB, [=] {
             return self->xo_form(31, rt, ra, rb, modify_ov, 40, modify_cr);
         }, rt, ra, rb, modify_ov, modify_cr);
     }
-    void sub(uint8_t rt, uint8_t rb, uint8_t ra)   { sub_internal(rt, rb, ra, 0, 0); }
-    void sub_(uint8_t rt, uint8_t rb, uint8_t ra)  { sub_internal(rt, rb, ra, 0, 1); }
-    void subo(uint8_t rt, uint8_t rb, uint8_t ra)  { sub_internal(rt, rb, ra, 1, 0); }
-    void subo_(uint8_t rt, uint8_t rb, uint8_t ra) { sub_internal(rt, rb, ra, 1, 1); }
+    void sub_(uint8_t rt, uint8_t rb, uint8_t ra)  { sub(rt, rb, ra, 0, 1); }
+    void subo(uint8_t rt, uint8_t rb, uint8_t ra)  { sub(rt, rb, ra, 1, 0); }
+    void subo_(uint8_t rt, uint8_t rb, uint8_t ra) { sub(rt, rb, ra, 1, 1); }
 
-    void subc_internal(uint8_t rt, uint8_t rb, uint8_t ra, bool modify_ov, bool modify_cr) {
+    void subc(uint8_t rt, uint8_t rb, uint8_t ra, bool modify_ov = false, bool modify_cr = false) {
         ASM_LOG("Emitting subc%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, rb, ra);
         EMIT_INSN(Operation::SUBC, [=] {
             return self->xo_form(31, rt, ra, rb, modify_ov, 8, modify_cr);
         }, rt, ra, rb, modify_ov, modify_cr);
     }
-    void subc(uint8_t rt, uint8_t rb, uint8_t ra)   { subc_internal(rt, rb, ra, 0, 0); }
-    void subc_(uint8_t rt, uint8_t rb, uint8_t ra)  { subc_internal(rt, rb, ra, 0, 1); }
-    void subco(uint8_t rt, uint8_t rb, uint8_t ra)  { subc_internal(rt, rb, ra, 1, 0); }
-    void subco_(uint8_t rt, uint8_t rb, uint8_t ra) { subc_internal(rt, rb, ra, 1, 1); }
+    void subc_(uint8_t rt, uint8_t rb, uint8_t ra)  { subc(rt, rb, ra, 0, 1); }
+    void subco(uint8_t rt, uint8_t rb, uint8_t ra)  { subc(rt, rb, ra, 1, 0); }
+    void subco_(uint8_t rt, uint8_t rb, uint8_t ra) { subc(rt, rb, ra, 1, 1); }
 
-    void sube_internal(uint8_t rt, uint8_t rb, uint8_t ra, bool modify_ov, bool modify_cr) {
+    void sube(uint8_t rt, uint8_t rb, uint8_t ra, bool modify_ov = false, bool modify_cr = false) {
         ASM_LOG("Emitting sube%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, rb, ra);
         EMIT_INSN(Operation::SUBE, [=] {
             return self->xo_form(31, rt, ra, rb, modify_ov, 136, modify_cr);
         }, rt, ra, rb, modify_ov, modify_cr);
     }
-    void sube(uint8_t rt, uint8_t rb, uint8_t ra)   { sube_internal(rt, rb, ra, 0, 0); }
-    void sube_(uint8_t rt, uint8_t rb, uint8_t ra)  { sube_internal(rt, rb, ra, 0, 1); }
-    void subeo(uint8_t rt, uint8_t rb, uint8_t ra)  { sube_internal(rt, rb, ra, 1, 0); }
-    void subeo_(uint8_t rt, uint8_t rb, uint8_t ra) { sube_internal(rt, rb, ra, 1, 1); }
+    void sube_(uint8_t rt, uint8_t rb, uint8_t ra)  { sube(rt, rb, ra, 0, 1); }
+    void subeo(uint8_t rt, uint8_t rb, uint8_t ra)  { sube(rt, rb, ra, 1, 0); }
+    void subeo_(uint8_t rt, uint8_t rb, uint8_t ra) { sube(rt, rb, ra, 1, 1); }
 
-    void neg_internal(uint8_t rt, uint8_t ra, bool modify_ov, bool modify_cr) {
+    void neg(uint8_t rt, uint8_t ra, bool modify_ov = false, bool modify_cr = false) {
         ASM_LOG("Emitting neg%s%s r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra);
         EMIT_INSN(Operation::NEG, [=] {
             return self->xo_form(31, rt, ra, 0, modify_ov, 104, modify_cr);
         }, rt, ra, modify_ov, modify_cr);
     }
-    void neg(uint8_t rt, uint8_t rb)   { neg_internal(rt, rb, 0, 0); }
-    void neg_(uint8_t rt, uint8_t rb)  { neg_internal(rt, rb, 0, 1); }
-    void nego(uint8_t rt, uint8_t rb)  { neg_internal(rt, rb, 1, 0); }
-    void nego_(uint8_t rt, uint8_t rb) { neg_internal(rt, rb, 1, 1); }
+    void neg_(uint8_t rt, uint8_t rb)  { neg(rt, rb, 0, 1); }
+    void nego(uint8_t rt, uint8_t rb)  { neg(rt, rb, 1, 0); }
+    void nego_(uint8_t rt, uint8_t rb) { neg(rt, rb, 1, 1); }
 
     // 3.3.10 Fixed-Point Compare Instructions
     void cmpi(uint8_t bf, bool l, uint8_t ra, int16_t si) {
@@ -723,44 +718,29 @@ public:
         }, ra, rs, ui);
     }
 
-    void _and(uint8_t ra, uint8_t rs, uint8_t rb) {
-        ASM_LOG("Emitting and r%u, r%u, r%u\n", ra, rs, rb);
+    void _and(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting and%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
         EMIT_INSN(Operation::AND, [=] {
-            return self->x_form(31, rs, ra, rb, 28, 0);
-        }, ra, rs, rb);
+            return self->x_form(31, rs, ra, rb, 28, modify_cr);
+        }, ra, rs, rb, modify_cr);
     }
-    void _and_(uint8_t ra, uint8_t rs, uint8_t rb) {
-        ASM_LOG("Emitting and. r%u, r%u, r%u\n", ra, rs, rb);
-        EMIT_INSN(Operation::AND, [=] {
-            return self->x_form(31, rs, ra, rb, 28, 1);
-        }, ra, rs, rb);
-    }
+    void _and_(uint8_t ra, uint8_t rs, uint8_t rb) { _and(ra, rs, rb, true); }
 
-    void _xor(uint8_t ra, uint8_t rs, uint8_t rb) {
-        ASM_LOG("Emitting xor r%u, r%u, r%u\n", ra, rs, rb);
+    void _xor(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting xor%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
         EMIT_INSN(Operation::XOR, [=] {
-            return self->x_form(31, rs, ra, rb, 316, 0);
-        }, ra, rs, rb);
+            return self->x_form(31, rs, ra, rb, 316, modify_cr);
+        }, ra, rs, rb, modify_cr);
     }
-    void _xor_(uint8_t ra, uint8_t rs, uint8_t rb) {
-        ASM_LOG("Emitting xor. r%u, r%u, r%u\n", ra, rs, rb);
-        EMIT_INSN(Operation::XOR, [=] {
-            return self->x_form(31, rs, ra, rb, 316, 1);
-        }, ra, rs, rb);
-    }
+    void _xor_(uint8_t ra, uint8_t rs, uint8_t rb) { _xor(ra, rs, rb, true); }
 
-    void _or(uint8_t ra, uint8_t rs, uint8_t rb) {
-        ASM_LOG("Emitting or r%u, r%u, r%u\n", ra, rs, rb);
+    void _or(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting or%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
         EMIT_INSN(Operation::OR, [=] {
-            return self->x_form(31, rs, ra, rb, 444, 0);
-        }, ra, rs, rb);
+            return self->x_form(31, rs, ra, rb, 444, modify_cr);
+        }, ra, rs, rb, modify_cr);
     }
-    void _or_(uint8_t ra, uint8_t rs, uint8_t rb) {
-        ASM_LOG("Emitting or. r%u, r%u, r%u\n", ra, rs, rb);
-        EMIT_INSN(Operation::OR, [=] {
-            return self->x_form(31, rs, ra, rb, 444, 1);
-        }, ra, rs, rb);
-    }
+    void _or_(uint8_t ra, uint8_t rs, uint8_t rb) { _or(ra, rs, rb, true); }
     void mr(uint8_t rx, uint8_t ry) { _or(rx, ry, ry); }
 
     void eqv(uint8_t ra, uint8_t rs, uint8_t rb) {
