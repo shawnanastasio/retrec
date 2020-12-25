@@ -11,6 +11,7 @@ using namespace retrec;
 
 // Program header constants
 constexpr uint32_t PHDR_GNU_RELRO = 0x6474e552;
+constexpr uint32_t PHDR_GNU_STACK = 0x6474e551;
 
 elf_loader::~elf_loader() {
     if (elf)
@@ -183,6 +184,10 @@ status_code elf_loader::load_all() {
 
             case PHDR_GNU_RELRO:
                 pr_warn("Skipping unimplemented GNU_RELRO program header\n");
+                break;
+
+            case PHDR_GNU_STACK:
+                pr_warn("Skipping unimplemented GNU_STACK program header\n");
                 break;
 
             default:

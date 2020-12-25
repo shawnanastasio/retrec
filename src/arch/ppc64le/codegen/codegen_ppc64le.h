@@ -173,10 +173,11 @@ class codegen_ppc64le final : public codegen {
     llir::Alu::FlagArr llir$alu$helper$preserve_flags(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$helper$restore_flags(gen_context &ctx, llir::Alu::FlagArr &flags);
     size_t llir$alu$helper$load_imm_insn_count(int64_t val);
+    ppc64le::LastFlagOp llir$alu$helper$insn_to_lastflagop(const llir::Insn &insn);
 
     void llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn);
-    void llir$alu$sub(gen_context &ctx, const llir::Insn &insn);
-    void llir$alu$add(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$2src_common(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$move_reg(gen_context &ctx, const llir::Insn &insn);
 
     /* Branch */
     void llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn);
@@ -218,6 +219,19 @@ class codegen_ppc64le final : public codegen {
     }
     static bool rel16_in_range(uint64_t my_address, uint64_t target) {
         return rel_off_in_range(INT16_MIN, INT16_MAX, my_address, target);
+    }
+
+    llir::Operand::Width mask_to_width(llir::Register::Mask mask) {
+        switch (mask) {
+            case llir::Register::Mask::Full64: return llir::Operand::Width::_64BIT;
+            case llir::Register::Mask::Low32: return llir::Operand::Width::_32BIT;
+            case llir::Register::Mask::LowLow16: return llir::Operand::Width::_16BIT;
+            case llir::Register::Mask::LowLowHigh8:
+            case llir::Register::Mask::LowLowLow8:
+                return llir::Operand::Width::_8BIT;
+            default:
+                ASSERT_NOT_REACHED();
+        }
     }
 
     /**
@@ -286,8 +300,8 @@ class codegen_ppc64le final : public codegen {
                              bool invert, bool modify_cr);
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
-    void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::MemOp &mem, llir::LoadStore::Op op,
-                         llir::Register::Mask reg_mask, const llir::Insn *insn);
+    void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::Operand &mem_op, llir::LoadStore::Op op,
+                         llir::Register::Mask reg_mask, bool reg_zero_others, const llir::Insn &insn);
     void macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target, bool linkage = true);
     template <typename... Args> void macro$call_native_function(gen_context &ctx, Args... args);
     void macro$nops(ppc64le::assembler &assembler, size_t count);

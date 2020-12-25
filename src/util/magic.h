@@ -155,12 +155,86 @@ constexpr auto make_difference_array(const Arr1 &a1, const Arr2 &a2) {
 #define MAGIC_MAKE_DIFFERENCE_ARRAY(arr1, arr2) \
     magic::make_difference_array<ARRAY_SIZE(arr1), ARRAY_SIZE(arr2), \
                                  magic::find_absence_count<ARRAY_SIZE(arr1), ARRAY_SIZE(arr2)>(arr1, arr2)>(arr1, arr2)
-
 }; // namespace magic
 
 //
 // MACROS
 //
+
+/**
+ * Declare a std::variant along with an enum class and accessor methods.
+ * This allows traditional visitation with a switch statement like you would do
+ * with an enum+union but provides the type safety of std::variant.
+ *
+ * Example Usage:
+ * First declare an x-macro to enumerate the underlying types that passes 3 parameters:
+ *  1) The name of the underlying type
+ *  2) The name of the created accessor method
+ *  3) The name of the created enum value
+ *
+ * #define ENUMERATE_MONSTERS(x) \
+ *   x(ZombieT, zombie, ZOMBIE) \
+ *   x(SkeletonT, skeleton, SKELETON) \
+ *   x(CreeperT, creeper, CREEPER)
+ *
+ * Now call MAGIC_VARIANT_DECLARE inside of your container type declaration.
+ *
+ * struct MonsterContainer {
+ *     MAGIC_VARIANT_DECLARE(ENUMERATE_MONSTERS)
+ * public:
+ *     // Import the auto-declared enum with values ::ZOMBIE, ::SKELETON, ::CREEPER
+ *     using MonsterEnum = VariantEnumT;
+ *
+ *     // Add an accessor for the internal enum value
+ *     MonsterEnumT cur_monster() { return variant_enum_val; }
+ *
+ *     // The following accessors automatically declared. They will all perform type
+ *     // checking and initialization:
+ *     //   ZombieT &zombie();
+ *     //   SkeletonT &skeleton();
+ *     //   CreeperT &creeper();
+ * };
+ *
+ * The container can now be visited with a switch statement:
+ *   switch (monstercontainer.cur_monster()) {
+ *       case MonsterContainer::MonsterEnum::ZOMBIE:
+ *       case MonsterContainer::MonsterEnum::SKELETON:
+ *           handle_monster_common(monstercontainer);
+ *       case MonsterContainer::MonsterEnum::CREEPER:
+ *           // Special case for creeper
+ *           handle_creeper(monstercontainer.creeper());
+ *   }
+ */
+#define MAGIC_VARIANT_DECLARE(xmacro) \
+private: \
+    /* Declare enum which stores all possible types */ \
+    enum class VariantEnumT { \
+        xmacro(MAGIC_VARIANT_ENUM_NAME) \
+    } variant_enum_val; \
+    /* Declare internal std::variant storage */ \
+    std::variant< \
+        Sentinel<0>, \
+        xmacro(MAGIC_VARIANT_TYPE_NAME) \
+        Sentinel<1> \
+    > internal_variant; \
+public: \
+    /* Declare type-safe accessors */ \
+    xmacro(MAGIC_VARIANT_DECLARE_ACCESSOR)
+
+#define MAGIC_VARIANT_ENUM_NAME(unused1, unused2, name) name,
+#define MAGIC_VARIANT_TYPE_NAME(type, unused1, unused2) type,
+#define MAGIC_VARIANT_DECLARE_ACCESSOR(type, accessor_name, enum_name) \
+    type &accessor_name() { \
+        if (!internal_variant.index()) \
+            internal_variant = type {}; \
+        variant_enum_val = VariantEnumT::enum_name; \
+        return std::get<type>(internal_variant); \
+    } \
+    const type &accessor_name() const { \
+        assert(internal_variant.index()); \
+        assert(variant_enum_val == VariantEnumT::enum_name); \
+        return std::get<type>(internal_variant); \
+    }
 
 /**
  * These magnificent macros allow us to execute each parameter passed to a macro.

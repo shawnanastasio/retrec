@@ -1,11 +1,13 @@
 #pragma once
 
 #include <util/util.h>
+#include <util/magic.h>
 
-#include <functional>
-#include <type_traits>
-#include <string>
 #include <array>
+#include <functional>
+#include <string>
+#include <type_traits>
+#include <variant>
 #include <cstdint>
 
 namespace retrec {
@@ -35,10 +37,10 @@ struct Register {
         Full64,      // 63 downto 0
 
         Special
-    } mask;
+    } mask {};
 
     // Whether or not to zero bits not covered by mask on any write to this register
-    bool zero_others;
+    bool zero_others { false };
 };
 
 // Architecture-specific operand definitions
@@ -55,8 +57,7 @@ struct MemOp {
         NONE, // Perform no update
         PRE,  // Update source register with offset before dereferencing
         POST  // Update source register with offset after dereferencing
-    } update;
-
+    } update {};
 };
 
 #undef LLIR_ALLOW_INTERNAL_INCLUDE
@@ -66,13 +67,18 @@ struct MemOp {
 //
 struct LoadStore {
     enum class Op {
+        INVALID,
         LOAD,
         STORE,
         LEA,
-    } op;
+    } op {};
 
     // Whether to perform sign extension
-    bool sign_extension;
+    enum class Extension {
+        NONE, // Do not perform extension
+        SIGN, // Perform sign extension
+        ZERO, // Perofmr zero extension
+    } extension {};
 };
 
 //
@@ -80,13 +86,20 @@ struct LoadStore {
 //
 struct Alu {
     enum class Op {
-        ADD,
-        SUB,
-        MULT,
-        LOAD_IMM,
-    } op;
+#   define LLIR_ENUMERATE_ALU_OPS(x) \
+        x(INVALID) \
+        x(ADD) \
+        x(AND) \
+        x(MULT) \
+        x(SUB) \
+        x(XOR) \
+        x(LOAD_IMM) \
+        x(MOVE_REG) \
+        x(NOP)
+        LLIR_ENUMERATE_ALU_OPS(X_LIST)
+    } op {};
 
-    bool modifies_flags;
+    bool modifies_flags { false };
 
     /**
      * This serves as a superset of all flags in supported llir architectures.
@@ -107,13 +120,16 @@ struct Alu {
     };
     using FlagArr = std::array<Flag, (size_t)Flag::COUNT-1>;
 
-    static void IterateFlags(const FlagArr &flags, std::function<void(Flag)> cb) {
+    static void iterate_flags(const FlagArr &flags, std::function<void(Flag)> cb) {
         for (size_t i = 0; i < flags.size() && flags[i] != llir::Alu::Flag::INVALID; i++)
             cb(flags[i]);
     }
 
     // Flags modified by this operation,
-    FlagArr flags_modified;
+    FlagArr flags_modified {};
+
+    // Flags cleared (set to 0) unconditionally by this operation.
+    FlagArr flags_cleared {};
 
     static constexpr FlagArr all_flags = {
         Flag::CARRY, Flag::PARITY, Flag::AUXILIARY_CARRY, Flag::ZERO,
@@ -126,32 +142,34 @@ struct Alu {
 //
 struct Branch {
     enum class Op {
-        UNCONDITIONAL,
-        EQ,
-        NOT_EQ,
-        NEGATIVE,
-        NOT_NEGATIVE,
-        POSITIVE,
-        CARRY,
-        NOT_CARRY,
-        OVERFLOW,
-        NOT_OVERFLOW,
-
-        X86_ABOVE,      // !CF && !ZF
-        X86_BELOW_EQ,   // CF || ZF
-        X86_GREATER_EQ, // SF == OF
-        X86_LESS,       // SF != OF
-        X86_GREATER,    // !ZF && (SF == OF)
-        X86_LESS_EQ,    // ZF || (SF != OF)
-    } op;
+#   define LLIR_ENUMERATE_BRANCH_OPS(x) \
+        x(UNCONDITIONAL) \
+        x(EQ) \
+        x(NOT_EQ) \
+        x(NEGATIVE) \
+        x(NOT_NEGATIVE) \
+        x(POSITIVE) \
+        x(CARRY) \
+        x(NOT_CARRY) \
+        x(OVERFLOW) \
+        x(NOT_OVERFLOW) \
+        x(X86_ABOVE)      /* !CF && !ZF */ \
+        x(X86_BELOW_EQ)   /* CF || ZF */ \
+        x(X86_GREATER_EQ) /* SF == OF */ \
+        x(X86_LESS)       /* SF != OF */ \
+        x(X86_GREATER)    /* !ZF && (SF == OF) */  \
+        x(X86_LESS_EQ)    /* ZF || (SF != OF) */
+        LLIR_ENUMERATE_BRANCH_OPS(X_LIST)
+    } op {};
 
     enum class Target {
+        INVALID,
         RELATIVE,
         ABSOLUTE,
-    } target;
+    } target {};
 
     // Whether or not the branch should store the next Instruction Pointer in the destination operand
-    bool linkage;
+    bool linkage { false };
 };
 
 //
@@ -159,61 +177,68 @@ struct Branch {
 //
 struct Interrupt {
     enum class Op {
+        INVALID,
         SYSCALL,
-    } op;
+    } op {};
 };
 
 //
 // Top level
 //
 
-struct Operand {
-    enum class Type {
-        REG,
-        IMM,
-        MEM
-    } type;
-    union {
-        Register reg;
-        int64_t imm;
-        MemOp memory;
-    };
+class Operand {
+    /**
+     * Declare a variant+enum pair with accessorsfor operand types.
+     * This lets us visit the underlying types using switch statements
+     * on the enum while keeping the type safety of std::variant.
+     */
+#   define LLIR_ENUMERATE_OPERAND_TYPES(x) \
+        /* Parameters are: type, accessor_name, enum_value */ \
+        x(Register, reg, REG) \
+        x(int64_t, imm, IMM) \
+        x(MemOp, memory, MEM)
+    MAGIC_VARIANT_DECLARE(LLIR_ENUMERATE_OPERAND_TYPES)
+public:
+    using Type = VariantEnumT;
+    Type type() const { return variant_enum_val; }
 
     enum class Width {
+        INVALID,
         _64BIT,
         _32BIT,
         _16BIT,
         _8BIT
-    } width;
+    } width {};
 };
 
 struct Insn {
+    /**
+     * Declare a variant+enum pair with accessors for instruction classes.
+     */
+#   define LLIR_ENUMERATE_INSN_CLASSES(x) \
+        /* Parameters are: type, accessor_name, enum_value */ \
+        x(LoadStore, loadstore, LOADSTORE) \
+        x(Alu, alu, ALU) \
+        x(Branch, branch, BRANCH) \
+        x(Interrupt, interrupt, INTERRUPT)
+    MAGIC_VARIANT_DECLARE(LLIR_ENUMERATE_INSN_CLASSES)
+public:
     // Address of original instruction
     uint64_t address;
 
     // Size in bytes of original instruction
     uint16_t size;
 
-    // Instruction class + class-specific data
-    enum class Class {
-        LOADSTORE,
-        ALU,
-        BRANCH,
-        INTERRUPT,
-    } iclass;
-    union {
-        LoadStore loadstore;
-        Alu alu;
-        Branch branch;
-        Interrupt interrupt;
-    };
+    // Instruction class enum
+    using Class = VariantEnumT;
+    Class iclass() const { return variant_enum_val; }
 
-    uint8_t dest_cnt;
-    Operand dest[1];
-    uint8_t src_cnt;
-    Operand src[2];
+    // Operands
+    uint8_t dest_cnt { 0 };
+    std::array<Operand, 1> dest = {};
+    uint8_t src_cnt { 0 };
+    std::array<Operand, 2> src = {};
 };
-static_assert(std::is_trivial_v<Insn>, "Insn must be trivial!");
 
 //
 // Helpers
@@ -242,10 +267,15 @@ inline std::string to_string(const LoadStore &loadstore) {
         case LoadStore::Op::LOAD: ret += "LOAD("; break;
         case LoadStore::Op::STORE: ret += "STORE("; break;
         case LoadStore::Op::LEA: ret += "LEA("; break;
+        case LoadStore::Op::INVALID: ASSERT_NOT_REACHED();
     }
 
-    ret += ", signext=";
-    ret += loadstore.sign_extension ? "T" : "F";
+    ret += "ext=";
+    switch (loadstore.extension) {
+        case LoadStore::Extension::NONE: ret += "NONE"; break;
+        case LoadStore::Extension::ZERO: ret += "ZERO"; break;
+        case LoadStore::Extension::SIGN: ret += "SIGN"; break;
+    }
     ret += ")";
     return ret;
 }
@@ -253,10 +283,9 @@ inline std::string to_string(const LoadStore &loadstore) {
 template<>
 inline std::string to_string(const Alu &alu) {
     switch (alu.op) {
-        case Alu::Op::ADD: return "ADD";
-        case Alu::Op::SUB: return "SUB";
-        case Alu::Op::MULT: return "MULT";
-        case Alu::Op::LOAD_IMM: return "LOAD_IMM";
+#define enum_name(x) case Alu::Op::x: return #x;
+        LLIR_ENUMERATE_ALU_OPS(enum_name)
+#undef enum_name
     }
     ASSERT_NOT_REACHED();
 }
@@ -265,27 +294,15 @@ template <>
 inline std::string to_string(const Branch &branch) {
     std::string ret = "";
     switch (branch.op) {
-        case Branch::Op::UNCONDITIONAL: ret += "UNCONDITIONAL,"; break;
-        case Branch::Op::EQ: ret += "EQ,"; break;
-        case Branch::Op::NOT_EQ: ret += "!EQ,"; break;
-        case Branch::Op::NEGATIVE: ret += "NEGATIVE,"; break;
-        case Branch::Op::NOT_NEGATIVE: ret += "!NEGATIVE,"; break;
-        case Branch::Op::POSITIVE: ret += "POSITIVE,"; break;
-        case Branch::Op::CARRY: ret += "CARRY,"; break;
-        case Branch::Op::NOT_CARRY: ret += "NOT_CARRY,"; break;
-        case Branch::Op::OVERFLOW: ret += "OVERFLOW,"; break;
-        case Branch::Op::NOT_OVERFLOW: ret += "NOT_OVERFLOW,"; break;
-        case Branch::Op::X86_ABOVE: ret += "X86_ABOVE,"; break;
-        case Branch::Op::X86_BELOW_EQ: ret += "X86_BELOW_EQ,"; break;
-        case Branch::Op::X86_GREATER_EQ: ret += "X86_GREATER_EQ,"; break;
-        case Branch::Op::X86_LESS: ret += "X86_LESS,"; break;
-        case Branch::Op::X86_GREATER: ret += "X86_GREATER,"; break;
-        case Branch::Op::X86_LESS_EQ: ret += "X86_LESS_EQ,"; break;
+#define add_enum_name(x) case Branch::Op::x: ret += #x ","; break;
+        LLIR_ENUMERATE_BRANCH_OPS(add_enum_name)
+#undef add_enum_name
     }
 
     switch (branch.target) {
         case Branch::Target::RELATIVE: ret += "RELATIVE"; break;
         case Branch::Target::ABSOLUTE: ret += "ABSOLUTE"; break;
+        case Branch::Target::INVALID: ASSERT_NOT_REACHED();
     }
 
     return ret;
@@ -295,6 +312,7 @@ template<>
 inline std::string to_string(const Interrupt &interrupt) {
     switch (interrupt.op) {
         case Interrupt::Op::SYSCALL: return "SYSCALL";
+        case Interrupt::Op::INVALID: ASSERT_NOT_REACHED();
     }
     ASSERT_NOT_REACHED();
 }
@@ -333,7 +351,7 @@ inline std::string to_string(const X86_64Register &reg) {
 
 template<>
 inline std::string to_string(const Register::Mask &mask) {
-    switch(mask) {
+    switch (mask) {
         case Register::Mask::Full64: return "Full64";
         case Register::Mask::Low32: return "Low32";
         case Register::Mask::LowLow16: return "LowLow16";
@@ -369,7 +387,7 @@ inline std::string to_string(const MemOp &memop) {
         case Architecture::ppc64le: TODO();
     }
 
-    ret += "update=";
+    ret += " update=";
     switch (memop.update) {
         case MemOp::Update::NONE: ret += "NONE"; break;
         case MemOp::Update::PRE: ret += "PRE"; break;
@@ -381,12 +399,21 @@ inline std::string to_string(const MemOp &memop) {
 
 template<>
 inline std::string to_string(const Operand &operand) {
-    switch (operand.type) {
-        case Operand::Type::IMM: return std::string("Immediate=") + std::to_string((int64_t)operand.imm);
-        case Operand::Type::MEM: return std::string("Memory(") + to_string(operand.memory) + ")";
-        case Operand::Type::REG: return std::string("Reg=") + to_string(operand.reg);
+    std::string ret;
+    switch (operand.type()) {
+        case Operand::Type::IMM: ret += "Immediate=" + std::to_string((int64_t)operand.imm()); break;
+        case Operand::Type::MEM: ret += "Memory("+ to_string(operand.memory()) + ")"; break;
+        case Operand::Type::REG: ret += "Reg=" + to_string(operand.reg()); break;
     }
-    ASSERT_NOT_REACHED();
+    ret += ",width=";
+    switch (operand.width) {
+        case Operand::Width::_64BIT: ret += "64"; break;
+        case Operand::Width::_32BIT: ret += "32"; break;
+        case Operand::Width::_16BIT: ret += "16"; break;
+        case Operand::Width::_8BIT: ret += "8"; break;
+        case Operand::Width::INVALID: ASSERT_NOT_REACHED();
+    }
+    return ret;
 }
 
 template <>
@@ -413,19 +440,19 @@ inline std::string to_string(const decltype(Alu::flags_modified) &flags) {
 template<>
 inline std::string to_string(const Insn &insn) {
     std::string ret = "(";
-    ret += "Class=" + to_string(insn.iclass);
-    switch (insn.iclass) {
+    ret += "Class=" + to_string(insn.iclass());
+    switch (insn.iclass()) {
         case Insn::Class::LOADSTORE:
-            ret += " Op=" + to_string(insn.loadstore); break;
+            ret += " Op=" + to_string(insn.loadstore()); break;
         case Insn::Class::ALU:
-            ret += " Op=" + to_string(insn.alu);
-            if (insn.alu.modifies_flags)
-                ret += " FlagsModified(" + to_string(insn.alu.flags_modified) + ")";
+            ret += " Op=" + to_string(insn.alu());
+            if (insn.alu().modifies_flags)
+                ret += " FlagsModified(" + to_string(insn.alu().flags_modified) + ")";
             break;
         case Insn::Class::BRANCH:
-            ret += " Op=" + to_string(insn.branch); break;
+            ret += " Op=" + to_string(insn.branch()); break;
         case Insn::Class::INTERRUPT:
-            ret += " Op=" + to_string(insn.interrupt); break;
+            ret += " Op=" + to_string(insn.interrupt()); break;
     }
     for (size_t i=0; i<insn.dest_cnt; i++)
         ret += " Destination(" + to_string(insn.dest[0]) + ")";

@@ -9,16 +9,18 @@
 #include <virtual_address_mapper.h>
 #include <arch/ppc64le/codegen/codegen_ppc64le.h>
 
-#include <memory>
-#include <variant>
 #include <list>
+#include <memory>
+#include <string>
+#include <variant>
+#include <vector>
 
 namespace retrec {
 
 class dynamic_recompiler {
     Architecture host;
-    std::unique_ptr<execution_context> econtext;
-    mapped_file binary;
+    target_environment target_env;
+    execution_context econtext;
     elf_loader loader;
     disassembler disasm;
 
@@ -35,10 +37,11 @@ class dynamic_recompiler {
     status_code runtime_handle_untranslated_access();
 
 public:
-    dynamic_recompiler(Architecture host_, mapped_file binary_) :
+    dynamic_recompiler(Architecture host_, target_environment target_env_) :
         host(host_),
-        econtext(std::make_unique<execution_context>()),
-        binary(std::move(binary_)), loader(*econtext, binary),
+        target_env(std::move(target_env_)),
+        econtext(target_env),
+        loader(econtext, target_env_.binary),
         disasm(loader)
     {
     }

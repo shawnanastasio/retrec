@@ -44,6 +44,13 @@ enum class Architecture {
 
 #define ARRAY_SIZE(x) (sizeof((x)) / sizeof(*(x)))
 
+// Useful for declaring comma-separated lists with x-macros
+#define X_LIST(x, ...) x,
+
+// Template for creating dummy/sentinel types
+template <size_t i>
+class Sentinel {};
+
 template <typename ValT, typename AlignT>
 std::enable_if_t<(std::is_pointer_v<ValT> || std::is_integral_v<ValT>), ValT>
 align_to(ValT val, AlignT alignment) {

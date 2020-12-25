@@ -25,12 +25,15 @@ add_executable(retrec
     arch/ppc64le/runtime_context_ppc64le.cpp
     arch/ppc64le/runtime_context_ppc64le.h
     arch/ppc64le/syscalls.h
+    arch/target_environment.h
     arch/x86_64/cpu_context_x86_64.h
     arch/x86_64/llir/llir_lifter_x86_64.cpp
     arch/x86_64/llir/llir_lifter_x86_64.h
     arch/x86_64/llir/llir_operands_x86_64.h
     arch/x86_64/llir/llir_registers_x86_64.h
     arch/x86_64/syscalls.h
+    arch/x86_64/target_environment.cpp
+    arch/x86_64/target_environment.h
     codegen.h
     disassembler.cpp
     disassembler.h

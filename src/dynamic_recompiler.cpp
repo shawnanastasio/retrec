@@ -4,7 +4,7 @@
 using namespace retrec;
 
 status_code dynamic_recompiler::init() {
-    auto ret = econtext->init();
+    auto ret = econtext.init();
     if (ret != status_code::SUCCESS)
         return ret;
 
@@ -24,7 +24,7 @@ status_code dynamic_recompiler::init() {
     // the correct architecture detected by the elf loader.
     switch (host) {
         case Architecture::ppc64le:
-            gen = std::make_unique<codegen_ppc64le<ppc64le::TargetTraitsX86_64>>(loader.target_arch(), *econtext, &vam);
+            gen = std::make_unique<codegen_ppc64le<ppc64le::TargetTraitsX86_64>>(loader.target_arch(), econtext, &vam);
             break;
         default:
             TODO();
@@ -60,7 +60,7 @@ status_code dynamic_recompiler::execute() {
     auto &code = *translated_regions.begin();
 
     // Initialize runtime context with entrypoint as target
-    res = econtext->initialize_runtime_context(loader.target_arch(), code.code(), &vam);
+    res = econtext.initialize_runtime_context(loader.target_arch(), code.code(), &vam);
     if (res != status_code::SUCCESS) {
         pr_error("Failed to initialize runtime context for translated code!\n");
         return res;
@@ -68,7 +68,7 @@ status_code dynamic_recompiler::execute() {
 
     // Code execution loop
     for (;;) {
-        status_code res = econtext->enter_translated_code();
+        status_code res = econtext.enter_translated_code();
         switch (res) {
             case status_code::HALT:
                 // Translated code gracefully exited
@@ -133,7 +133,7 @@ status_code dynamic_recompiler::translate_elf_function(const elf_loader::Symbol 
 status_code dynamic_recompiler::translate_raw_code_block(uint64_t vaddr) {
     // Find the Mapping that the vaddr lies within
     size_t mapping_index;
-    auto mapping_opt = econtext->map().find(vaddr, 1, &mapping_index, process_memory_map::FindPolicy::CONTAINS);
+    auto mapping_opt = econtext.map().find(vaddr, 1, &mapping_index, process_memory_map::FindPolicy::CONTAINS);
     if (!mapping_opt) {
         pr_debug("Unable to find mapping containing target vaddr 0x%lx\n", vaddr);
         return status_code::BADACCESS;
@@ -144,9 +144,9 @@ status_code dynamic_recompiler::translate_raw_code_block(uint64_t vaddr) {
     // Determine the maximum length of the code buffer by walking the memory map
     // and adding the size of all contiguous memory regions.
     max_size = mapping.end - vaddr;
-    for (size_t i = mapping_index + 1; i < econtext->map().size(); i++) {
-        auto &cur = econtext->map()[i];
-        auto &prev = econtext->map()[i-1];
+    for (size_t i = mapping_index + 1; i < econtext.map().size(); i++) {
+        auto &cur = econtext.map()[i];
+        auto &prev = econtext.map()[i-1];
         if (prev.end != cur.start) {
             // Discontinuity, stop increasing size
             break;
@@ -220,7 +220,7 @@ status_code dynamic_recompiler::translate_referenced_address(uint64_t address, u
  * the access.
  */
 status_code dynamic_recompiler::runtime_handle_untranslated_access() {
-    runtime_context &rctx = econtext->runtime_ctx();
+    runtime_context &rctx = econtext.runtime_ctx();
     uint64_t referenced_vaddr = gen->get_last_untranslated_access(rctx);
 
     pr_debug("Translating access to address 0x%lx\n", referenced_vaddr);

@@ -1,4 +1,5 @@
 #include <execution_context.h>
+#include <arch/target_environment.h>
 
 #include <unistd.h>
 #include <sys/mman.h>
@@ -6,8 +7,8 @@
 
 using namespace retrec;
 
-execution_context::execution_context() : vaddr_map(getpid()),
-                                         page_size(sysconf(_SC_PAGESIZE)) {}
+execution_context::execution_context(const target_environment &target_env_) : vaddr_map(getpid()),
+                                         page_size(sysconf(_SC_PAGESIZE)), target_env(target_env_) {}
 
 execution_context::~execution_context() {}
 
@@ -107,9 +108,12 @@ status_code execution_context::initialize_runtime_context(Architecture target_ar
         return res;
     }
 
-    // Call architecture-specific function to populate the runtime context
+    // Initialize the stack with program arguments
+    void *sp = initialize_target_stack(target_arch, new_stack, target_env.argv, target_env.envp);
+
+    // Call host-architecture-specific function to populate the runtime context
     runtime_context = std::make_unique<retrec::runtime_context>();
-    res = runtime_context->init(target_arch, entry, new_stack, vam);
+    res = runtime_context->init(target_arch, entry, sp, vam);
     if (res != status_code::SUCCESS)
         return res;
 

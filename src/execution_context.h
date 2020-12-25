@@ -1,9 +1,10 @@
 #pragma once
 
-#include <arch/arch.h>
-#include <util/util.h>
 #include <allocators.h>
+#include <arch/arch.h>
+#include <mapped_file.h>
 #include <process_memory_map.h>
+#include <util/util.h>
 
 #include <functional>
 #include <memory>
@@ -17,11 +18,21 @@ class translated_code_region;
 struct runtime_context;
 
 //
+// Configuration of target environment
+//
+struct target_environment {
+    mapped_file binary;
+    std::vector<std::string> argv;
+    std::vector<std::string> envp;
+};
+
+//
 // A simple execution context for running in the current process' address space.
 //
 class execution_context {
     process_memory_map vaddr_map;
     long page_size;
+    const target_environment &target_env;
     simple_placement_allocator code_allocator;
 
     std::unique_ptr<retrec::runtime_context> runtime_context;
@@ -31,7 +42,7 @@ class execution_context {
 
 public:
     DISABLE_COPY_AND_MOVE(execution_context)
-    execution_context();
+    execution_context(const target_environment &target_env_);
     ~execution_context();
     status_code init();
 

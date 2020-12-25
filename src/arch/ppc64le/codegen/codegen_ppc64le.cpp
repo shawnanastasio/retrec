@@ -339,28 +339,24 @@ status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, u
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
     ctx.local_branch_targets.insert({ insn.address, ctx.stream->size() });
-    switch (insn.iclass) {
+    switch (insn.iclass()) {
         case llir::Insn::Class::ALU:
-            switch (insn.alu.op) {
-                case llir::Alu::Op::LOAD_IMM:
-                    llir$alu$load_imm(ctx, insn);
-                    break;
-
-                case llir::Alu::Op::SUB:
-                    llir$alu$sub(ctx, insn);
-                    break;
-
+            switch (insn.alu().op) {
                 case llir::Alu::Op::ADD:
-                    llir$alu$add(ctx, insn);
+                case llir::Alu::Op::SUB:
+                    llir$alu$2src_common(ctx, insn);
                     break;
 
+                case llir::Alu::Op::LOAD_IMM: llir$alu$load_imm(ctx, insn); break;
+                case llir::Alu::Op::MOVE_REG: llir$alu$move_reg(ctx, insn); break;
                 default:
+                    pr_debug("Unimplemented ALU op: %s\n", llir::to_string(insn.alu()).c_str());
                     TODO();
             }
             break;
 
         case llir::Insn::Class::BRANCH:
-            switch (insn.branch.op) {
+            switch (insn.branch().op) {
                 case llir::Branch::Op::UNCONDITIONAL:
                     llir$branch$unconditional(ctx, insn);
                     break;
@@ -389,7 +385,7 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             break;
 
         case llir::Insn::Class::INTERRUPT:
-            switch (insn.interrupt.op) {
+            switch (insn.interrupt().op) {
                 case llir::Interrupt::Op::SYSCALL:
                     llir$interrupt$syscall(ctx, insn);
                     break;
@@ -400,7 +396,7 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             break;
 
         case llir::Insn::Class::LOADSTORE:
-            switch (insn.loadstore.op) {
+            switch (insn.loadstore().op) {
                 case llir::LoadStore::Op::LOAD:
                 case llir::LoadStore::Op::STORE:
                 case llir::LoadStore::Op::LEA:
@@ -695,24 +691,24 @@ llir::Register::Mask codegen_ppc64le<T>::llir$alu$helper$mask_from_width(llir::O
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn,
                                                                const llir::Operand &op, gpr_t target) {
-    switch (op.type) {
+    switch (op.type()) {
         case llir::Operand::Type::REG:
         {
             // Operand is in a register, move it to the target reg and mask it
-            auto gpr = ctx.reg_allocator().get_fixed_gpr(op.reg);
-            auto target_mask = llir$alu$helper$target_mask(op.reg.mask);
-            macro$move_register_masked(*ctx.assembler, target, gpr.gpr(), op.reg.mask, target_mask, true, false);
+            auto gpr = ctx.reg_allocator().get_fixed_gpr(op.reg());
+            auto target_mask = llir$alu$helper$target_mask(op.reg().mask);
+            macro$move_register_masked(*ctx.assembler, target, gpr.gpr(), op.reg().mask, target_mask, true, false);
             break;
         }
 
         case llir::Operand::Type::IMM:
             // Operand is an immediate, load it into the target reg
-            macro$load_imm(*ctx.assembler, target, op.imm, llir$alu$helper$mask_from_width(op.width), true);
+            macro$load_imm(*ctx.assembler, target, op.imm(), llir$alu$helper$mask_from_width(op.width), true);
             break;
 
         case llir::Operand::Type::MEM:
             // Operand is in memory, load it into the target reg
-            macro$loadstore(ctx, target, op.memory, llir::LoadStore::Op::LOAD, llir$alu$helper$mask_from_width(op.width), &insn);
+            macro$loadstore(ctx, target, op, llir::LoadStore::Op::LOAD, llir$alu$helper$mask_from_width(op.width), true, insn);
             break;
 
         default:
@@ -723,22 +719,22 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, LastFlagOp op) {
     if (insn.dest_cnt) {
-        auto res_mask = llir$alu$helper$target_mask(insn.dest[0].reg.mask);
+        auto res_mask = llir$alu$helper$target_mask(insn.dest[0].reg().mask);
 
-        switch(insn.dest[0].type) {
+        switch(insn.dest[0].type()) {
             case llir::Operand::Type::REG:
             {
                 // Copy result to destination register
-                auto dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
+                auto dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg());
 
                 macro$move_register_masked(*ctx.assembler, dest.gpr(), GPR_FIXED_FLAG_RES, res_mask,
-                                           insn.dest[0].reg.mask, insn.dest[0].reg.zero_others, false);
+                                           insn.dest[0].reg().mask, insn.dest[0].reg().zero_others, false);
                 break;
             }
 
             case llir::Operand::Type::MEM:
                 // Store result to memory
-                macro$loadstore(ctx, GPR_FIXED_FLAG_RES, insn.dest[0].memory, llir::LoadStore::Op::STORE, res_mask, &insn);
+                macro$loadstore(ctx, GPR_FIXED_FLAG_RES, insn.dest[0], llir::LoadStore::Op::STORE, res_mask, true, insn);
                 break;
 
             default:
@@ -748,7 +744,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
     }
 
     auto mask = llir$alu$helper$mask_from_width(insn.src[0].width);
-    if (insn.alu.modifies_flags && mask != llir::Register::Mask::Full64) {
+    if (insn.alu().modifies_flags && mask != llir::Register::Mask::Full64) {
         // If the instruction modifies flags and the mask is < 64, we need to generate the cr0 flags
         switch (mask) {
             case llir::Register::Mask::Low32:
@@ -772,7 +768,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
     }
 
 
-    if (!insn.alu.modifies_flags) {
+    if (!insn.alu().modifies_flags) {
         // Instruction doesn't modify flags, nothing left to do
         return;
     }
@@ -793,12 +789,12 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
     };
 
     // Set lazy flag status according to operation type
-    if (insn.alu.flags_modified == llir::Alu::all_flags) {
+    if (insn.alu().flags_modified == llir::Alu::all_flags) {
         // All flags modified, wipe CR_LAZYVALID
         ctx.assembler->mcrf(CR_LAZYVALID, CR_ZEROS);
     } else {
         // Wipe affected flags one by one
-        llir::Alu::IterateFlags(insn.alu.flags_modified, [&](auto flag) {
+        llir::Alu::iterate_flags(insn.alu().flags_modified, [&](auto flag) {
             auto lazyvalid_field = alu_flag_to_lazyvalid(flag);
             if (!lazyvalid_field)
                 return;
@@ -810,16 +806,16 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
 
 template <typename T>
 llir::Alu::FlagArr codegen_ppc64le<T>::llir$alu$helper$preserve_flags(gen_context &ctx, const llir::Insn &insn) {
-    if (!insn.alu.modifies_flags)
+    if (!insn.alu().modifies_flags)
         return {};
 
     // If this operation preserves any flags generated by Rc=1, we need to back them up and restore at the end
     llir::Alu::FlagArr preserved;
     size_t preserved_i = 0;
 
-    llir::Alu::IterateFlags(llir$alu$all_rc0_flags, [&](auto flag) {
-        bool found = std::find(insn.alu.flags_modified.begin(), insn.alu.flags_modified.end(), flag)
-                        != insn.alu.flags_modified.end();
+    llir::Alu::iterate_flags(llir$alu$all_rc0_flags, [&](auto flag) {
+        bool found = std::find(insn.alu().flags_modified.begin(), insn.alu().flags_modified.end(), flag)
+                        != insn.alu().flags_modified.end();
         if (!found) {
             // Flag wasn't found in the insn's list of modified flags - we need to preserve it
             preserved[preserved_i++] = flag;
@@ -841,7 +837,7 @@ void codegen_ppc64le<T>::llir$alu$helper$restore_flags(gen_context &ctx, llir::A
         return;
     }
 
-    llir::Alu::IterateFlags(flags, [&](auto flag) {
+    llir::Alu::iterate_flags(flags, [&](auto flag) {
         switch (flag) {
             case llir::Alu::Flag::SIGN:
                 // Restore LT,GT
@@ -869,69 +865,85 @@ size_t codegen_ppc64le<T>::llir$alu$helper$load_imm_insn_count(int64_t val) {
 }
 
 template <typename T>
+LastFlagOp codegen_ppc64le<T>::llir$alu$helper$insn_to_lastflagop(const llir::Insn &insn) {
+    switch (insn.alu().op) {
+        case llir::Alu::Op::ADD:
+            return LastFlagOp::ADD;
+        case llir::Alu::Op::SUB:
+            return LastFlagOp::SUB;
+        default:
+            TODO();
+    }
+}
+
+template <typename T>
 void codegen_ppc64le<T>::llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn) {
     pr_debug("alu$load_imm\n");
     assert(insn.dest_cnt == 1);
-    assert(insn.dest[0].type == llir::Operand::Type::REG);
+    assert(insn.dest[0].type() == llir::Operand::Type::REG);
     assert(insn.src_cnt == 1);
-    assert(insn.src[0].type == llir::Operand::Type::IMM);
+    assert(insn.src[0].type() == llir::Operand::Type::IMM);
 
-    auto rt = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg);
+    auto rt = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg());
 
-    macro$load_imm(*ctx.assembler, rt.gpr(), insn.src[0].imm, insn.dest[0].reg.mask, insn.dest[0].reg.zero_others);
+    macro$load_imm(*ctx.assembler, rt.gpr(), insn.src[0].imm(), insn.dest[0].reg().mask, insn.dest[0].reg().zero_others);
 }
 
 template <typename T>
-void codegen_ppc64le<T>::llir$alu$sub(gen_context &ctx, const llir::Insn &insn) {
-    pr_debug("alu$sub\n");
-    assert(insn.src_cnt == 2);
-    auto width = insn.src[0].width;
-
-    // Preserve flags
-    llir::Alu::FlagArr preserved = llir$alu$helper$preserve_flags(ctx, insn);
-
-    // Ensure all operands are in registers
-    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
-    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
-
-    if (insn.alu.modifies_flags && width == llir::Operand::Width::_64BIT)
-        ctx.assembler->sub_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-    else
-        ctx.assembler->sub(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-
-    // Restore flags
-    llir$alu$helper$restore_flags(ctx, preserved);
-
-    // Finalize operation
-    llir$alu$helper$finalize_op(ctx, insn, LastFlagOp::SUB);
-}
-
-template <typename T>
-void codegen_ppc64le<T>::llir$alu$add(gen_context &ctx, const llir::Insn &insn) {
-    pr_debug("alu$add\n");
+void codegen_ppc64le<T>::llir$alu$2src_common(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("alu$2src\n");
     assert(insn.src_cnt == 2);
     auto width = insn.src[0].width;
 
     // Preserve flags
     llir::Alu::FlagArr preserved;
-    if (insn.alu.modifies_flags)
+    if (insn.alu().modifies_flags)
         preserved = llir$alu$helper$preserve_flags(ctx, insn);
 
     // Ensure all operands are in registers
     llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
     llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
 
-    if (insn.alu.modifies_flags && width == llir::Operand::Width::_64BIT)
-        ctx.assembler->add_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-    else
-        ctx.assembler->add(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+    switch (insn.alu().op) {
+        case llir::Alu::Op::ADD:
+            if (insn.alu().modifies_flags && width == llir::Operand::Width::_64BIT)
+                ctx.assembler->add_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            else
+                ctx.assembler->add(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            break;
+
+        case llir::Alu::Op::SUB:
+            if (insn.alu().modifies_flags && width == llir::Operand::Width::_64BIT)
+                ctx.assembler->sub_(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            else
+                ctx.assembler->sub(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            break;
+
+        default:
+            TODO();
+    }
 
     // Restore flags
-    if (insn.alu.modifies_flags)
+    if (insn.alu().modifies_flags)
         llir$alu$helper$restore_flags(ctx, preserved);
 
     // Finalize operation
-    llir$alu$helper$finalize_op(ctx, insn, LastFlagOp::ADD);
+    llir$alu$helper$finalize_op(ctx, insn, llir$alu$helper$insn_to_lastflagop(insn));
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$move_reg(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("alu$move_reg\n");
+    assert(insn.src_cnt == 1);
+    assert(insn.src[0].type() == llir::Operand::Type::REG);
+    assert(insn.dest_cnt == 1);
+    assert(insn.dest[0].type() == llir::Operand::Type::REG);
+    assert(!insn.alu().modifies_flags);
+
+    auto src = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
+    auto dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg());
+    macro$move_register_masked(*ctx.assembler, dest.gpr(), src.gpr(), insn.src[0].reg().mask,
+                               insn.dest[0].reg().mask, insn.dest[0].reg().zero_others, false);
 }
 
 /**
@@ -940,12 +952,12 @@ void codegen_ppc64le<T>::llir$alu$add(gen_context &ctx, const llir::Insn &insn) 
 template <typename T>
 uint64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
     uint64_t res;
-    switch (insn.branch.target) {
+    switch (insn.branch().target) {
         case llir::Branch::Target::RELATIVE:
-            res = insn.address + (uint64_t)insn.src[0].imm;
+            res = insn.address + (uint64_t)insn.src[0].imm();
             break;
         case llir::Branch::Target::ABSOLUTE:
-            res = (uint64_t)insn.src[0].imm;
+            res = (uint64_t)insn.src[0].imm();
             break;
         default:
             TODO();
@@ -960,10 +972,10 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
     pr_debug("branch$unconditional\n");
     assert(insn.src_cnt == 1);
 
-    if (!insn.branch.linkage) {
+    if (!insn.branch().linkage) {
         // Unconditional branch without linkage, i.e. JMP
         assert(insn.dest_cnt == 0);
-        switch (insn.src[0].type) {
+        switch (insn.src[0].type()) {
             case llir::Operand::Type::IMM:
             {
                 // Emit a relocation to directly branch to the correct offset. We don't need any fixed_helper
@@ -979,33 +991,33 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
 
             case llir::Operand::Type::MEM:
                 // Load operand into r0 and call fixed_helper$indirect_jmp
-                macro$loadstore(ctx, 0, insn.src[0].memory, llir::LoadStore::Op::LOAD,
-                                llir::Register::Mask::Full64, &insn);
+                macro$loadstore(ctx, 0, insn.src[0], llir::LoadStore::Op::LOAD,
+                                llir$alu$helper$mask_from_width(insn.src[0].width), true, insn);
                 ctx.assembler->bla(ff_addresses.indirect_jmp);
                 break;
 
             case llir::Operand::Type::REG:
                 // Load operand into r0 and call fixed_helper$indirect_jmp
-                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg);
+                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
                 macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
-                                           insn.src[0].reg.mask, true, false);
+                                           insn.src[0].reg().mask, true, false);
                 ctx.assembler->bla(ff_addresses.indirect_jmp);
                 break;
         }
     } else {
         // Unconditional branch with linkage, i.e. CALL
         assert(insn.dest_cnt == 1);
-        assert(insn.dest[0].type == llir::Operand::Type::MEM);
+        assert(insn.dest[0].type() == llir::Operand::Type::MEM);
 
-        switch (insn.src[0].type) {
+        switch (insn.src[0].type()) {
             case llir::Operand::Type::IMM:
             {
                 // Write return vaddr to memory operand
                 auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
                 uint64_t ret_vaddr = insn.address + insn.size;
                 macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
-                                llir::Register::Mask::Full64, &insn);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
 
                 // Emit a relocation that will load the target host address into 0 and try to bla to
                 // fixed_helper$call_direct_pcrel
@@ -1025,16 +1037,16 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
             case llir::Operand::Type::REG:
             {
                 // Load destination vaddr in r0
-                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg);
+                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
                 macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
-                                           insn.src[0].reg.mask, true, false);
+                                           insn.src[0].reg().mask, true, false);
 
                 // Write return vaddr to memory operand
                 auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
                 uint64_t ret_vaddr = insn.address + insn.size;
                 macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
-                                llir::Register::Mask::Full64, &insn);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
 
                 // Call fixed_helper$call
                 ctx.assembler->bla(ff_addresses.call);
@@ -1044,14 +1056,14 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
             case llir::Operand::Type::MEM:
             {
                 // Load destination vaddr in r0
-                macro$loadstore(ctx, 0, insn.src[0].memory, llir::LoadStore::Op::LOAD, llir::Register::Mask::Full64, &insn);
+                macro$loadstore(ctx, 0, insn.src[0], llir::LoadStore::Op::LOAD, llir::Register::Mask::Full64, true, insn);
 
                 // Write return vaddr to memory operand
                 auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
                 uint64_t ret_vaddr = insn.address + insn.size;
                 macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0].memory, llir::LoadStore::Op::STORE,
-                                llir::Register::Mask::Full64, &insn);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
 
                 // Call fixed_helper$call
                 ctx.assembler->bla(ff_addresses.call);
@@ -1064,7 +1076,7 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
 template <typename T>
 void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
     pr_debug("branch$conditional\n");
-    assert(!insn.branch.linkage);
+    assert(!insn.branch().linkage);
     assert(insn.dest_cnt == 0);
     assert(insn.src_cnt == 1);
 
@@ -1072,7 +1084,7 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     uint8_t cr_field;
     BO bo;
 
-    switch (insn.branch.op) {
+    switch (insn.branch().op) {
         case llir::Branch::Op::EQ:
             // beq
             bo = BO::FIELD_SET;
@@ -1219,42 +1231,74 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     pr_debug("$loadstore\n");
     assert(insn.dest_cnt == 1);
     assert(insn.src_cnt == 1);
-    assert(!insn.loadstore.sign_extension); // FIXME
+
+    // We only support zero/sign extension for load reg, X
+    assert(insn.loadstore().extension == llir::LoadStore::Extension::NONE
+           || ((insn.loadstore().op == llir::LoadStore::Op::LOAD)
+               && (insn.dest[0].type() == llir::Operand::Type::REG)));
 
     // Extract memory and register operands
-    auto &memory_operand = (insn.loadstore.op == llir::LoadStore::Op::STORE) ? insn.dest[0] : insn.src[0];
-    assert(memory_operand.type == llir::Operand::Type::MEM);
+    auto &memory_operand = (insn.loadstore().op == llir::LoadStore::Op::STORE) ? insn.dest[0] : insn.src[0];
+    assert(memory_operand.type() == llir::Operand::Type::MEM);
 
-    auto &reg_operand = (insn.loadstore.op == llir::LoadStore::Op::STORE) ? insn.src[0] : insn.dest[0];
+    auto &reg_operand = (insn.loadstore().op == llir::LoadStore::Op::STORE) ? insn.src[0] : insn.dest[0];
     typename register_allocator<T>::AllocatedGprT reg;
     llir::Register::Mask reg_mask;
+    bool zero_others = true;
+    bool extension = false;
 
-    switch (reg_operand.type) {
+    switch (reg_operand.type()) {
         case llir::Operand::Type::REG:
-            reg = ctx.reg_allocator().get_fixed_gpr(reg_operand.reg);
-            reg_mask = reg_operand.reg.mask;
+            // Special case: zero/sign extension for load to register
+            if (insn.loadstore().op == llir::LoadStore::Op::LOAD &&
+                    insn.loadstore().extension != llir::LoadStore::Extension::NONE) {
+                extension = true;
+
+                // Perform the load to a temporary register with the memory operand's width
+                reg = ctx.reg_allocator().allocate_gpr();
+                reg_mask = llir$alu$helper$mask_from_width(memory_operand.width);
+                zero_others = true;
+                break;
+            }
+
+            reg = ctx.reg_allocator().get_fixed_gpr(reg_operand.reg());
+            reg_mask = reg_operand.reg().mask;
+            zero_others = reg_operand.reg().zero_others;
             break;
 
         case llir::Operand::Type::IMM:
-            assert(insn.loadstore.op == llir::LoadStore::Op::STORE);
+            assert(insn.loadstore().op == llir::LoadStore::Op::STORE);
             // Stores may also be performed from an immediate rather than a register.
             // Allocate a temporary register and load the immediate to it.
             reg = ctx.reg_allocator().allocate_gpr();
             reg_mask = llir$alu$helper$mask_from_width(reg_operand.width);
-            macro$load_imm(*ctx.assembler, reg.gpr(), reg_operand.imm, llir::Register::Mask::Full64, true);
+            macro$load_imm(*ctx.assembler, reg.gpr(), reg_operand.imm(), llir::Register::Mask::Full64, true);
             break;
 
         case llir::Operand::Type::MEM:
-            assert(insn.loadstore.op == llir::LoadStore::Op::STORE);
+            assert(insn.loadstore().op == llir::LoadStore::Op::STORE);
             // To support push [mem] we also have to support memory operands for stores
             reg = ctx.reg_allocator().allocate_gpr();
             reg_mask = llir$alu$helper$mask_from_width(reg_operand.width);
-            macro$loadstore(ctx, reg.gpr(), reg_operand.memory, llir::LoadStore::Op::LOAD, reg_mask, nullptr);
+            macro$loadstore(ctx, reg.gpr(), reg_operand, llir::LoadStore::Op::LOAD, reg_mask, true, insn);
             break;
     }
 
     // Emit load/store for the provided register and memory operands
-    macro$loadstore(ctx, reg.gpr(), memory_operand.memory, insn.loadstore.op, reg_mask, &insn);
+    macro$loadstore(ctx, reg.gpr(), memory_operand, insn.loadstore().op, reg_mask, zero_others, insn);
+
+    if (extension) {
+        auto dest = ctx.reg_allocator().get_fixed_gpr(reg_operand.reg());
+        switch (insn.loadstore().extension) {
+            case llir::LoadStore::Extension::ZERO:
+                // Treat temporary register as target width since macro$loadstore will zero-extend by default.
+                macro$move_register_masked(*ctx.assembler, dest.gpr(), reg.gpr(), reg_operand.reg().mask,
+                                           reg_operand.reg().mask, reg_operand.reg().zero_others, false);
+                break;
+            default:
+                TODO();
+        }
+    }
 }
 
 //
@@ -1876,20 +1920,22 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
 }
 
 template <typename T>
-void codegen_ppc64le<T>::macro$loadstore(gen_context &, gpr_t,
-                                         const llir::MemOp &, llir::LoadStore::Op,
-                                         llir::Register::Mask, const llir::Insn *) {
+void codegen_ppc64le<T>::macro$loadstore(gen_context &, gpr_t, const llir::Operand &, llir::LoadStore::Op,
+                                         llir::Register::Mask, bool, const llir::Insn &) {
     static_assert(std::is_same_v<T, T>, "Missing macro$loadstore specialization for target arch!");
 }
 
-
 // Specialization of macro$loadstore for x86_64 targets
 template <>
-void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_t reg,
-                     const llir::MemOp &mem, llir::LoadStore::Op op, llir::Register::Mask reg_mask,
-                     const llir::Insn *insn) {
+void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_t reg,
+                     const llir::Operand &mem_op, llir::LoadStore::Op op, llir::Register::Mask reg_mask,
+                     bool reg_zero_others, const llir::Insn &insn) {
+    auto mem = mem_op.memory();
     assert(mem.arch == Architecture::X86_64);
     auto update = mem.update;
+    auto mem_width = mem_op.width;
+    //auto extension = insn.iclass() == llir::Insn::Class::LOADSTORE ? insn.loadstore().extension : llir::LoadStore::Extension::NONE;
+    assert(mem_width == mask_to_width(reg_mask));
 
 // Helpers to call the appropriate loadstore op depending on whether `update` is set or not
 #define LOADSTORE_DISP(op, ...) ((update == llir::MemOp::Update::PRE) ? ctx.assembler->op ## u(__VA_ARGS__) : ctx.assembler->op(__VA_ARGS__))
@@ -1897,11 +1943,19 @@ void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &
 
     auto loadstore_disp = [&](gpr_t reg, gpr_t ra, int16_t disp) {
         if (op == llir::LoadStore::Op::LOAD) {
+            gpr_t dest = reg;
+            register_allocator<TargetTraitsX86_64>::AllocatedGprT tmp;
+
+            if (!reg_zero_others) {
+                tmp = ctx.reg_allocator().allocate_gpr();
+                dest = tmp.gpr();
+            }
+
             switch (reg_mask) {
-                case llir::Register::Mask::Full64: LOADSTORE_DISP(ld, reg, ra, disp); break;
-                case llir::Register::Mask::Low32: LOADSTORE_DISP(lwz, reg, ra, disp); break;
-                case llir::Register::Mask::LowLow16: LOADSTORE_DISP(lhz, reg, ra, disp); break;
-                case llir::Register::Mask::LowLowLow8: LOADSTORE_DISP(lbz, reg, ra, disp); break;
+                case llir::Register::Mask::Full64: LOADSTORE_DISP(ld, dest, ra, disp); break;
+                case llir::Register::Mask::Low32: LOADSTORE_DISP(lwz, dest, ra, disp); break;
+                case llir::Register::Mask::LowLow16: LOADSTORE_DISP(lhz, dest, ra, disp); break;
+                case llir::Register::Mask::LowLowLow8: LOADSTORE_DISP(lbz, dest, ra, disp); break;
                 case llir::Register::Mask::LowLowHigh8:
                 {
                     // FIXME: There's probably a more intelligent way to do this
@@ -1910,10 +1964,15 @@ void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &
                     macro$move_register_masked(*ctx.assembler, reg, temp.gpr(),
                                                llir::Register::Mask::LowLowLow8,
                                                llir::Register::Mask::LowLowHigh8, false, false);
-                    break;
+                    assert(!reg_zero_others);
+                    return; // Skip zero_others cleanup code
                 }
                 case llir::Register::Mask::Special: TODO();
             }
+
+            if (!reg_zero_others)
+                macro$move_register_masked(*ctx.assembler, reg, dest, reg_mask, reg_mask, false, false);
+
         } else if (op == llir::LoadStore::Op::STORE) {
             switch (reg_mask) {
                 case llir::Register::Mask::Full64: LOADSTORE_DISP(std, reg, ra, disp); break;
@@ -1939,11 +1998,18 @@ void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &
 
     auto loadstore_indexed = [&](gpr_t reg, gpr_t ra, gpr_t rb) {
         if (op == llir::LoadStore::Op::LOAD) {
+            gpr_t dest = reg;
+            register_allocator<TargetTraitsX86_64>::AllocatedGprT tmp;
+            if (!reg_zero_others) {
+                tmp = ctx.reg_allocator().allocate_gpr();
+                dest = tmp.gpr();
+            }
+
             switch (reg_mask) {
-                case llir::Register::Mask::Full64: LOADSTORE_INDEXED(ld, reg, ra, rb); break;
-                case llir::Register::Mask::Low32: LOADSTORE_INDEXED(lwz, reg, ra, rb); break;
-                case llir::Register::Mask::LowLow16: LOADSTORE_INDEXED(lhz, reg, ra, rb); break;
-                case llir::Register::Mask::LowLowLow8: LOADSTORE_INDEXED(lbz, reg, ra, rb); break;
+                case llir::Register::Mask::Full64: LOADSTORE_INDEXED(ld, dest, ra, rb); break;
+                case llir::Register::Mask::Low32: LOADSTORE_INDEXED(lwz, dest, ra, rb); break;
+                case llir::Register::Mask::LowLow16: LOADSTORE_INDEXED(lhz, dest, ra, rb); break;
+                case llir::Register::Mask::LowLowLow8: LOADSTORE_INDEXED(lbz, dest, ra, rb); break;
                 case llir::Register::Mask::LowLowHigh8:
                 {
                     auto temp = ctx.reg_allocator().allocate_gpr();
@@ -1951,10 +2017,15 @@ void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &
                     macro$move_register_masked(*ctx.assembler, reg, temp.gpr(),
                                                llir::Register::Mask::LowLowLow8,
                                                llir::Register::Mask::LowLowHigh8, false, false);
-                    break;
+                    assert(!reg_zero_others);
+                    return; // Skip zero_others cleanup code
                 }
                 case llir::Register::Mask::Special: TODO();
             }
+
+            if (!reg_zero_others)
+                macro$move_register_masked(*ctx.assembler, reg, dest, reg_mask, reg_mask, false, false);
+
         } else if (op == llir::LoadStore::Op::STORE) {
             switch (reg_mask) {
                 case llir::Register::Mask::Full64: LOADSTORE_INDEXED(std, reg, ra, rb); break;
@@ -2028,9 +2099,8 @@ void codegen_ppc64le<ppc64le::TargetTraitsX86_64>::macro$loadstore(gen_context &
         if (x86_64.base.x86_64 == llir::X86_64Register::RIP) {
             // Special case: RIP-relative addressing
             // Load the next instruction's address into a temporary GPR and use that as base
-            assert(insn); // Using RIP-rel addressing without providing an insn is invalid
             base = ctx.reg_allocator().allocate_gpr();
-            uint64_t next_rip = insn->address + insn->size;
+            uint64_t next_rip = insn.address + insn.size;
             macro$load_imm(*ctx.assembler, base.gpr(), next_rip, llir::Register::Mask::Full64, true);
         } else {
             base = ctx.reg_allocator().get_fixed_gpr(x86_64.base);

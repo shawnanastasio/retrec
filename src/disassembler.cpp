@@ -88,7 +88,7 @@ status_code disassembler::disassemble_region(const void *code, size_t max_length
         if (mode == Mode::PARTIAL) {
             // In partial mode, we need to stop whenever a branch is encountered
             auto last_insn = llir_insns.end() - 1;
-            if (last_insn->iclass == llir::Insn::Class::BRANCH)
+            if (last_insn->iclass() == llir::Insn::Class::BRANCH)
                 break;
         }
 
