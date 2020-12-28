@@ -74,13 +74,23 @@ def alu_test_case_genstrs(test, n, f):
 
 def alu_test_case_gentest(test, n, f):
     f.write("{}: # Test {}\n".format(n * 10, n))
-    f.write("    mov {}, OFFSET {}\n".format(test.reg1_str, test.imm1_str))
+    f.write("    mov {}, {}\n".format(test.reg1_str, test.imm1_str))
     if test.reg2_str == "":
-        f.write("    {} {}, OFFSET {}\n".format(test.insn_str, test.reg1_str, test.imm2_str))
+        if test.res_reg:
+            f.write("    mov {}, OFFSET {}\n".format(test.res_reg, test.res_str))
+            f.write("    cmp {}, {}\n".format(test.reg1_str, test.res_reg))
+        else:
+            f.write("    cmp {}, OFFSET {}\n".format(test.reg1_str, test.res_str))
     else:
-        f.write("    mov {}, OFFSET {}\n".format(test.reg2_str, test.imm2_str))
-        f.write("    {} {}, {}\n".format(test.insn_str, test.reg1_str, test.reg2_str))
-    f.write("    cmp {}, OFFSET {}\n".format(test.reg1_str, test.res_str))
+        if test.res_reg:
+            f.write("    mov {}, OFFSET {}\n".format(test.reg2_str, test.imm2_str))
+            f.write("    {} {}, {}\n".format(test.insn_str, test.reg1_str, test.reg2_str))
+            f.write("    mov {}, OFFSET {}\n".format(test.res_reg, test.res_str))
+            f.write("    cmp {}, {}\n".format(test.reg1_str, test.res_reg))
+        else:
+            f.write("    mov {}, OFFSET {}\n".format(test.reg2_str, test.imm2_str))
+            f.write("    {} {}, {}\n".format(test.insn_str, test.reg1_str, test.reg2_str))
+            f.write("    cmp {}, OFFSET {}\n".format(test.reg1_str, test.res_str))
     f.write("    je 1f\n")
 
     # Fail
@@ -95,7 +105,7 @@ def alu_test_case_gentest(test, n, f):
 
 
 AluTestCase = namedtuple("AluTestCase", ["width", "insn_str", "reg1_str", "reg2_str", "imm1_str", "imm2_str",
-                                         "res_str", "f_genstrs", "f_gentest"],
+                                         "res_str", "res_reg", "f_genstrs", "f_gentest"],
                                         defaults=(None,None,None,None,None,None,None,alu_test_case_genstrs,alu_test_case_gentest))
 
 def get_mem_width_str(width):
@@ -195,6 +205,17 @@ LOAD_TESTS = [
 
     # Test zero extension on ax (shouldn't clear top 48 bits)
     LoadTestCase(8, "movzx", "rax", "-1", "ax", "0xCA", "rbx", "0xFFFFFFFFFFFF00CA"),
+
+    # Test sign extension (movsx, movsxd)
+    LoadTestCase(32, "movsxd", "", "", "rax", "0xFFFFFFFF", "", -1),
+    LoadTestCase(16, "movsx", "", "", "rax", "0xFFFF", "", -1),
+    LoadTestCase(8, "movsx", "", "", "rax", "0xFF", "", -1),
+    LoadTestCase(8, "movsx", "", "", "eax", "0xFF", "", -1),
+    LoadTestCase(8, "movsx", "", "", "ax", "0xFF", "", -1),
+
+    # Make sure sign extension to 32-bit reg doesn't affect top 32 bits
+    LoadTestCase(16, "movsx", "", "", "ecx", "0xFFFF", "", -1),
+    AluTestCase(64, "mov", "rax", "", "rcx", "", "0xFFFFFFFF", "rbx"),
 ]
 
 ALU_TESTS = [
@@ -249,6 +270,35 @@ ALU_TESTS = [
     AluTestCase(8, "add", "al", "bl", "1", "1", "2"),
     AluTestCase(8, "add", "al", "bl", "1", "-1", "0"),
     AluTestCase(8, "add", "al", "bl", "1", "-2", "-1"),
+
+    # XOR
+    AluTestCase(64, "xor", "rax", "rbx", "0xFFFFFFFF", "0xFF000000", "0x00FFFFFF"),
+    AluTestCase(32, "xor", "eax", "ebx", "0xFFFFFFFF", "0xFF000000", "0x00FFFFFF"),
+    AluTestCase(16, "xor", "ax", "bx", "0xFFFF", "0xFF00", "0x00FF"),
+    AluTestCase(8, "xor", "ah", "bl", "0xFF", "0xF0", "0x0F"),
+    AluTestCase(8, "xor", "al", "bl", "0xFF", "0xF0", "0x0F"),
+
+    # AND
+    AluTestCase(64, "and", "rax", "rbx", "0xFFFFFFFFFFFFFFFF", "0xFFFF", "0xFFFF"),
+    AluTestCase(32, "and", "eax", "ebx", "0xFFFFFFFF", "0xFFFF", "0xFFFF"),
+    AluTestCase(16, "and", "ax", "bx", "0xFFFF", "0xFF", "0xFF"),
+    AluTestCase(8, "and", "ah", "bl", "0xFF", "0xF0", "0xF0"),
+    AluTestCase(8, "and", "al", "bl", "0xFF", "0xF0", "0xF0"),
+
+    # MOVZX reg, reg
+    AluTestCase(16, "movzx", "rax", "bx", "0", "-1", "0xFFFF"),
+    AluTestCase(8,  "movzx", "rax", "bl", "0", "-1", "0xFF"),
+    AluTestCase(16, "movzx", "eax", "bx", "0", "-1", "0xFFFF"),
+    AluTestCase(8,  "movzx", "eax", "bl", "0", "-1", "0xFF"),
+    AluTestCase(8,  "movzx", "ax", "bl", "0", "-1", "0xFF"),
+
+    # MOVSX reg, reg
+    AluTestCase(32, "movsx", "rax", "ebx", "0", "-1", "-1"),
+    AluTestCase(16, "movsx", "rax", "bx", "0", "-1", "-1"),
+    AluTestCase(8,  "movsx", "rax", "bl", "0", "-1", "-1"),
+    AluTestCase(16, "movsx", "eax", "bx", "0", "-1", "-1"),
+    AluTestCase(8,  "movsx", "eax", "bl", "0", "-1", "-1"),
+    AluTestCase(8,  "movsx", "ax", "bl", "0", "-1", "-1"),
 ]
 
 CARRY_TESTS = [

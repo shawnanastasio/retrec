@@ -13,12 +13,20 @@ COLOR_RED = "\u001b[31m"
 CARGS = {'reset': COLOR_RESET, 'yellow': COLOR_YELLOW, 'green': COLOR_GREEN, 'red': COLOR_RED}
 
 def run_test(retrec, test):
+    failures = []
+    passes = []
+
     result = subprocess.run([retrec, test], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    output = result.stdout.decode("UTF-8")
+    try:
+        output = result.stdout.decode("UTF-8")
+    except Exception as e:
+        failures.append("Unable to parse program output: {}".format(e))
+        return (failures, passes)
+
     print(output.rstrip())
 
-    failures = re.findall("(FAIL:.*)", output)
-    passes = re.findall("PASS:.*", output)
+    failures += re.findall("(FAIL:.*)", output)
+    passes += re.findall("PASS:.*", output)
 
     if result.returncode != 0:
         failures.append("Process exited with code {}".format(result.returncode))
