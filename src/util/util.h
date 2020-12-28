@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <type_traits>
 #include <cstdint>
 #include <cassert>
@@ -57,30 +58,19 @@ align_to(ValT val, AlignT alignment) {
     return (ValT)((uintptr_t)val & ~(alignment - 1));
 }
 
-// C++ is a great language
-#define DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, op) \
-[[maybe_unused]] static inline T operator op (T a, T b) { \
-    return static_cast<T>( \
-            static_cast<std::underlying_type<T>::type>(a) op \
-            static_cast<std::underlying_type<T>::type>(b)); \
+template <typename ContainerT, typename ValT>
+bool contains(const ContainerT &container, ValT val) {
+    return std::find(container.cbegin(), container.cend(), val) != container.cend();
 }
 
-#define DECLARE_SCOPED_ENUM_UNARY_OPERATOR(T, op) \
-[[maybe_unused]] static inline T operator op (T a) { \
-    return static_cast<T>(op static_cast<std::underlying_type<T>::type>(a)); \
+template <typename ContainerT, typename ValListT>
+bool contains_any(const ContainerT &container, const ValListT &val_list) {
+    for (auto &val : val_list) {
+        if (contains(container, val))
+            return true;
+    }
+    return false;
 }
-
-#define DECLARE_SCOPED_ENUM_BITWISE_OPERATORS(T) \
-    DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, |) \
-    DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, &) \
-    DECLARE_SCOPED_ENUM_BINARY_OPERATOR(T, ^) \
-    DECLARE_SCOPED_ENUM_UNARY_OPERATOR(T, ~)
-
-#define DISABLE_COPY_AND_MOVE(classname) \
-    classname(const classname &other) = delete; \
-    classname& operator=(const classname &other) = delete; \
-    classname(const classname &&other) = delete; \
-    classname& operator=(classname &&other) = delete;
 
 template<class... Ts> struct Overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
@@ -94,6 +84,12 @@ template <typename EnumT>
 constexpr std::underlying_type_t<EnumT> enum_cast(EnumT val) {
     return static_cast<std::underlying_type_t<EnumT>>(val);
 }
+
+#define DISABLE_COPY_AND_MOVE(classname) \
+    classname(const classname &other) = delete; \
+    classname& operator=(const classname &other) = delete; \
+    classname(const classname &&other) = delete; \
+    classname& operator=(classname &&other) = delete;
 
 //
 // Logging

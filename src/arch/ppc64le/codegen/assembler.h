@@ -398,9 +398,37 @@ public:
     }
 
     void lhzux(uint8_t rt, uint8_t ra, uint8_t rb) {
-        ASM_LOG("Emitting lhhux r%u, r%u, r%u\n", rt, ra, rb);
+        ASM_LOG("Emitting lhzux r%u, r%u, r%u\n", rt, ra, rb);
         EMIT_INSN(Operation::LHZUX, [=] {
             return self->x_form(31, rt, ra, rb, 311, 0);
+        }, rt, ra, rb);
+    }
+
+    void lha(uint8_t rt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting lha r%u, %d(r%u)\n", rt, d, ra);
+        EMIT_INSN(Operation::LHA, [=] {
+            return self->d_form(42, rt, ra, d);
+        }, rt, ra, d);
+    }
+
+    void lhax(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lhax r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LHAX, [=] {
+            return self->x_form(31, rt, ra, rb, 343, 0);
+        }, rt, ra, rb);
+    }
+
+    void lhau(uint8_t rt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting lhau r%u, %d(r%u)\n", rt, d, ra);
+        EMIT_INSN(Operation::LHAU, [=] {
+            return self->d_form(43, rt, ra, d);
+        }, rt, ra, d);
+    }
+
+    void lhaux(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lhaux r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LHAUX, [=] {
+            return self->x_form(31, rt, ra, rb, 375, 0);
         }, rt, ra, rb);
     }
 
@@ -429,6 +457,28 @@ public:
         ASM_LOG("Emitting lwzux r%u, r%u, r%u\n", rt, ra, rb);
         EMIT_INSN(Operation::LWZUX, [=] {
             return self->x_form(31, rt, ra, rb, 55, 0);
+        }, rt, ra, rb);
+    }
+
+    void lwa(uint8_t rt, uint8_t ra, int16_t ds) {
+        ASM_LOG("Emitting lwa r%u, %d(r%u)\n", rt, ds, ra);
+        EMIT_INSN(Operation::LWA, [=] {
+            check_mask(ds, 0xFFFCU);
+            return self->ds_form(58, rt, ra, ds, 2);
+        }, rt, ra, ds);
+    }
+
+    void lwax(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lwax r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LWAX, [=] {
+            return self->x_form(31, rt, ra, rb, 341, 0);
+        }, rt, ra, rb);
+    }
+
+    void lwaux(uint8_t rt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lwaux r%u, r%u, r%u\n", rt, ra, rb);
+        EMIT_INSN(Operation::LWAUX, [=] {
+            return self->x_form(31, rt, ra, rb, 373, 0);
         }, rt, ra, rb);
     }
 
@@ -770,6 +820,13 @@ public:
         }, ra, rs, modify_cr);
     }
 
+    void extsw(uint8_t ra, uint8_t rs, bool modify_cr = false) {
+        ASM_LOG("Emitting extsw%s r%u, r%u\n", modify_cr?".":"", ra, rs);
+        EMIT_INSN(Operation::EXTSW, [=] {
+            return self->x_form(31, rs, ra, 0, 986, modify_cr);
+        }, ra, rs, modify_cr);
+    }
+
     // 3.3.14 Fixed-Point Rotate and Shift Instruction
     void rlwinm(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, uint8_t me, bool modify_cr = false) {
         ASM_LOG("Emitting rlwinm%s r%u, r%u, %u, %u, %u\n", modify_cr?".":"", ra, rs, sh, mb, me);
@@ -791,7 +848,7 @@ public:
             return self->md_form(30, rs, ra, sh, me, 0, modify_cr);
         }, ra, rs, sh, me, modify_cr);
     }
-    void srdi(uint8_t rx, uint8_t ry, uint8_t n, bool modify_cr) {
+    void srdi(uint8_t rx, uint8_t ry, uint8_t n, bool modify_cr = false) {
         check_mask(n, 0b11111U);
         rldicl(rx, ry, 64-n, n, modify_cr);
     }

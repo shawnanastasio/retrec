@@ -2,6 +2,7 @@
 
 #include <util/util.h>
 #include <util/magic.h>
+#include <util/staticvector.h>
 
 #include <array>
 #include <functional>
@@ -62,6 +63,12 @@ struct MemOp {
 
 #undef LLIR_ALLOW_INTERNAL_INCLUDE
 
+enum class Extension {
+    NONE, // Do not perform extension
+    SIGN, // Perform sign extension
+    ZERO, // Perofmr zero extension
+};
+
 //
 // LoadStore
 //
@@ -74,11 +81,7 @@ struct LoadStore {
     } op {};
 
     // Whether to perform sign extension
-    enum class Extension {
-        NONE, // Do not perform extension
-        SIGN, // Perform sign extension
-        ZERO, // Perofmr zero extension
-    } extension {};
+    Extension extension {};
 };
 
 //
@@ -118,23 +121,23 @@ struct Alu {
 
         COUNT
     };
-    using FlagArr = std::array<Flag, (size_t)Flag::COUNT-1>;
 
-    static void iterate_flags(const FlagArr &flags, std::function<void(Flag)> cb) {
-        for (size_t i = 0; i < flags.size() && flags[i] != llir::Alu::Flag::INVALID; i++)
-            cb(flags[i]);
-    }
+    // Extension type, if any
+    Extension extension {};
 
-    // Flags modified by this operation,
+    // Container for a contiguous, static, 0-delimited array of Flag values
+    using FlagArr = StaticVector<Flag, (size_t)Flag::COUNT-1>;
+
+    // Flags modified by this operation
     FlagArr flags_modified {};
 
-    // Flags cleared (set to 0) unconditionally by this operation.
+    // Flags cleared (set to 0) unconditionally by this operation
     FlagArr flags_cleared {};
 
-    static constexpr FlagArr all_flags = {
+    static constexpr FlagArr all_flags = {{
         Flag::CARRY, Flag::PARITY, Flag::AUXILIARY_CARRY, Flag::ZERO,
         Flag::SIGN, Flag::OVERFLOW
-    };
+    }, 6};
 };
 
 //
@@ -272,9 +275,9 @@ inline std::string to_string(const LoadStore &loadstore) {
 
     ret += "ext=";
     switch (loadstore.extension) {
-        case LoadStore::Extension::NONE: ret += "NONE"; break;
-        case LoadStore::Extension::ZERO: ret += "ZERO"; break;
-        case LoadStore::Extension::SIGN: ret += "SIGN"; break;
+        case Extension::NONE: ret += "NONE"; break;
+        case Extension::ZERO: ret += "ZERO"; break;
+        case Extension::SIGN: ret += "SIGN"; break;
     }
     ret += ")";
     return ret;

@@ -29,6 +29,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     llir::Insn llinsn;
     llinsn.address = insn->address;
     llinsn.size = insn->size;
+    llir::Extension extension = llir::Extension::NONE;
 
     switch (insn->id) {
         //
@@ -151,7 +152,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 2;
             llinsn.alu().modifies_flags = true;
             llinsn.alu().flags_modified = llir::Alu::all_flags;
-            llinsn.alu().flags_cleared = {llir::Alu::Flag::CARRY, llir::Alu::Flag::OVERFLOW};
+            llinsn.alu().flags_cleared = {{llir::Alu::Flag::CARRY, llir::Alu::Flag::OVERFLOW}, 2};
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
             fill_operand(detail->x86.operands[1], llinsn.src[1]);
             if (llinsn.dest_cnt)
@@ -167,7 +168,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.alu().modifies_flags = true;
 
             using Flag = llir::Alu::Flag;
-            llinsn.alu().flags_modified = { Flag::OVERFLOW, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY };
+            llinsn.alu().flags_modified = {{Flag::OVERFLOW, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY}, 5};
 
             fill_operand(detail->x86.operands[0], llinsn.dest[0]);
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
@@ -183,11 +184,12 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         // LoadStore
         //
 
-        case X86_INS_MOVZX:  llinsn.loadstore().extension = llir::LoadStore::Extension::ZERO; goto mov_common;
-        case X86_INS_MOVSX:  llinsn.loadstore().extension = llir::LoadStore::Extension::SIGN; goto mov_common;
-        case X86_INS_LEA:    goto mov_common;
-        case X86_INS_MOVABS: goto mov_common;
-        case X86_INS_MOV:    goto mov_common;
+        case X86_INS_MOVZX:   extension = llir::Extension::ZERO; goto mov_common;
+        case X86_INS_MOVSX:   extension = llir::Extension::SIGN; goto mov_common;
+        case X86_INS_MOVSXD:  extension = llir::Extension::SIGN; goto mov_common;
+        case X86_INS_LEA:     goto mov_common;
+        case X86_INS_MOVABS:  goto mov_common;
+        case X86_INS_MOV:     goto mov_common;
         mov_common:
             assert(detail->x86.op_count == 2);
             llinsn.dest_cnt = 1;
@@ -208,11 +210,13 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             } else if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_MEM) {
                 // mov reg, mem - Load OR LEA
                 llinsn.loadstore().op = (insn->id == X86_INS_LEA) ? llir::LoadStore::Op::LEA : llir::LoadStore::Op::LOAD;
+                llinsn.loadstore().extension = extension;
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
             } else if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_REG) {
                 // mov reg, reg, - Move Register
                 llinsn.alu().op = llir::Alu::Op::MOVE_REG;
+                llinsn.alu().extension = extension;
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
             } else {

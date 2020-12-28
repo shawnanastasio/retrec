@@ -39,6 +39,7 @@
     x(EQV, assembler::creqv) \
     x(EXTSB, assembler::extsb) \
     x(EXTSH, assembler::extsh) \
+    x(EXTSW, assembler::extsw) \
     x(LBZ, assembler::lbz) \
     x(LBZU, assembler::lbzu) \
     x(LBZUX, assembler::lbzux) \
@@ -47,10 +48,17 @@
     x(LDU, assembler::ldu) \
     x(LDUX, assembler::ldux) \
     x(LDX, assembler::ldx) \
+    x(LHA, assembler::lha) \
+    x(LHAU, assembler::lhau) \
+    x(LHAUX, assembler::lhaux) \
+    x(LHAX, assembler::lhax) \
     x(LHZ, assembler::lhz) \
     x(LHZU, assembler::lhzu) \
     x(LHZUX, assembler::lhzux) \
     x(LHZX, assembler::lhzx) \
+    x(LWA, assembler::lwa) \
+    x(LWAUX, assembler::lwaux) \
+    x(LWAX, assembler::lwax) \
     x(LWZ, assembler::lwz) \
     x(LWZU, assembler::lwzu) \
     x(LWZUX, assembler::lwzux) \

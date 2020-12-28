@@ -54,6 +54,7 @@ add_executable(retrec
     process_memory_map.cpp
     process_memory_map.h
     util/magic.h
+    util/staticvector.h
     util/util.cpp
     util/util.h
     virtual_address_mapper.cpp

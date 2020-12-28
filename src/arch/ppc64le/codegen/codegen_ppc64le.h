@@ -86,6 +86,7 @@ enum class LastFlagOpData : uint32_t {
 enum class LastFlagOp : uint32_t {
     SUB = (0 << 8),
     ADD = (1 << 8),
+    INVALID = 0xFFFFFFFF
 };
 
 } // namespace ppc64le
@@ -130,7 +131,8 @@ class codegen_ppc64le final : public codegen {
     static uint64_t resolve_branch_target(const llir::Insn &insn);
 
     // All ALU flags that are stored in Rc=0 (i.e. not lazily evaluated)
-    static constexpr llir::Alu::FlagArr llir$alu$all_rc0_flags = { llir::Alu::Flag::SIGN, llir::Alu::Flag::ZERO };
+    static constexpr llir::Alu::FlagArr llir$alu$all_rc0_flags = {{llir::Alu::Flag::SIGN, llir::Alu::Flag::ZERO}, 2};
+    static constexpr llir::Alu::FlagArr llir$alu$all_lazy_flags = {{llir::Alu::Flag::CARRY, llir::Alu::Flag::OVERFLOW}, 2};
 
     // Import register aliases from the ABI
     static constexpr auto GPR_SP = ppc64le::ABIRetrec<Traits>::GPR_SP;
@@ -299,9 +301,11 @@ class codegen_ppc64le final : public codegen {
     void macro$mask_register(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src, llir::Register::Mask mask,
                              bool invert, bool modify_cr);
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
-                                    llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others, bool modify_cr);
+                                    llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others,
+                                    bool modify_cr, llir::Extension extension = llir::Extension::NONE);
     void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::Operand &mem_op, llir::LoadStore::Op op,
-                         llir::Register::Mask reg_mask, bool reg_zero_others, const llir::Insn &insn);
+                         llir::Register::Mask reg_mask, bool reg_zero_others, const llir::Insn &insn,
+                         llir::Extension extension = llir::Extension::NONE);
     void macro$interrupt$trap(gen_context &ctx, runtime_context_ppc64le::NativeTarget target, bool linkage = true);
     template <typename... Args> void macro$call_native_function(gen_context &ctx, Args... args);
     void macro$nops(ppc64le::assembler &assembler, size_t count);
