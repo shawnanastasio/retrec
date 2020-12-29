@@ -444,6 +444,7 @@ GREATER_EQ_TESTS = [
 ]
 
 SIGN_TESTS = [
+    # CMP
     FlagTestCase(64, "rax", "", "0", "1", "cmp", "js", "jns"), # SF=1
     FlagTestCase(64, "rax", "", "1", "1", "cmp", "jns", "js"),  # SF=0
     FlagTestCase(64, "rax", "", "0", "-1", "cmp", "jns", "js"), # SF=0
@@ -468,6 +469,32 @@ SIGN_TESTS = [
     FlagTestCase(8, "al", "", "1", "1", "cmp", "jns", "js"), # SF=0
     FlagTestCase(8, "al", "", "0", "-1", "cmp", "jns", "js"), # SF=0
     FlagTestCase(8, "al", "", "-1", "1", "cmp", "js", "jns"), # SF=1
+
+    # TEST
+    FlagTestCase(64, "rax", "", "-1", "-1", "test", "js", "jns"), # SF=1
+    FlagTestCase(64, "rax", "", "-1", "1", "test", "jns", "js"), # SF=0
+    FlagTestCase(64, "rax", "", "1", "-1", "test", "jns", "js"), # SF=0
+    FlagTestCase(64, "rax", "rbx", "-1", "0x8000000000000000", "test", "js", "jns"), # SF=1
+
+    FlagTestCase(32, "eax", "", "-1", "-1", "test", "js", "jns"), # SF=1
+    FlagTestCase(32, "eax", "", "-1", "1", "test", "jns", "js"), # SF=0
+    FlagTestCase(32, "eax", "", "1", "-1", "test", "jns", "js"), # SF=0
+    FlagTestCase(32, "eax", "", "-1", "0x80000000", "test", "js", "jns"), # SF=1
+
+    FlagTestCase(16, "ax", "", "-1", "-1", "test", "js", "jns"), # SF=1
+    FlagTestCase(16, "ax", "", "-1", "1", "test", "jns", "js"), # SF=0
+    FlagTestCase(16, "ax", "", "1", "-1", "test", "jns", "js"), # SF=0
+    FlagTestCase(16, "ax", "", "-1", "0x8000", "test", "js", "jns"), # SF=1
+
+    FlagTestCase(8, "ah", "", "-1", "-1", "test", "js", "jns"), # SF=1
+    FlagTestCase(8, "ah", "", "-1", "1", "test", "jns", "js"), # SF=0
+    FlagTestCase(8, "ah", "", "1", "-1", "test", "jns", "js"), # SF=0
+    FlagTestCase(8, "ah", "", "-1", "0x80", "test", "js", "jns"), # SF=1
+
+    FlagTestCase(8, "al", "", "-1", "-1", "test", "js", "jns"), # SF=1
+    FlagTestCase(8, "al", "", "-1", "1", "test", "jns", "js"), # SF=0
+    FlagTestCase(8, "al", "", "1", "-1", "test", "jns", "js"), # SF=0
+    FlagTestCase(8, "al", "", "-1", "0x80", "test", "js", "jns"), # SF=1
 ]
 
 GREATER_TESTS = [
@@ -507,7 +534,57 @@ GREATER_TESTS = [
     FlagTestCase(8, "al", "", "0", "1", "cmp", "jle", "jg"), # !ZF, SF, OF
 ]
 
+ZERO_TESTS = [
+    # CMP
+    FlagTestCase(64, "rax", "", "1", "1", "cmp", "je", "jne"), # ZF=1
+    FlagTestCase(64, "rax", "", "0", "1", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(64, "rax", "", "1", "0", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(64, "rax", "", "0", "0", "cmp", "je", "jne"), # ZF=1
+
+    FlagTestCase(32, "eax", "", "1", "1", "cmp", "je", "jne"), # ZF=1
+    FlagTestCase(32, "eax", "", "0", "1", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(32, "eax", "", "1", "0", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(32, "eax", "", "0", "0", "cmp", "je", "jne"), # ZF=1
+
+    FlagTestCase(16, "ax", "", "1", "1", "cmp", "je", "jne"), # ZF=1
+    FlagTestCase(16, "ax", "", "0", "1", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(16, "ax", "", "1", "0", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(16, "ax", "", "0", "0", "cmp", "je", "jne"), # ZF=1
+
+    FlagTestCase(8, "ah", "", "1", "1", "cmp", "je", "jne"), # ZF=1
+    FlagTestCase(8, "ah", "", "0", "1", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(8, "ah", "", "1", "0", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(8, "ah", "", "0", "0", "cmp", "je", "jne"), # ZF=1
+
+    FlagTestCase(8, "al", "", "1", "1", "cmp", "je", "jne"), # ZF=1
+    FlagTestCase(8, "al", "", "0", "1", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(8, "al", "", "1", "0", "cmp", "jne", "je"), # ZF=0
+    FlagTestCase(8, "al", "", "0", "0", "cmp", "je", "jne"), # ZF=1
+
+    # TEST
+    FlagTestCase(64, "rax", "", "1", "0", "test", "je", "jne"), # ZF=1
+    FlagTestCase(64, "rax", "", "1", "1", "test", "jne", "je"), # ZF=0
+    FlagTestCase(64, "rax", "", "0", "1", "test", "je", "jne"), # ZF=1
+
+    FlagTestCase(32, "eax", "", "1", "0", "test", "je", "jne"), # ZF=1
+    FlagTestCase(32, "eax", "", "1", "1", "test", "jne", "je"), # ZF=0
+    FlagTestCase(32, "eax", "", "0", "1", "test", "je", "jne"), # ZF=1
+
+    FlagTestCase(16, "ax", "", "1", "0", "test", "je", "jne"), # ZF=1
+    FlagTestCase(16, "ax", "", "1", "1", "test", "jne", "je"), # ZF=0
+    FlagTestCase(16, "ax", "", "0", "1", "test", "je", "jne"), # ZF=1
+
+    FlagTestCase(8, "ah", "", "1", "0", "test", "je", "jne"), # ZF=1
+    FlagTestCase(8, "ah", "", "1", "1", "test", "jne", "je"), # ZF=0
+    FlagTestCase(8, "ah", "", "0", "1", "test", "je", "jne"), # ZF=1
+
+    FlagTestCase(8, "al", "", "1", "0", "test", "je", "jne"), # ZF=1
+    FlagTestCase(8, "al", "", "1", "1", "test", "jne", "je"), # ZF=0
+    FlagTestCase(8, "al", "", "0", "1", "test", "je", "jne"), # ZF=1
+]
+
 SUITES = {
+    "ZF" : ZERO_TESTS,
     "SF" : SIGN_TESTS,
     "CF" : CARRY_TESTS,
     "OF" : OVERFLOW_TESTS,

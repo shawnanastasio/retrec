@@ -2,6 +2,7 @@ ASM_SRCS:=$(shell find . -name "*.S")
 ASM_OBJS:=$(ASM_SRCS:.S=.o)
 ASM_TARGETS:=$(ASM_SRCS:.S=.bin)
 GENERATED_ASM_TARGETS= \
+	asm/zf.gen.bin \
 	asm/sf.gen.bin \
 	asm/cf.gen.bin \
 	asm/of.gen.bin \
