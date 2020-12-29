@@ -35,6 +35,7 @@ struct runtime_context_ppc64le {
         INVALID,
         SYSCALL,     // Execute a syscall
         CALL,        // Emulate a CALL instruction
+        JUMP,        // Emulate a JUMP instruction
         PATCH_CALL,  // Patch in a direct CALL
         PATCH_JUMP,  // Patch in a direct JUMP
     } native_function_call_target;

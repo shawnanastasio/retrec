@@ -187,6 +187,7 @@ void codegen_ppc64le<T>::emit_epilogue(gen_context &ctx, const lifted_llir_block
 template <typename T>
 uint64_t codegen_ppc64le<T>::get_last_untranslated_access(runtime_context &rctx) {
     switch (rctx.native_function_call_target) {
+        case runtime_context_ppc64le::NativeTarget::JUMP:
         case runtime_context_ppc64le::NativeTarget::CALL:
             // Trap was for a CALL, so the target is in R0 (see fixed_helper$call)
             return rctx.host_translated_context.gprs[0];
@@ -1598,7 +1599,7 @@ void codegen_ppc64le<T>::fixed_helper$indirect_jmp$emit(gen_context &ctx) {
 
     // fh_ret_trap: Lookup failed - trap to runtime
     RELOC_DECLARE_LABEL_AFTER("fh_indirect_jmp_trap");
-    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::CALL);
+    macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::JUMP);
 }
 
 /**

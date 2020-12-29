@@ -76,6 +76,7 @@ struct ABIRetrec<TargetTraitsX86_64> {
     // Registers used by retrec functions that must be preserved by foreign function calls
     static constexpr llir::PPC64Register non_volatile_regs[] = {
         // GPRs
+        llir::PPC64Register::R0,  /* Non-volatile scratch */
         llir::PPC64Register::R1,  /* SP */
         llir::PPC64Register::R3,  /* Fixed */
         llir::PPC64Register::R4,  /* Fixed */

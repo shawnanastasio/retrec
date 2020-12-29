@@ -75,6 +75,7 @@ status_code runtime_context_ppc64le::execute() {
                 break;
 
             case NativeTarget::CALL:
+            case NativeTarget::JUMP:
             case NativeTarget::PATCH_CALL:
             case NativeTarget::PATCH_JUMP:
                 // Translated code attempted to branch to untranslated code
