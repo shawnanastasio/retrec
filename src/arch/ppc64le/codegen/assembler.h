@@ -178,9 +178,9 @@ public:
             return (val & mask) == val;
         } else {
             if (val < 0) {
-                return (-val & mask) == static_cast<MaskT>(-val);
+                return (-val & (mask >> 1)) == static_cast<MaskT>(-val);
             } else {
-                return (val & mask) == static_cast<MaskT>(val);
+                return (val & (mask >> 1)) == static_cast<MaskT>(val);
             }
         }
     }
