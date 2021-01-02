@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cassert>
+#include <utility>
 
 namespace retrec {
 
@@ -17,12 +18,27 @@ class StaticVector {
     size_t count { 0 };
     using UnderlyingArr = std::array<T, MAX_SIZE>;
 
+    template <typename ArrT, std::size_t... I>
+    constexpr StaticVector(const ArrT &in_arr, size_t n, std::index_sequence<I...>)
+            : arr({in_arr[I]...}), count(n) {}
 public:
+    // Construct from an array of Ts
+    template <typename ArrT, size_t N>
+    constexpr StaticVector(const ArrT (&in_arr)[N])
+            : StaticVector(in_arr, N, std::make_index_sequence<N>{}) {
+        static_assert(N <= MAX_SIZE);
+    }
+
+    // Construct from Ts
+    template <typename... ElemTs, size_t N = sizeof...(ElemTs)>
+    constexpr StaticVector(ElemTs... elements) : arr({elements...}), count(N) {
+        static_assert(N <= MAX_SIZE);
+    }
+
     constexpr StaticVector() : arr() {}
-    constexpr StaticVector(const UnderlyingArr &other, size_t count_) : arr(other), count(count_) {}
-    StaticVector(const StaticVector &other) :
+    constexpr StaticVector(const StaticVector &other) :
         arr(other.arr), count(other.count) {}
-    StaticVector &operator=(const StaticVector &other) {
+    constexpr StaticVector &operator=(const StaticVector &other) {
         arr = other.arr;
         count = other.count;
         return *this;
@@ -61,7 +77,7 @@ public:
             if (!contains(other, elem))
                 ret[ret_size++] = elem;
         }
-        return {ret, ret_size};
+        return ret;
     }
 
     size_t size() const { return count; }

@@ -153,7 +153,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 2;
             llinsn.alu().modifies_flags = true;
             llinsn.alu().flags_modified = llir::Alu::all_flags;
-            llinsn.alu().flags_cleared = {{Flag::CARRY, Flag::OVERFLOW}, 2};
+            llinsn.alu().flags_cleared = {Flag::CARRY, Flag::OVERFLOW};
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
             fill_operand(detail->x86.operands[1], llinsn.src[1]);
             if (llinsn.dest_cnt)
@@ -167,7 +167,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 2;
             llinsn.dest_cnt = 1;
             llinsn.alu().modifies_flags = true;
-            llinsn.alu().flags_modified = {{Flag::OVERFLOW, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY}, 5};
+            llinsn.alu().flags_modified = {Flag::OVERFLOW, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY};
 
             fill_operand(detail->x86.operands[0], llinsn.dest[0]);
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
@@ -183,7 +183,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.alu().op = llir::Alu::Op::IMUL;
             llinsn.alu().modifies_flags = true;
             llinsn.alu().flags_modified = llir::Alu::all_flags;
-            llinsn.alu().flags_undefined = {{Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY}, 4};
+            llinsn.alu().flags_undefined = {Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY};
             switch (detail->x86.op_count) {
                 case 1:
                     // One-operand form - OP1*rax -> RDX:RAX

@@ -137,10 +137,10 @@ struct Alu {
     // Flags that will be left in an undefined state after this operation
     FlagArr flags_undefined {};
 
-    static constexpr FlagArr all_flags = {{
+    static constexpr FlagArr all_flags = {
         Flag::CARRY, Flag::PARITY, Flag::AUXILIARY_CARRY, Flag::ZERO,
         Flag::SIGN, Flag::OVERFLOW
-    }, 6};
+    };
 };
 
 //

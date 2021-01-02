@@ -140,8 +140,8 @@ class codegen_ppc64le final : public codegen {
     static uint64_t resolve_branch_target(const llir::Insn &insn);
 
     // All ALU flags that are stored in Rc=0 (i.e. not lazily evaluated)
-    static constexpr llir::Alu::FlagArr llir$alu$all_rc0_flags = {{llir::Alu::Flag::SIGN, llir::Alu::Flag::ZERO}, 2};
-    static constexpr llir::Alu::FlagArr llir$alu$all_lazy_flags = {{llir::Alu::Flag::CARRY, llir::Alu::Flag::OVERFLOW}, 2};
+    static constexpr llir::Alu::FlagArr llir$alu$all_rc0_flags = {llir::Alu::Flag::SIGN, llir::Alu::Flag::ZERO};
+    static constexpr llir::Alu::FlagArr llir$alu$all_lazy_flags = {llir::Alu::Flag::CARRY, llir::Alu::Flag::OVERFLOW};
 
     // Import register aliases from the ABI
     static constexpr auto GPR_SP = ppc64le::ABIRetrec<Traits>::GPR_SP;
