@@ -107,8 +107,8 @@ public:
     /**
      * Returns a reference to the stored parameter for assembler function `F` at index `i`.
      * For example, if `my_insn` is an instruction of type Operation::B,
-     *   my_insn.parameter<0>(&assembler::b_internal)
-     * will return an int32_t&, since the first parameter of assembler::b_internal is an int32_t.
+     *   my_insn.parameter<0>(&assembler::b)
+     * will return an int32_t&, since the first parameter of assembler::b is an int32_t.
      *
      * You should probably use the `insn_arg` helper template instead, which accepts
      * a constexpr `Operation` value and selects the correct method signature accordingly.
@@ -154,6 +154,7 @@ class assembler {
 
     status_code write32(uint32_t x);
 
+    status_code a_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t bc, uint8_t xo, uint8_t rc);
     status_code b_form(uint8_t po, uint8_t bo, uint8_t bi, int16_t bd, uint8_t aa, uint8_t lk);
     status_code d_form(uint8_t po, uint8_t rt, uint8_t ra, int16_t i);
     status_code ds_form(uint8_t po, uint8_t rs, uint8_t ra, int16_t ds, uint8_t xo);
@@ -167,6 +168,7 @@ class assembler {
     status_code xfx_form(uint8_t po, uint8_t rt, uint16_t spr, uint16_t xo);
     status_code xl_form(uint8_t po, uint8_t bt, uint8_t ba, uint8_t bb, uint16_t xo, uint8_t lk);
     status_code xo_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t oe, uint16_t xo, uint8_t rc);
+    status_code xs_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint16_t xo, uint8_t rc);
 
 public:
     // Helper for checking if values fit within a provided mask
@@ -199,16 +201,6 @@ public:
     auto &get_stream() { return stream; }
     void set_quiet(bool val) { quiet = val; }
 
-    //
-    // Book I
-    //
-
-    // 2.4 Branch Instructions
-    static constexpr uint8_t CR_LT = 0;
-    static constexpr uint8_t CR_GT = 1;
-    static constexpr uint8_t CR_EQ = 2;
-    static constexpr uint8_t CR_SO = 3;
-
     /**
      * Helper macro to create an instruction_stream entry that emits an instruction.
      *
@@ -239,7 +231,17 @@ public:
 #define UNPACK(x) decltype(x) x = *(decltype(x)*)(&params[n++]);
 #define UNPACK_ARGS(...) [[maybe_unused]] uint8_t n = 0; FOR_EACH(UNPACK, ##__VA_ARGS__)
 
-    void b_internal(rel_off_26bit target, AA aa, LK lk) {
+    //
+    // Book I
+    //
+
+    // 2.4 Branch Instructions
+    static constexpr uint8_t CR_LT = 0;
+    static constexpr uint8_t CR_GT = 1;
+    static constexpr uint8_t CR_EQ = 2;
+    static constexpr uint8_t CR_SO = 3;
+
+    void b(rel_off_26bit target, AA aa = (AA)false, LK lk = (LK)false) {
         ASM_LOG("Emitting b%s%s 0x%x\n", lk?"l":"", aa?"a":"", target);
 
         EMIT_INSN(Operation::B, [=] {
@@ -247,12 +249,13 @@ public:
             return self->i_form(18, target >> 2, aa, lk);
         }, target, aa, lk);
     }
-    void b(uint32_t li)   { b_internal((rel_off_26bit)li, (AA)0, (LK)0); }
-    void ba(uint32_t li)  { b_internal((rel_off_26bit)li, (AA)1, (LK)0); }
-    void bl(uint32_t li)  { b_internal((rel_off_26bit)li, (AA)0, (LK)1); }
-    void bla(uint32_t li) { b_internal((rel_off_26bit)li, (AA)1, (LK)1); }
+    static constexpr auto b_type = &assembler::b;
+    void b(int32_t target, bool aa = false, bool lk = false) { return b((rel_off_26bit)target, (AA)aa, (LK)lk); }
+    void ba(int32_t li)  { b((rel_off_26bit)li, (AA)1, (LK)0); }
+    void bl(int32_t li)  { b((rel_off_26bit)li, (AA)0, (LK)1); }
+    void bla(int32_t li) { b((rel_off_26bit)li, (AA)1, (LK)1); }
 
-    void bc_internal(BO bo, BI bi, rel_off_16bit target, AA aa, LK lk) {
+    void bc(BO bo, BI bi, rel_off_16bit target, AA aa = (AA)false, LK lk = (LK)false) {
         ASM_LOG("Emitting bc%s%s %u %u 0x%x\n", lk?"l":"", aa?"a":"", (uint32_t)bo, bi, target);
 
         EMIT_INSN(Operation::BC, [=] {
@@ -260,21 +263,36 @@ public:
             return self->b_form(16, (uint8_t)bo, bi, target>>2, aa, lk);
         }, bo, bi, target, aa, lk);
     }
-    void bc(BO bo, uint8_t bi, int16_t target)   { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)0); }
-    void bca(BO bo, uint8_t bi, int16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)0); }
-    void bcl(BO bo, uint8_t bi, int16_t target)  { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)1); }
-    void bcla(BO bo, uint8_t bi, int16_t target) { bc_internal(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)1); }
+    static constexpr auto bc_type = &assembler::bc;
+    void bc(BO bo, uint8_t bi, int16_t target, bool aa = false, bool lk = false) {
+        return bc(bo, (BI)bi, (rel_off_16bit)target, (AA)aa, (LK)lk);
+    }
+    void bca(BO bo, uint8_t bi, int16_t target)  { bc(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)0); }
+    void bcl(BO bo, uint8_t bi, int16_t target)  { bc(bo, (BI)bi, (rel_off_16bit)target, (AA)0, (LK)1); }
+    void bcla(BO bo, uint8_t bi, int16_t target) { bc(bo, (BI)bi, (rel_off_16bit)target, (AA)1, (LK)1); }
 
-    void bcctr_internal(BO bo, uint8_t bi, uint8_t bh, bool lk) {
+    void bcctr(BO bo, BI bi, uint8_t bh, LK lk = (LK)false) {
         ASM_LOG("Emitting bcctr%s %d %d %d\n", lk?"l":"", (uint8_t)bo, bi, bh);
         EMIT_INSN(Operation::BCCTR, [=] {
             return self->xl_form(19, (uint8_t)bo, bi, bh, 528, lk);
         }, bo, bi, bh, lk);
     }
-    void bcctr(BO bo, uint8_t bi, uint8_t bh)  { bcctr_internal(bo, bi, bh, 0); }
-    void bcctrl(BO bo, uint8_t bi, uint8_t bh) { bcctr_internal(bo, bi, bh, 1); }
-    void bctr()  { bcctr_internal(BO::ALWAYS, 0, 0, 0); }
-    void bctrl() { bcctr_internal(BO::ALWAYS, 0, 0, 1); }
+    static constexpr auto bcctr_type = &assembler::bcctr;
+    void bcctr(BO bo, uint8_t bi, uint8_t bh, bool lk = false) { return bcctr(bo, (BI)bi, bh, (LK)lk); }
+    void bcctrl(BO bo, BI bi, uint8_t bh) { bcctr(bo, (BI)bi, bh, (LK)1); }
+    void bctr()  { bcctr(BO::ALWAYS, (BI)0, 0, (LK)0); }
+    void bctrl() { bcctr(BO::ALWAYS, (BI)0, 0, (LK)1); }
+
+    void bclr(BO bo, BI bi, uint8_t bh, LK lk = (LK)false) {
+        ASM_LOG("Emitting bclr%s %d %d %d\n", lk?"l":"", (uint8_t)bo, bi, bh);
+        EMIT_INSN(Operation::BCLR, [=] {
+            return self->xl_form(19, (uint8_t)bo, bi, bh, 16, lk);
+        }, bo, bi, bh, lk);
+    }
+    static constexpr auto bclr_type = &assembler::bclr;
+    void bclrl(BO bo, uint8_t bi, uint8_t bh) { bclr(bo, (BI)bi, bh, (LK)1); }
+    void blr()  { bclr(BO::ALWAYS, (BI)0, 0, (LK)0); }
+    void blrl() { bclr(BO::ALWAYS, (BI)0, 0, (LK)1); }
 
     // 2.5.1 Condition Register Logical Instructions
     void crand(uint8_t bt, uint8_t ba, uint8_t bb) {
@@ -634,6 +652,7 @@ public:
             return self->d_form(14, rt, ra, (uint16_t)si);
         }, rt, ra, si);
     };
+    void li(uint8_t ra, int16_t si) { return addi(ra, 0, si); }
 
     void addis(uint8_t rt, uint8_t ra, int16_t si) {
         ASM_LOG("Emitting addis r%u, r%u, 0x%x\n", rt, ra, si);
@@ -700,6 +719,34 @@ public:
     void nego(uint8_t rt, uint8_t rb)  { neg(rt, rb, 1, 0); }
     void nego_(uint8_t rt, uint8_t rb) { neg(rt, rb, 1, 1); }
 
+    void mullw(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
+        ASM_LOG("Emitting mullw%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
+        EMIT_INSN(Operation::MULLW, [=] {
+            return self->xo_form(31, rt, ra, rb, modify_ov, 235, modify_cr);
+        }, rt, ra, rb, modify_cr, modify_ov);
+    }
+
+    void mulhw(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
+        ASM_LOG("Emitting mulhw%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
+        EMIT_INSN(Operation::MULHW, [=] {
+            return self->xo_form(31, rt, ra, rb, modify_ov, 75, modify_cr);
+        }, rt, ra, rb, modify_cr, modify_ov);
+    }
+
+    void mulld(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
+        ASM_LOG("Emitting mulld%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
+        EMIT_INSN(Operation::MULLD, [=] {
+            return self->xo_form(31, rt, ra, rb, modify_ov, 233, modify_cr);
+        }, rt, ra, rb, modify_cr, modify_ov);
+    }
+
+    void mulhd(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
+        ASM_LOG("Emitting mulhd%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
+        EMIT_INSN(Operation::MULHD, [=] {
+            return self->xo_form(31, rt, ra, rb, modify_ov, 73, modify_cr);
+        }, rt, ra, rb, modify_cr, modify_ov);
+    }
+
     // 3.3.10 Fixed-Point Compare Instructions
     void cmpi(uint8_t bf, bool l, uint8_t ra, int16_t si) {
         ASM_LOG("Emitting cmpi %u, %u, r%u, %d\n", bf, l, ra, si);
@@ -743,6 +790,14 @@ public:
             uint8_t rs = (uint8_t) (bf << (uint8_t)2U) | (l & (uint8_t)1U);
             return self->x_form(31, rs, ra, rb, 32, 0);
         }, bf, l, ra, rb);
+    }
+
+    // 3.3.12 Fixed-Point Select
+    void isel(uint8_t rt, uint8_t ra, uint8_t rb, uint8_t bc) {
+        ASM_LOG("Emitting isel r%u, r%u, r%u, %u\n", rt, ra, rb, bc);
+        EMIT_INSN(Operation::ISEL, [=] {
+            return self->a_form(31, rt, ra, rb, bc, 15, 0);
+        }, rt, ra, rb, bc);
     }
 
     // 3.3.13 Fixed-Point Logical Instructions
@@ -834,6 +889,7 @@ public:
             return self->m_form(21, rs, ra, sh, mb, me, modify_cr);
         }, ra, rs, sh, mb, me, modify_cr);
     }
+    void srwi(uint8_t rx, uint8_t ry, uint8_t n) { return rlwinm(rx, ry, 32-n, n, 31); }
 
     void rlwimi(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t mb, uint8_t me, bool modify_cr = false) {
         ASM_LOG("Emitting rlwimi%s r%u, r%u, %u, %u, %u\n", modify_cr?".":"", ra, rs, sh, mb, me);
@@ -842,7 +898,7 @@ public:
         }, ra, rs, sh, mb, me, modify_cr);
     }
 
-    void rldicl(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t me, bool modify_cr) {
+    void rldicl(uint8_t ra, uint8_t rs, uint8_t sh, uint8_t me, bool modify_cr = false) {
         ASM_LOG("Emitting rldicl%s r%u, r%u, %u, %u\n", modify_cr?".":"", ra, rs, sh, me);
         EMIT_INSN(Operation::RLDICL, [=] {
             return self->md_form(30, rs, ra, sh, me, 0, modify_cr);
@@ -878,6 +934,20 @@ public:
         }, ra, rs, sh, mb, modify_cr);
     }
     void insrdi(uint8_t rt, uint8_t ra, uint8_t n, uint8_t b, bool modify_cr) { rldimi(rt, ra, (uint8_t)(64-(b+n)), b, modify_cr); }
+
+    void srawi(uint8_t ra, uint8_t rs, uint8_t sh, bool modify_cr = false) {
+        ASM_LOG("Emitting srawi%s r%u, r%u, %u\n", modify_cr?".":"", ra, rs, sh);
+        EMIT_INSN(Operation::SRAWI, [=] {
+            return self->x_form(31, rs, ra, sh, 824, modify_cr);
+        }, ra, rs, sh, modify_cr);
+    }
+
+    void sradi(uint8_t ra, uint8_t rs, uint8_t sh, bool modify_cr = false) {
+        ASM_LOG("Emitting sradi%s r%u, r%u, %u\n", modify_cr?".":"", ra, rs, sh);
+        EMIT_INSN(Operation::SRADI, [=] {
+            return self->xs_form(31, rs, ra, sh, 413, modify_cr);
+        }, ra, rs, sh, modify_cr);
+    }
 
     // 3.3.17 Move To/From System Register Instructions
     void mtspr(SPR spr, uint8_t rs) {
@@ -978,7 +1048,7 @@ public:
  * parameters for a given Operation.
  */
 #define ENUM_X(a, ignore) Operation::a,
-#define TYPE_X(ignore, a) decltype(&a),
+#define TYPE_X(ignore, a) decltype(a),
 GEN_ENUM_TO_TYPE_LOOKUP(PPC64LE_ENUMERATE_OPERATIONS, operations, ENUM_X, TYPE_X, Operation)
 #undef ENUM_X
 #undef TYPE_X

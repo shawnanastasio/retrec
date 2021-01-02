@@ -15,6 +15,24 @@ status_code assembler::write32(uint32_t x) {
     return stream->write32(x);
 }
 
+status_code assembler::a_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t bc, uint8_t xo, uint8_t rc) {
+    check_mask(po, PO_MASK);
+    check_mask(rt, REG_MASK);
+    check_mask(ra, REG_MASK);
+    check_mask(rb, REG_MASK);
+    check_mask(bc, REG_MASK);
+    check_mask(xo, REG_MASK);
+    check_mask(rc, 1U);
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (rt & REG_MASK) << (32-11U)
+                    | (ra & REG_MASK) << (32-16U)
+                    | (rb & REG_MASK) << (32-21U)
+                    | (bc & REG_MASK) << (32-26U)
+                    | (xo & REG_MASK) << (32-31U)
+                    | (rc & 1U);
+    return write32(insn);
+}
+
 status_code assembler::b_form(uint8_t po, uint8_t bo, uint8_t bi, int16_t bd, uint8_t aa, uint8_t lk) {
     constexpr uint16_t BD_MASK = 0b11111111111111U;
     check_mask(po, PO_MASK);
@@ -223,7 +241,27 @@ status_code assembler::x_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t rb, ui
                     | (rs & REG_MASK) << (32-11U)
                     | (ra & REG_MASK) << (32-16U)
                     | (rb & REG_MASK) << (32-21U)
-                    | (xo & XO_MASK) <<  (32-31U)
+                    | (xo & XO_MASK)  << (32-31U)
+                    | (rc & 1U);
+    return write32(insn);
+}
+
+status_code assembler::xs_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint16_t xo, uint8_t rc) {
+    constexpr uint16_t XO_MASK = 0b111111111U;
+    constexpr uint8_t SH_MASK = 0b111111U;
+    check_mask(po, PO_MASK);
+    check_mask(rs, REG_MASK);
+    check_mask(ra, REG_MASK);
+    check_mask(sh, SH_MASK);
+    check_mask(xo, XO_MASK);
+    uint8_t sh0 = sh & 0b11111U;
+    uint8_t sh1 = (sh >> 5) & 1;
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (rs & REG_MASK) << (32-11U)
+                    | (ra & REG_MASK) << (32-16U)
+                    | (sh0)           << (32-21U)
+                    | (xo & XO_MASK)  << (32-30U)
+                    | (sh1)           << (32-31U)
                     | (rc & 1U);
     return write32(insn);
 }
