@@ -30,6 +30,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     llinsn.address = insn->address;
     llinsn.size = insn->size;
     llir::Extension extension = llir::Extension::NONE;
+    using Flag = llir::Alu::Flag;
 
     switch (insn->id) {
         //
@@ -152,7 +153,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 2;
             llinsn.alu().modifies_flags = true;
             llinsn.alu().flags_modified = llir::Alu::all_flags;
-            llinsn.alu().flags_cleared = {{llir::Alu::Flag::CARRY, llir::Alu::Flag::OVERFLOW}, 2};
+            llinsn.alu().flags_cleared = {{Flag::CARRY, Flag::OVERFLOW}, 2};
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
             fill_operand(detail->x86.operands[1], llinsn.src[1]);
             if (llinsn.dest_cnt)
@@ -166,8 +167,6 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 2;
             llinsn.dest_cnt = 1;
             llinsn.alu().modifies_flags = true;
-
-            using Flag = llir::Alu::Flag;
             llinsn.alu().flags_modified = {{Flag::OVERFLOW, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY}, 5};
 
             fill_operand(detail->x86.operands[0], llinsn.dest[0]);
@@ -178,6 +177,75 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
         case X86_INS_NOP:
             llinsn.alu().op = llir::Alu::Op::NOP;
+            break;
+
+        case X86_INS_IMUL:
+            llinsn.alu().op = llir::Alu::Op::IMUL;
+            llinsn.alu().modifies_flags = true;
+            llinsn.alu().flags_modified = llir::Alu::all_flags;
+            llinsn.alu().flags_undefined = {{Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY}, 4};
+            switch (detail->x86.op_count) {
+                case 1:
+                    // One-operand form - OP1*rax -> RDX:RAX
+                    llinsn.dest_cnt = 2;
+                    llinsn.src_cnt = 2;
+                    fill_operand(detail->x86.operands[0], llinsn.src[0]);
+                    switch (detail->x86.operands[0].size) {
+                        case 1:
+                            llinsn.src[1].reg()  = get_reg(X86_REG_AL);
+                            llinsn.src[1].width  = llir::Operand::Width::_8BIT;
+                            llinsn.dest[0].reg() = get_reg(X86_REG_AL);
+                            llinsn.dest[0].width  = llir::Operand::Width::_8BIT;
+                            llinsn.dest[1].reg() = get_reg(X86_REG_DL);
+                            llinsn.dest[1].width  = llir::Operand::Width::_8BIT;
+                            break;
+                        case 2:
+                            llinsn.src[1].reg()  = get_reg(X86_REG_AX);
+                            llinsn.src[1].width  = llir::Operand::Width::_16BIT;
+                            llinsn.dest[0].reg() = get_reg(X86_REG_AX);
+                            llinsn.dest[0].width  = llir::Operand::Width::_16BIT;
+                            llinsn.dest[1].reg() = get_reg(X86_REG_DX);
+                            llinsn.dest[1].width  = llir::Operand::Width::_16BIT;
+                            break;
+                        case 4:
+                            llinsn.src[1].reg()  = get_reg(X86_REG_EAX);
+                            llinsn.src[1].width  = llir::Operand::Width::_32BIT;
+                            llinsn.dest[0].reg() = get_reg(X86_REG_EAX);
+                            llinsn.dest[0].width  = llir::Operand::Width::_32BIT;
+                            llinsn.dest[1].reg() = get_reg(X86_REG_EDX);
+                            llinsn.dest[1].width  = llir::Operand::Width::_32BIT;
+                            break;
+                        case 8:
+                            llinsn.src[1].reg()  = get_reg(X86_REG_RAX);
+                            llinsn.src[1].width  = llir::Operand::Width::_64BIT;
+                            llinsn.dest[0].reg() = get_reg(X86_REG_RAX);
+                            llinsn.dest[0].width  = llir::Operand::Width::_64BIT;
+                            llinsn.dest[1].reg() = get_reg(X86_REG_RDX);
+                            llinsn.dest[1].width  = llir::Operand::Width::_64BIT;
+                            break;
+                        default:
+                            TODO();
+                    }
+                    break;
+                case 2:
+                    // Two-operand form - OP1*OP2 -> OP1
+                    llinsn.dest_cnt = 1;
+                    llinsn.src_cnt = 2;
+                    fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                    fill_operand(detail->x86.operands[0], llinsn.src[0]);
+                    fill_operand(detail->x86.operands[1], llinsn.src[1]);
+                    break;
+                case 3:
+                    // Three-operand form - OP2*OP3 -> OP1
+                    llinsn.dest_cnt = 1;
+                    llinsn.src_cnt = 2;
+                    fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                    fill_operand(detail->x86.operands[1], llinsn.src[0]);
+                    fill_operand(detail->x86.operands[2], llinsn.src[1]);
+                    break;
+                default:
+                    TODO();
+            }
             break;
 
         //

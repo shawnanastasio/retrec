@@ -64,29 +64,37 @@ constexpr int32_t INT26_MIN =  -INT26_MAX - 1;
 
 // See above description of R14
 enum class LastFlagOpData : uint32_t {
-    // Jump table for carry flag calculation
-    CARRY_BYTE = 3*4,
-    CARRY_HALFWORD = 5*4,
-    CARRY_WORD = 7*4,
-    CARRY_DOUBLEWORD_ADD = 9*4,
-    CARRY_DOUBLEWORD_SUB = 12*4,
+    // Shift for carry flag calculation (5:0)
+    CARRY_ADDSUB_8BIT = 64 - 8,
+    CARRY_ADDSUB_16BIT = 64 - 16,
+    CARRY_ADDSUB_32BIT = 64 - 32,
+    CARRY_DOUBLEWORD_ADD = 62,
+    CARRY_DOUBLEWORD_SUB = 63,
 
-    // Shift for overflow flag calculation (13:8)
-    OVERFLOW_SHIFT = 8,
+    // Shift for overflow flag calculation (11:6)
+    OVERFLOW_SHIFT = 6,
     OVERFLOW_BYTE = (57 << OVERFLOW_SHIFT),
     OVERFLOW_HALFWORD = (49 << OVERFLOW_SHIFT),
     OVERFLOW_WORD = (33 << OVERFLOW_SHIFT),
     OVERFLOW_DOUBLEWORD = (1 << OVERFLOW_SHIFT),
 
-    // Operation type for flag calculation (15:14)
-    OP_TYPE_SHIFT = 14,
+    // Jump table for IMUL overflow calculation (1:0)
+    IMUL_OVERFLOW_8BIT  = 0,
+    IMUL_OVERFLOW_16BIT = IMUL_OVERFLOW_8BIT + 1,
+    IMUL_OVERFLOW_32BIT = IMUL_OVERFLOW_16BIT + 2,
+    IMUL_OVERFLOW_64BIT = IMUL_OVERFLOW_32BIT + 3,
+
+    // Operation type for flag calculation (7:0)
+    OP_TYPE_SHIFT = 12,
     OP_SUB = (0 << OP_TYPE_SHIFT),
     OP_ADD = (1 << OP_TYPE_SHIFT),
+    OP_IMUL = (2 << OP_TYPE_SHIFT),
 };
 enum class LastFlagOp : uint32_t {
-    SUB = (0 << 8),
-    ADD = (1 << 8),
-    INVALID = 0xFFFFFFFF
+    SUB,
+    ADD,
+    IMUL,
+    INVALID
 };
 
 } // namespace ppc64le
@@ -109,6 +117,7 @@ class codegen_ppc64le final : public codegen {
         uint32_t syscall;
         uint32_t trap_patch_call;
         uint32_t trap_patch_jump;
+        uint32_t imul_overflow;
     } ff_addresses;
 
     /**
@@ -170,7 +179,7 @@ class codegen_ppc64le final : public codegen {
     llir::Register::Mask llir$alu$helper$target_mask(llir::Register::Mask src_mask);
     llir::Register::Mask llir$alu$helper$mask_from_width(llir::Operand::Width w);
     void llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn, const llir::Operand &op,
-                                               ppc64le::gpr_t target);
+                                               ppc64le::gpr_t target, llir::Extension extension = llir::Extension::ZERO);
     void llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, ppc64le::LastFlagOp op);
     llir::Alu::FlagArr llir$alu$helper$preserve_flags(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$helper$restore_flags(gen_context &ctx, llir::Alu::FlagArr &flags);
@@ -207,6 +216,7 @@ class codegen_ppc64le final : public codegen {
     void fixed_helper$syscall$emit(gen_context &ctx);
     void fixed_helper$trap_patch_call$emit(gen_context &ctx);
     void fixed_helper$trap_patch_jump$emit(gen_context &ctx);
+    void fixed_helper$imul_overflow$emit(gen_context &ctx);
 
     // Resolve all relocations in a given translation context
     status_code resolve_relocations(gen_context &ctx);
@@ -245,46 +255,63 @@ class codegen_ppc64le final : public codegen {
         return static_cast<T>(imm) == imm;
     }
 
-    static inline uint16_t build_flag_op_data(ppc64le::LastFlagOp op, llir::Register::Mask mask) {
-        ppc64le::LastFlagOpData data;
+    static inline uint32_t build_flag_op_data(ppc64le::LastFlagOp op, llir::Register::Mask mask) {
+        uint32_t data = 0;
 
-        switch (mask) {
-            case llir::Register::Mask::Full64:
-                if (op == ppc64le::LastFlagOp::SUB)
-                    data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_SUB
-                           | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_DOUBLEWORD);
-                else if (op == ppc64le::LastFlagOp::ADD)
-                    data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_ADD
-                           | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_DOUBLEWORD);
-                else
-                    TODO();
+        switch (op) {
+            case ppc64le::LastFlagOp::ADD: data |= enum_cast(ppc64le::LastFlagOpData::OP_ADD); goto addsub_common;
+            case ppc64le::LastFlagOp::SUB: data |= enum_cast(ppc64le::LastFlagOpData::OP_SUB); goto addsub_common;
+            addsub_common:
+                switch (mask) {
+                    case llir::Register::Mask::Full64:
+                        data |= (op == ppc64le::LastFlagOp::ADD ? enum_cast(ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_ADD)
+                                    : enum_cast(ppc64le::LastFlagOpData::CARRY_DOUBLEWORD_SUB));
+                        data |= enum_cast(ppc64le::LastFlagOpData::OVERFLOW_DOUBLEWORD);
+                        break;
+                    case llir::Register::Mask::Low32:
+                        data |= enum_cast(ppc64le::LastFlagOpData::CARRY_ADDSUB_32BIT);
+                        data |= enum_cast(ppc64le::LastFlagOpData::OVERFLOW_WORD);
+                        break;
+                    case llir::Register::Mask::LowLow16:
+                        data |= enum_cast(ppc64le::LastFlagOpData::CARRY_ADDSUB_16BIT);
+                        data |= enum_cast(ppc64le::LastFlagOpData::OVERFLOW_HALFWORD);
+                        break;
+                    case llir::Register::Mask::LowLowHigh8:
+                    case llir::Register::Mask::LowLowLow8:
+                        data |= enum_cast(ppc64le::LastFlagOpData::CARRY_ADDSUB_8BIT);
+                        data |= enum_cast(ppc64le::LastFlagOpData::OVERFLOW_BYTE);
+                        break;
+                    case llir::Register::Mask::Special:
+                        ASSERT_NOT_REACHED();
+                }
+                break;
 
+            case ppc64le::LastFlagOp::IMUL:
+                data |= enum_cast(ppc64le::LastFlagOpData::OP_IMUL);
+                switch (mask) {
+                    case llir::Register::Mask::Full64:
+                        data |= enum_cast(ppc64le::LastFlagOpData::IMUL_OVERFLOW_64BIT);
+                        break;
+                    case llir::Register::Mask::Low32:
+                        data |= enum_cast(ppc64le::LastFlagOpData::IMUL_OVERFLOW_32BIT);
+                        break;
+                    case llir::Register::Mask::LowLow16:
+                        data |= enum_cast(ppc64le::LastFlagOpData::IMUL_OVERFLOW_16BIT);
+                        break;
+                    case llir::Register::Mask::LowLowHigh8:
+                    case llir::Register::Mask::LowLowLow8:
+                        data |= enum_cast(ppc64le::LastFlagOpData::IMUL_OVERFLOW_8BIT);
+                        break;
+                    case llir::Register::Mask::Special:
+                        ASSERT_NOT_REACHED();
+                }
                 break;
-            case llir::Register::Mask::Low32:
-                data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_WORD
-                       | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_WORD);
-                break;
-            case llir::Register::Mask::LowLow16:
-                data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_HALFWORD
-                       | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_HALFWORD);
-                break;
-            case llir::Register::Mask::LowLowLow8:
-            case llir::Register::Mask::LowLowHigh8:
-                data = (ppc64le::LastFlagOpData)((uint32_t)ppc64le::LastFlagOpData::CARRY_BYTE
-                       | (uint32_t)ppc64le::LastFlagOpData::OVERFLOW_BYTE);
-                break;
-            default: TODO();
+
+            default:
+                TODO();
         }
 
-        // Fill in operation type
-        if (op == ppc64le::LastFlagOp::SUB)
-            data = (ppc64le::LastFlagOpData)((uint32_t)data | (uint32_t)ppc64le::LastFlagOpData::OP_SUB);
-        else if (op == ppc64le::LastFlagOp::ADD)
-            data = (ppc64le::LastFlagOpData)((uint32_t)data | (uint32_t)ppc64le::LastFlagOpData::OP_ADD);
-        else
-            TODO();
-
-        return (uint16_t)data;
+        return data;
     }
 
     //
@@ -302,7 +329,7 @@ class codegen_ppc64le final : public codegen {
                              bool invert, bool modify_cr);
     void macro$move_register_masked(ppc64le::assembler &assembler, ppc64le::gpr_t dest, ppc64le::gpr_t src,
                                     llir::Register::Mask src_mask, llir::Register::Mask dest_mask, bool zero_others,
-                                    bool modify_cr, llir::Extension extension = llir::Extension::NONE);
+                                    bool modify_cr, llir::Extension extension = llir::Extension::ZERO);
     void macro$loadstore(gen_context &ctx, ppc64le::gpr_t reg, const llir::Operand &mem_op, llir::LoadStore::Op op,
                          llir::Register::Mask reg_mask, bool reg_zero_others, const llir::Insn &insn,
                          llir::Extension extension = llir::Extension::NONE);

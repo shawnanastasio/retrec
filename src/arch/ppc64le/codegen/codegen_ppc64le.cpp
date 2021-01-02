@@ -107,6 +107,11 @@ status_code codegen_ppc64le<T>::init() {
     fixed_helper$trap_patch_jump$emit(ctx);
     alignment_padding();
 
+    /* imul_overflow */
+    uint32_t imul_overflow_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$imul_overflow$emit(ctx);
+    alignment_padding();
+
     // Second pass: resolve relocations
     res = resolve_relocations(ctx);
     if (res != status_code::SUCCESS) {
@@ -132,6 +137,7 @@ status_code codegen_ppc64le<T>::init() {
     ff_addresses.syscall = (uint32_t)(uintptr_t)function_table + syscall_offset;
     ff_addresses.trap_patch_call = (uint32_t)(uintptr_t)function_table + trap_patch_call_offset;
     ff_addresses.trap_patch_jump = (uint32_t)(uintptr_t)function_table + trap_patch_jump_offset;
+    ff_addresses.imul_overflow = (uint32_t)(uintptr_t)function_table + imul_overflow_offset;
 
     pr_debug("Emitted function table to %p\n", function_table);
     return status_code::SUCCESS;
@@ -344,8 +350,9 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
         case llir::Insn::Class::ALU:
             switch (insn.alu().op) {
                 case llir::Alu::Op::ADD:
-                case llir::Alu::Op::SUB:
                 case llir::Alu::Op::AND:
+                case llir::Alu::Op::IMUL:
+                case llir::Alu::Op::SUB:
                 case llir::Alu::Op::XOR:
                     llir$alu$2src_common(ctx, insn);
                     break;
@@ -697,25 +704,64 @@ llir::Register::Mask codegen_ppc64le<T>::llir$alu$helper$mask_from_width(llir::O
 
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx, const llir::Insn &insn,
-                                                               const llir::Operand &op, gpr_t target) {
+                                                               const llir::Operand &op, gpr_t target,
+                                                               llir::Extension extension) {
     switch (op.type()) {
         case llir::Operand::Type::REG:
         {
             // Operand is in a register, move it to the target reg and mask it
             auto gpr = ctx.reg_allocator().get_fixed_gpr(op.reg());
-            auto target_mask = llir$alu$helper$target_mask(op.reg().mask);
-            macro$move_register_masked(*ctx.assembler, target, gpr.gpr(), op.reg().mask, target_mask, true, false);
+            switch (extension) {
+                case llir::Extension::ZERO:
+                    macro$move_register_masked(*ctx.assembler, target, gpr.gpr(), op.reg().mask,
+                                               llir::Register::Mask::Full64, true, false);
+                    break;
+
+                case llir::Extension::SIGN:
+                    // Sign extend the operand - necessary for some ALU operations to produce a valid result on
+                    // operands that are less than 64-bits.
+                    switch (op.reg().mask) {
+                        case llir::Register::Mask::Full64:
+                            ctx.assembler->mr(target, gpr.gpr());
+                            break;
+                        case llir::Register::Mask::Low32:
+                            ctx.assembler->extsw(target, gpr.gpr());
+                            break;
+                        case llir::Register::Mask::LowLow16:
+                            ctx.assembler->extsh(target, gpr.gpr());
+                            break;
+                        case llir::Register::Mask::LowLowLow8:
+                            ctx.assembler->extsb(target, gpr.gpr());
+                            break;
+                        case llir::Register::Mask::LowLowHigh8:
+                            TODO();
+                        default:
+                            ASSERT_NOT_REACHED();
+                    }
+                    break;
+
+                case llir::Extension::NONE:
+                    ASSERT_NOT_REACHED();
+            }
             break;
         }
 
         case llir::Operand::Type::IMM:
-            // Operand is an immediate, load it into the target reg
-            macro$load_imm(*ctx.assembler, target, op.imm(), llir$alu$helper$mask_from_width(op.width), true);
+        {
+            // Operand is an immediate, load it into the target reg.
+            //
+            // If sign extension was requested, treat the destination width as 64-bit unconditionally so
+            // that macro$load_imm will extend the sign across the entire register - otherwise use the
+            // operation's width.
+            auto width = extension == llir::Extension::SIGN ? llir::Operand::Width::_64BIT : op.width;
+            macro$load_imm(*ctx.assembler, target, op.imm(), llir$alu$helper$mask_from_width(width), true);
             break;
+        }
 
         case llir::Operand::Type::MEM:
             // Operand is in memory, load it into the target reg
-            macro$loadstore(ctx, target, op, llir::LoadStore::Op::LOAD, llir$alu$helper$mask_from_width(op.width), true, insn);
+            macro$loadstore(ctx, target, op, llir::LoadStore::Op::LOAD, llir$alu$helper$mask_from_width(op.width), true,
+                            insn, extension);
             break;
 
         default:
@@ -751,8 +797,11 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
     }
 
     auto mask = llir$alu$helper$mask_from_width(insn.src[0].width);
-    if (insn.alu().modifies_flags && mask != llir::Register::Mask::Full64) {
-        // If the instruction modifies flags and the mask is < 64, we need to generate the cr0 flags
+    bool needs_calculated_rc0 = contains_any(insn.alu().flags_modified, llir$alu$all_rc0_flags)
+                                && !contains_all(insn.alu().flags_cleared, llir$alu$all_rc0_flags)
+                                && !contains_all(insn.alu().flags_undefined, llir$alu$all_rc0_flags);
+    if (needs_calculated_rc0 && mask != llir::Register::Mask::Full64) {
+        // If the instruction modifies rc0 flags and the mask is < 64, we need to generate the cr0 flags
         switch (mask) {
             case llir::Register::Mask::Low32:
                 // For 32-bit, do a signed compare to immediate 0
@@ -787,7 +836,7 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
         uint32_t flag_data = build_flag_op_data(op, mask);
         macro$load_imm(*ctx.assembler, GPR_FIXED_FLAG_OP_TYPE, flag_data, llir::Register::Mask::Low32, true);
     }
-    assert(!contains_any(llir$alu$all_rc0_flags, insn.alu().flags_cleared)); // FIXME: support cleraing rc0 flags
+    assert(!contains_any(llir$alu$all_rc0_flags, insn.alu().flags_cleared)); // FIXME: support clearing rc0 flags
 
     auto alu_flag_to_lazyvalid = [](llir::Alu::Flag f) -> std::optional<uint8_t> {
         switch (f) {
@@ -820,16 +869,15 @@ void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const lli
         auto lazyvalid_field = alu_flag_to_lazyvalid(flag);
         if (!lazyvalid_field)
             continue;
+        if (contains(insn.alu().flags_undefined, flag))
+            continue;
 
         if (contains(insn.alu().flags_cleared, flag)) {
             // Modified and cleared - valid, unset
-            //ctx.assembler->crset(*lazyvalid_field);
-            //ctx.assembler->crclr(*alu_flag_to_lazy(flag));
             lazyvalid_to_set.push_back(*lazyvalid_field);
             lazy_to_clear.push_back(*alu_flag_to_lazy(flag));
         } else {
             // Modified but not cleared - invalid
-            //ctx.assembler->crclr(*lazyvalid_field);
             lazyvalid_to_clear.push_back(*lazyvalid_field);
         }
     };
@@ -862,10 +910,9 @@ llir::Alu::FlagArr codegen_ppc64le<T>::llir$alu$helper$preserve_flags(gen_contex
     llir::Alu::FlagArr preserved;
     size_t preserved_i = 0;
 
-    //llir::Alu::iterate_flags(llir$alu$all_rc0_flags, [&](auto flag) {
     for (auto flag : llir$alu$all_rc0_flags) {
-        if (!contains(insn.alu().flags_modified, flag)) {
-            // Flag wasn't found in the insn's list of modified flags - we need to preserve it
+        if (!contains(insn.alu().flags_modified, flag) && !contains(insn.alu().flags_undefined, flag)) {
+            // Flag wasn't modified and isn't undefined - we need to preserve it
             preserved.push_back(flag);
         }
     };
@@ -917,6 +964,8 @@ LastFlagOp codegen_ppc64le<T>::llir$alu$helper$insn_to_lastflagop(const llir::In
     switch (insn.alu().op) {
         case llir::Alu::Op::ADD:
             return LastFlagOp::ADD;
+        case llir::Alu::Op::IMUL:
+            return LastFlagOp::IMUL;
         case llir::Alu::Op::SUB:
             return LastFlagOp::SUB;
         case llir::Alu::Op::AND:
@@ -953,25 +1002,76 @@ void codegen_ppc64le<T>::llir$alu$2src_common(gen_context &ctx, const llir::Insn
     if (insn.alu().modifies_flags)
         preserved = llir$alu$helper$preserve_flags(ctx, insn);
 
-    // Ensure all operands are in registers
-    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
-    llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
-
     bool modify_cr = (insn.alu().modifies_flags && width == llir::Operand::Width::_64BIT);
     switch (insn.alu().op) {
         case llir::Alu::Op::ADD:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
             ctx.assembler->add(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, modify_cr);
             break;
 
-        case llir::Alu::Op::SUB:
-            ctx.assembler->sub(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, false, modify_cr);
-            break;
-
         case llir::Alu::Op::AND:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
             ctx.assembler->_and(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, modify_cr);
             break;
 
+        case llir::Alu::Op::IMUL:
+        {
+            // Operands must be sign extended
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1, llir::Extension::SIGN);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2, llir::Extension::SIGN);
+
+            typename register_allocator<T>::AllocatedGprT high_dest;
+            if (insn.dest_cnt == 2) {
+                // If insn has second destination, store high bits of result in it.
+                // Must be a register.
+                high_dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[1].reg());
+                assert(insn.dest[1].reg().mask != llir::Register::Mask::LowLowHigh8);
+            }
+
+            switch (width) {
+                case llir::Operand::Width::_64BIT:
+                    ctx.assembler->mulld(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, false, true);
+                    if (high_dest)
+                        ctx.assembler->mulhd(high_dest.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+                    break;
+                case llir::Operand::Width::_32BIT:
+                    ctx.assembler->mullw(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, false, true);
+                    if (high_dest)
+                        ctx.assembler->mulhw(high_dest.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+                    break;
+                case llir::Operand::Width::_16BIT:
+                    ctx.assembler->mullw(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, false, false);
+                    if (high_dest) {
+                        // Move top GPR_FIXED_FLAG_RES[31:16] to high_dest[15:0]
+                        assert(!insn.dest[1].reg().zero_others);
+                        ctx.assembler->rlwimi(high_dest.gpr(), GPR_FIXED_FLAG_RES, 32-16, 32-16, 31);
+                    }
+                    break;
+                case llir::Operand::Width::_8BIT:
+                    ctx.assembler->mullw(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, false, false);
+                    if (high_dest) {
+                        // Move top GPR_FIXED_FLAG_RES[15:8] to high_dest[7:0]
+                        assert(!insn.dest[1].reg().zero_others);
+                        ctx.assembler->rlwimi(high_dest.gpr(), GPR_FIXED_FLAG_RES, 32-8, 32-8, 31);
+                    }
+                    break;
+                case llir::Operand::Width::INVALID:
+                    ASSERT_NOT_REACHED();
+            }
+            break;
+        }
+
+        case llir::Alu::Op::SUB:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
+            ctx.assembler->sub(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, false, modify_cr);
+            break;
+
         case llir::Alu::Op::XOR:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
             ctx.assembler->_xor(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, modify_cr);
             break;
 
@@ -1037,7 +1137,7 @@ void codegen_ppc64le<T>::llir$alu$move_reg(gen_context &ctx, const llir::Insn &i
             if (dest.mask != llir::Register::Mask::Full64)
                 macro$move_register_masked(*ctx.assembler, dest_reg.gpr(), ext_dest_reg.gpr(),
                                            llir$alu$helper$target_mask(src.mask), dest.mask, dest.zero_others,
-                                           false, llir::Extension::SIGN);
+                                           false, llir::Extension::NONE);
 
             break;
     }
@@ -1591,11 +1691,11 @@ void codegen_ppc64le<T>::fixed_helper$indirect_jmp$emit(gen_context &ctx) {
     a.cmpldi(CR_SCRATCH, llir::PPC64RegisterGPRIndex(argument_regs[0]), 0);
     a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("fh_indirect_jmp_trap", AFTER);
 
-    // Store returned target in ctr
-    a.mtspr(SPR::CTR, llir::PPC64RegisterGPRIndex(argument_regs[0]));
+    // Store returned target in LR
+    a.mtspr(SPR::LR, llir::PPC64RegisterGPRIndex(argument_regs[0]));
 
     // Jump to target!
-    a.bctr();
+    a.blr();
 
     // fh_ret_trap: Lookup failed - trap to runtime
     RELOC_DECLARE_LABEL_AFTER("fh_indirect_jmp_trap");
@@ -1630,6 +1730,66 @@ void codegen_ppc64le<T>::fixed_helper$trap_patch_call$emit(gen_context &ctx) {
 template <typename T>
 void codegen_ppc64le<T>::fixed_helper$trap_patch_jump$emit(gen_context &ctx) {
     macro$interrupt$trap(ctx, runtime_context_ppc64le::NativeTarget::PATCH_JUMP, false);
+}
+
+/**
+ * fixed_helper$imul_overflow$emit - Emit the fixed helper for calculating the status
+ * of the overflow and carry flags for an IMUL operation.
+ *
+ * Routine description:
+ * Calculate the state of the overflow/carry flags for the last executed IMUL operation.
+ *
+ * For 32/64-bit operations, the native XER[OV] flag is directly used, otherwise the result
+ * is calculated manually.
+ *
+ * All ABIRetrec volatile registers may be clobbered.
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$imul_overflow$emit(gen_context &ctx) {
+    assembler &a = *ctx.assembler;
+
+    // Branch to calculation code for operation type
+    ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-2, false); // Extract FLAG_OP_TYPE[1:0] into r0
+    ctx.assembler->cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::IMUL_OVERFLOW_16BIT);
+    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_GT, 0); RELOC_FIXUP_LABEL("imul_ov_6432", AFTER); // >  -> 6432
+    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("imul_ov_16", AFTER); // == -> 16
+    /* else: fallthrough to 8-bit */
+
+    { // 8-bit - Manually calculate OV
+        auto tmp = ctx.reg_allocator().allocate_gpr();
+        a.extsb(0, GPR_FIXED_FLAG_RES);
+        a.rldicl(tmp.gpr(), GPR_FIXED_FLAG_RES, 56, 56);
+        a.srawi(0, 0, 7);
+        a.rlwinm(0, 0, 0, 24, 31);
+        a.cmpw(CR_SCRATCH, 0, tmp.gpr());
+        a.crnot(CR_LAZY_FIELD_CARRY, 4*CR_SCRATCH + assembler::CR_EQ);
+        a.crnot(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
+        a.b(0); RELOC_FIXUP_LABEL("imul_ov_common", AFTER);
+    }
+
+    { // 16-bit - Manually calculate OV
+        auto tmp = ctx.reg_allocator().allocate_gpr();
+        a.extsh(0, GPR_FIXED_FLAG_RES); RELOC_DECLARE_LABEL("imul_ov_16");
+        a.srwi(tmp.gpr(), GPR_FIXED_FLAG_RES, 16);
+        a.srawi(0, 0, 15);
+        a.rlwinm(0, 0, 0, 16, 31);
+        a.cmpw(CR_SCRATCH, 0, tmp.gpr());
+        a.crnot(CR_LAZY_FIELD_CARRY, 4*CR_SCRATCH + assembler::CR_EQ);
+        a.crnot(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
+        a.b(0); RELOC_FIXUP_LABEL("imul_ov_common", AFTER);
+    }
+
+    { // 64/32-bit - Use XER[OV] directly
+        a.mcrxrx(CR_SCRATCH); RELOC_DECLARE_LABEL("imul_ov_6432");
+        a.crmove(CR_LAZY_FIELD_CARRY, 4*CR_SCRATCH + 0);
+        a.crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + 0);
+        /* fallthrough to imul_ov_common */
+    }
+
+    // Set LAZYVALID for CF and OF, return
+    ctx.assembler->crset(CR_LAZYVALID_CARRY); RELOC_DECLARE_LABEL("imul_ov_common");
+    ctx.assembler->crset(CR_LAZYVALID_OVERFLOW);
+    a.blr();
 }
 
 //
@@ -1783,137 +1943,118 @@ void codegen_ppc64le<T>::macro$branch$conditional(assembler &assembler, uint64_t
 
 template <typename T>
 void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx) {
-
-    // This function emits a conditional branch depending on the state of the emulated CPU's Carry flag,
-    // generating the Carry flag if necessary.
-    //
-    // 1. Determine whether the Carry flag has been calculated already by branching
-    //    to the epilogue (5) if CR_LAZYVALID_CARRY is set. Otherwise fall through.
-    //
-    // 2. Extract the low 8 bits from GPR_FIXED_FLAG_OP_TYPE to obtain branch table target.
-    //    Add width to IP and branch.
-    //
-    // 3. The code at the destination will evaluate the Carry condition for the correct width.
-    //    Refer to the table below for information on how the condition is evaluated for each
-    //    width. Rc=1 instructions are used to store the compliment of the carry flag in cr0[eq].
-    //
-    //    64 bit (doubleword, sub) - Use sube+subc to manually calculate carry
-    //    64 bit (doubleword, add) - Use CA flag from XER
-    //    32 bit (word)            - Use bit 32 from result
-    //    16 bit (halfword)        - Use bit 16 from result
-    //    8 bit  (byte)            - Use bit 8  from result
-    //
-    //    Width-specific code then jumps to common code that moves ~cr0[eq] into CR_LAZY_FIELD_CARRY.
-    //
-    // 4. Set CR2[0] to indicate that the Carry flag has been evaluated.
-    //
-    // 5. Carry is now valid and can be branched on conditionally
+    assembler &a = *ctx.assembler;
+    auto cr_save_reg = ctx.reg_allocator().allocate_gpr();
 
     // Skip to last instruction if CF has already been evaluated
-    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
+    a.bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
 
-    // Preserve cr0 in CR_SCRATCH
-    ctx.assembler->mcrf(CR_SCRATCH, 0);
+    // Branch to calculation code for operation type
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[16:14] into r0
+    a.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_IMUL >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("cf_addsub", AFTER); // Less than IMUL -> ADD/SUB
+    a.b(0); RELOC_FIXUP_LABEL("cf_imul", AFTER); // Else -> IMUL
 
-    // Extract offset, add to NIA, branch
-    ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-8, false); // Mask off all but the low 8 bits
-    {
-        auto scratch = ctx.reg_allocator().allocate_gpr();
-        ctx.assembler->lnia(scratch.gpr());
-        ctx.assembler->add(0, 0, scratch.gpr());
-    }
-    ctx.assembler->mtspr(SPR::CTR, 0);
-    ctx.assembler->bctr();
+    { // cf_addsub
+        // Preserve cr0 in a scratch register
+        a.mfcr(cr_save_reg.gpr());  RELOC_DECLARE_LABEL("cf_addsub");
 
-    { // 8-bit - 2 insns
-        // Extract carry bit from res[8]. This sets cr0[gt] to the inverse of the carry bit.
-        ctx.assembler->rldicl(0, GPR_FIXED_FLAG_RES, 64 - 8, 63, true);
-        ctx.assembler->b(10 * 4);
-    }
+        // Load CARRY_* field into r0 (FLAG_OP_TYPE[5:0])
+        a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-6 /* 6-bits */, false);
 
-    { // 16-bit - 2 insns
-        // Extract carry bit from res[16]. This sets cr0[gt] to the inverse of the carry bit.
-        ctx.assembler->rldicl(0, GPR_FIXED_FLAG_RES, 64 - 16, 63, true);
-        ctx.assembler->b(8 * 4);
+        // 64-bit add/sub needs special handling
+        a.cmpldi(CR_SCRATCH, 0, enum_cast(LastFlagOpData::CARRY_DOUBLEWORD_ADD));
+        a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("cf_add64", AFTER); // == -> ADD64
+        a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_GT, 0); RELOC_FIXUP_LABEL("cf_sub64", AFTER); // >  -> SUB64
+
+        // Otherwise, extract the carry bit according to the CARRY_* field
+        a.rldcl(0, GPR_FIXED_FLAG_RES, 0, 63, true); // Put overflow flag into !cr0[eq]
+        a.b(0); RELOC_FIXUP_LABEL("cf_addsub_common", AFTER);
     }
 
-    { // 32-bit - 2 insns
-        // Extract carry bit from res[32]. This sets cr0[gt] to the inverse of the carry bit.
-        ctx.assembler->rldicl(0, GPR_FIXED_FLAG_RES, 64 - 32, 63, true);
-        ctx.assembler->b(6 * 4);
+    { // cf_imul
+        // Call imul_overflow OF fixed helper
+        a.bla(ff_addresses.imul_overflow); RELOC_DECLARE_LABEL("cf_imul");
+        a.b(0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
     }
 
-    { // 64-bit (ADD) - 3 insns
+    { // cf_add64
         // Calculate carry bit and set cr0[eq] accordingly.
-        ctx.assembler->subc(0, GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1);
-        ctx.assembler->sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
-        ctx.assembler->b(3 * 4);
+        a.subc(0, GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1); RELOC_DECLARE_LABEL("cf_add64");
+        a.sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1); // Put overflow flag into !cr0[eq]
+        a.b(0); RELOC_FIXUP_LABEL("cf_addsub_common", AFTER);
     }
 
-    { // 64-bit (SUB) - 2 insns
+    { // cf_sub64
         // Calculate carry bit and set cr0[eq] accordingly.
-        ctx.assembler->subc(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_RES);
-        ctx.assembler->sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1);
+        a.subc(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_RES); RELOC_DECLARE_LABEL("cf_sub64");
+        a.sube_(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP1); // Put overflow flag into !cr0[eq]
         /* fallthrough */
     }
 
-    // Move !cr0[eq] to CR_LAZY[CARRY]
-    ctx.assembler->crnot(CR_LAZY_FIELD_CARRY, 4*0 + assembler::CR_EQ);
+    // cf_addsub_common - move CF from !cr0[eq] to CR_LAZY_FIELD_CARRY
+    a.crnot(CR_LAZY_FIELD_CARRY, 4*0 + assembler::CR_EQ); RELOC_DECLARE_LABEL("cf_addsub_common");
 
-    // Set CR_LAZYVALID_CARRY to indicate that the Carry flag is valid
-    ctx.assembler->crset(CR_LAZYVALID_CARRY);
+    // Set CR_LAZYVALID_CARRY
+    a.crset(CR_LAZYVALID_CARRY);
 
-    // Restore cr0
-    ctx.assembler->mcrf(0, CR_SCRATCH);
+    // Restore cr0 and return
+    a.mtcrf(0x80, cr_save_reg.gpr());
     RELOC_DECLARE_LABEL_AFTER("cf_skip");
 }
 
 template <typename T>
 void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx) {
+    assembler &a = *ctx.assembler;
+
     // Skip to last instruction if OF has already been evaluated
-    ctx.assembler->bc(BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 0);
-    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{"of_skip", LabelPosition::AFTER}});
+    a.bc(BO::FIELD_SET, CR_LAZYVALID_OVERFLOW, 0); RELOC_FIXUP_LABEL("of_skip", AFTER);
 
     // Allocate scratch registers for use in calculation
     auto scratch1 = ctx.reg_allocator().allocate_gpr();
 
     // Branch to calculation code for operation type
-    ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[15:14] into r0
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[16:14] into r0
 
-    ctx.assembler->cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
-    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("of_sub", AFTER); // Less than ADD -> SUB
-    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("of_add", AFTER); // Equal to ADD
+    a.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("of_sub", AFTER); // Less than ADD -> SUB
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("of_add", AFTER); // Equal to ADD
+    // Else, fallthrough to IMUL
 
-    ctx.assembler->invalid(); // Emit an invalid instruction to assert not reached
+    { // IMUL
+        // Call imul_overflow OF fixed helper
+        a.bla(ff_addresses.imul_overflow);
+        a.b(0); RELOC_FIXUP_LABEL("of_skip", AFTER);
+    }
 
     { // ADD
-        ctx.assembler->add(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("of_add");
-        ctx.assembler->eqv(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler->_xor(scratch1.gpr(), scratch1.gpr(), GPR_FIXED_FLAG_OP2);
-        ctx.assembler->_and(0, 0, scratch1.gpr());
-        ctx.assembler->b(0); RELOC_FIXUP_LABEL("of_common", AFTER); // Branch to common shifting code
+        a.add(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("of_add");
+        a.eqv(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        a._xor(scratch1.gpr(), scratch1.gpr(), GPR_FIXED_FLAG_OP2);
+        a._and(0, 0, scratch1.gpr());
+        a.b(0); RELOC_FIXUP_LABEL("of_addsub_common", AFTER); // Branch to common shifting code
     }
 
     { // SUB
-        ctx.assembler->sub(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("of_sub");
-        ctx.assembler->_xor(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
-        ctx.assembler->eqv(scratch1.gpr(), scratch1.gpr(), GPR_FIXED_FLAG_OP2);
-        ctx.assembler->_and(0, 0, scratch1.gpr());
+        a.sub(scratch1.gpr(), GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("of_sub");
+        a._xor(0, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+        a.eqv(scratch1.gpr(), scratch1.gpr(), GPR_FIXED_FLAG_OP2);
+        a._and(0, 0, scratch1.gpr());
         // fall through to common shifting code
     }
 
     // The overflow bit is now in r0. Depending on operation width, shift it into bit 0, and clear all left.
-    RELOC_DECLARE_LABEL_AFTER("of_common");
-    ctx.assembler->rldicl(scratch1.gpr(), GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OVERFLOW_SHIFT, 64-6, false);
-    ctx.assembler->rldcl(0, 0, scratch1.gpr(), 63, false); // Put overflow flag into r0[0]
-    ctx.assembler->cmpldi(CR_SCRATCH, 0, 1);
+    RELOC_DECLARE_LABEL_AFTER("of_addsub_common");
+    a.rldicl(scratch1.gpr(), GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OVERFLOW_SHIFT, 64-6, false);
+    a.rldcl(0, 0, scratch1.gpr(), 63, false); // Put overflow flag into r0[0]
+    a.cmpldi(CR_SCRATCH, 0, 1);
 
     // CR_SCRATCH[eq] now contains the Overflow flag. Move it into CR_LAZY[OVERFLOW].
-    ctx.assembler->crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
+    a.crmove(CR_LAZY_FIELD_OVERFLOW, 4*CR_SCRATCH + assembler::CR_EQ);
 
     // Mark OF as valid
-    ctx.assembler->crset(CR_LAZYVALID_OVERFLOW);
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{"of_skip"}});
+    a.crset(CR_LAZYVALID_OVERFLOW);
+    RELOC_DECLARE_LABEL_AFTER("of_skip");
 }
 
 template <typename T>
@@ -1993,26 +2134,37 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
     uint8_t src_shift = get_shift_from_mask(src_mask);
     uint8_t dest_width = get_width_from_mask(dest_mask);
     uint8_t dest_shift = get_shift_from_mask(dest_mask);
-    bool clear_extra_bits = extension != llir::Extension::SIGN;
+    bool clear_extra_bits = extension == llir::Extension::ZERO;
 
     if (zero_others) {
-        if (clear_extra_bits) {
-            // If we don't care about preserving others and will clear the top bits, we can get away with an rldicl
-            uint8_t sh = (uint8_t)(64 - src_shift + dest_shift) % 64;
-            uint8_t me = (uint8_t)(64 - std::min(dest_width, src_width) - dest_shift);
+        switch (extension) {
+            case llir::Extension::NONE:
+                // If we don't care about extension, just move the register
+                assembler.mr(dest, src);
+                break;
 
-            assembler.rldicl(dest, src, sh, me, modify_cr);
+            case llir::Extension::ZERO:
+            {
+                // If we don't care about preserving others and will clear/extend the top bits, we can get away with an rldicl
+                uint8_t sh = (uint8_t)(64 - src_shift + dest_shift) % 64;
+                uint8_t me = (uint8_t)(64 - std::min(dest_width, src_width) - dest_shift);
 
-            // If the destination isn't right-justified, clear the extra right bits
-            if (dest_shift)
-                assembler.rldicr(dest, dest, 0, 64-dest_shift, modify_cr);
+                assembler.rldicl(dest, src, sh, me, modify_cr);
 
-            // If the source is smaller than the destination, clear the difference
-            if (src_width < dest_width)
-                assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), modify_cr);
-        } else {
-            // If we don't need to clear the extra bits we can just move the register directly
-            assembler.mr(dest, src);
+                // If the destination isn't right-justified, clear the extra right bits
+                if (dest_shift)
+                    assembler.rldicr(dest, dest, 0, 64-dest_shift, modify_cr);
+
+                if (src_width < dest_width) {
+                    // Clear extra bits on left
+                    assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), modify_cr);
+                }
+
+                break;
+            }
+
+            case llir::Extension::SIGN:
+                TODO();
         }
     } else {
         if (!src_shift) {

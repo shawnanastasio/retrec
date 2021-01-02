@@ -72,6 +72,15 @@ bool contains_any(const ContainerT &container, const ValListT &val_list) {
     return false;
 }
 
+template <typename ContainerT, typename ValListT>
+bool contains_all(const ContainerT &container, const ValListT &val_list) {
+    for (auto &val : val_list) {
+        if (!contains(container, val))
+            return false;
+    }
+    return true;
+}
+
 template<class... Ts> struct Overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
 

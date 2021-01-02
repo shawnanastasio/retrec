@@ -93,7 +93,7 @@ struct Alu {
         x(INVALID) \
         x(ADD) \
         x(AND) \
-        x(MULT) \
+        x(IMUL) \
         x(SUB) \
         x(XOR) \
         x(LOAD_IMM) \
@@ -133,6 +133,9 @@ struct Alu {
 
     // Flags cleared (set to 0) unconditionally by this operation
     FlagArr flags_cleared {};
+
+    // Flags that will be left in an undefined state after this operation
+    FlagArr flags_undefined {};
 
     static constexpr FlagArr all_flags = {{
         Flag::CARRY, Flag::PARITY, Flag::AUXILIARY_CARRY, Flag::ZERO,
@@ -238,7 +241,7 @@ public:
 
     // Operands
     uint8_t dest_cnt { 0 };
-    std::array<Operand, 1> dest = {};
+    std::array<Operand, 2> dest = {};
     uint8_t src_cnt { 0 };
     std::array<Operand, 2> src = {};
 };
@@ -449,8 +452,11 @@ inline std::string to_string(const Insn &insn) {
             ret += " Op=" + to_string(insn.loadstore()); break;
         case Insn::Class::ALU:
             ret += " Op=" + to_string(insn.alu());
-            if (insn.alu().modifies_flags)
+            if (insn.alu().modifies_flags) {
                 ret += " FlagsModified(" + to_string(insn.alu().flags_modified) + ")";
+                ret += " FlagsCleared(" + to_string(insn.alu().flags_cleared) + ")";
+                ret += " FlagsUndefined(" + to_string(insn.alu().flags_undefined) + ")";
+            }
             break;
         case Insn::Class::BRANCH:
             ret += " Op=" + to_string(insn.branch()); break;
