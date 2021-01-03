@@ -38,8 +38,6 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         //
 
         case X86_INS_JMP:
-            assert(detail->groups_count > 0);
-
             llinsn.branch().op = llir::Branch::Op::UNCONDITIONAL;
             llinsn.branch().target = contains_group(detail, X86_GRP_BRANCH_RELATIVE)
                                     ? llir::Branch::Target::RELATIVE
@@ -114,8 +112,6 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_JRCXZ: TODO();
         case X86_INS_JS:    llinsn.branch().op = llir::Branch::Op::NEGATIVE; goto jcc_common;
         jcc_common:
-            assert(detail->groups_count > 0);
-
             llinsn.branch().target = contains_group(detail, X86_GRP_BRANCH_RELATIVE)
                                     ? llir::Branch::Target::RELATIVE
                                     : llir::Branch::Target::ABSOLUTE;

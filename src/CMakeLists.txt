@@ -61,7 +61,8 @@ add_executable(retrec
     virtual_address_mapper.h
 )
 
-target_link_libraries(retrec PUBLIC ${LIBELF_LIBRARIES} ${CAPSTONE_LIBRARIES})
-target_include_directories(retrec PUBLIC ${LIBELF_INCLUDE_DIRS} ${CAPSTONE_INCLUDE_DIRS})
+target_link_libraries(retrec PUBLIC ${LIBELF_LIBRARIES} ${CapstoneGit_LIBS})
+target_include_directories(retrec PUBLIC ${LIBELF_INCLUDE_DIRS} ${CapstoneGit_INCLUDE})
+
 target_include_directories(retrec PRIVATE .)
 

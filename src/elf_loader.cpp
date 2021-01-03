@@ -176,7 +176,8 @@ status_code elf_loader::load_all() {
                 // Set protection flags
                 int flags = ((phdr.p_flags & PF_R) ? PROT_READ : 0)
                              | ((phdr.p_flags & PF_W) ? PROT_WRITE : 0);
-                assert(econtext.protect_region(aligned_start, phdr.p_memsz + alignment, flags) == status_code::SUCCESS);
+                res = econtext.protect_region(aligned_start, phdr.p_memsz + alignment, flags);
+                assert(res == status_code::SUCCESS);
 
                 pr_info("Loaded PT_LOAD segment at 0x%zx!\n", (uint64_t)region);
                 break;
@@ -237,5 +238,5 @@ const void *elf_loader::get_symbol_data_ptr(const elf_loader::Symbol &sym) {
     if (sym.shndx == text_shndx)
         return econtext.get_region_ptr(sym.value);
     else
-        assert(0 && "Unimplemented!\n");
+        TODO();
 }

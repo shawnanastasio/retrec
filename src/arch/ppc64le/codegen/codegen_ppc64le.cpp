@@ -1490,6 +1490,9 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
             reg_mask = llir$alu$helper$mask_from_width(reg_operand.width);
             macro$loadstore(ctx, reg.gpr(), reg_operand, llir::LoadStore::Op::LOAD, reg_mask, true, insn);
             break;
+
+        default:
+            ASSERT_NOT_REACHED();
     }
 
     // Emit load/store for the provided register and memory operands

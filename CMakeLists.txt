@@ -6,6 +6,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 EXECUTE_PROCESS(COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE HOST_ARCH)
 message(STATUS "Detected host arch: ${HOST_ARCH}")
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Compile external dependencies
+include(external/external.cmake)
+
 #
 # User configurable options
 #
@@ -26,16 +33,18 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRETREC_MINIMUM_LOG_LEVEL=${MIN_LOG_LEV
 #
 # Compiler flags
 #
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wconversion -Wextra -Werror=conversion -Wno-sign-conversion -Wpessimizing-move -Wno-psabi")
+set(CMAKE_SOURCE_DIR "src")
 
+message(STATUS "Build type is: ${CMAKE_BUILD_TYPE}")
 if (CMAKE_BUILD_TYPE MATCHES "Debug")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -DDEBUG_BUILD=1 -Werror=switch")
-else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -DDEBUG_BUILD=0")
+elseif (CMAKE_BUILD_TYPE MATCHES "ReleaseDebug")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -DDEBUG_BUILD=1 -DNDEBUG")
+else() # Release
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -DDEBUG_BUILD=0 -Wno-unused-variable -Wno-unused-parameter")
 endif()
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wconversion -Wextra -Werror=conversion -Wno-sign-conversion -Wpessimizing-move")
-set(CMAKE_SOURCE_DIR "src")
 
 # Architecture-specific flags
 if(${HOST_ARCH} STREQUAL "ppc64le")
@@ -47,7 +56,6 @@ endif()
 #
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBELF REQUIRED IMPORTED_TARGET libelf)
-pkg_check_modules(CAPSTONE REQUIRED IMPORTED_TARGET capstone)
 
 # Main source directory
 add_subdirectory(src)
