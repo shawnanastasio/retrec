@@ -21,7 +21,7 @@ std::vector<std::string> build_envp_vec(char **envp) {
 }
 
 int main(int argc, char **argv, char **envp) {
-    if (argc != 2) {
+    if (argc < 2) {
         fprintf(stderr, "Usage: %s <binary>\n", argv[0]);
         return 1;
     }
