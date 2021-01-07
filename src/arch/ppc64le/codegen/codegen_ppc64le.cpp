@@ -772,7 +772,7 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
 template <typename T>
 void codegen_ppc64le<T>::llir$alu$helper$finalize_op(gen_context &ctx, const llir::Insn &insn, LastFlagOp op) {
     if (insn.dest_cnt) {
-        auto res_mask = llir$alu$helper$target_mask(insn.dest[0].reg().mask);
+        auto res_mask = llir$alu$helper$mask_from_width(insn.dest[0].width);
 
         switch(insn.dest[0].type()) {
             case llir::Operand::Type::REG:
