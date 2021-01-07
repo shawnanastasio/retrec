@@ -19,7 +19,7 @@ include(external/external.cmake)
 set(MIN_LOG_LEVEL AUTO CACHE STRING "Set minimum log level {AUTO, 0, 1, 2, 3}")
 set_property(CACHE MIN_LOG_LEVEL PROPERTY STRINGS "AUTO" "0" "1" "2" "3")
 if(${MIN_LOG_LEVEL} MATCHES "AUTO")
-    if (CMAKE_BUILD_TYPE MATCHES "Debug")
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         # Set min log level to lowest for debug builds
         set(MIN_LOG_LEVEL 0)
     else()
@@ -38,12 +38,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-f
 set(CMAKE_SOURCE_DIR "src")
 
 message(STATUS "Build type is: ${CMAKE_BUILD_TYPE}")
-if (CMAKE_BUILD_TYPE MATCHES "Debug")
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -DDEBUG_BUILD=1 -Werror=switch")
-elseif (CMAKE_BUILD_TYPE MATCHES "ReleaseDebug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -DDEBUG_BUILD=1 -DNDEBUG")
-else() # Release
+elseif (CMAKE_BUILD_TYPE STREQUAL "ReleaseDebug")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -DDEBUG_BUILD=1 -DNDEBUG -Wno-unused-variable -Wno-unused-parameter")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -DDEBUG_BUILD=0 -Wno-unused-variable -Wno-unused-parameter")
+else()
+    message(FATAL_ERROR "Unknown CMAKE_BUILD_TYPE: Choices are 'Release', 'ReleaseDebug', 'Debug'")
 endif()
 
 # Architecture-specific flags
