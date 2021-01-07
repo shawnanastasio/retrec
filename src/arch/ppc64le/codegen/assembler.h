@@ -942,11 +942,32 @@ public:
         }, ra, rs, sh, modify_cr);
     }
 
+    void sld(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting sld%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
+        EMIT_INSN(Operation::SLD, [=] {
+            return self->x_form(31, rs, ra, rb, 27, modify_cr);
+        }, ra, rs, rb, modify_cr);
+    }
+
+    void srd(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting srd%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
+        EMIT_INSN(Operation::SRD, [=] {
+            return self->x_form(31, rs, ra, rb, 539, modify_cr);
+        }, ra, rs, rb, modify_cr);
+    }
+
     void sradi(uint8_t ra, uint8_t rs, uint8_t sh, bool modify_cr = false) {
         ASM_LOG("Emitting sradi%s r%u, r%u, %u\n", modify_cr?".":"", ra, rs, sh);
         EMIT_INSN(Operation::SRADI, [=] {
             return self->xs_form(31, rs, ra, sh, 413, modify_cr);
         }, ra, rs, sh, modify_cr);
+    }
+
+    void srad(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting srad%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
+        EMIT_INSN(Operation::SRAD, [=] {
+            return self->x_form(31, rs, ra, rb, 794, modify_cr);
+        }, ra, rs, rb, modify_cr);
     }
 
     // 3.3.17 Move To/From System Register Instructions

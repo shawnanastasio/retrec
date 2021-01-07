@@ -244,6 +244,35 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             }
             break;
 
+        case X86_INS_SAL: llinsn.alu().op = llir::Alu::Op::SHL; goto shift_common;
+        case X86_INS_SAR: llinsn.alu().op = llir::Alu::Op::SAR; goto shift_common;
+        case X86_INS_SHL: llinsn.alu().op = llir::Alu::Op::SHL; goto shift_common;
+        case X86_INS_SHR: llinsn.alu().op = llir::Alu::Op::SHR; goto shift_common;
+        shift_common:
+            llinsn.src_cnt = 2;
+            llinsn.dest_cnt = 1;
+            llinsn.alu().modifies_flags = true;
+            llinsn.alu().flags_modified = {Flag::CARRY, Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY};
+            fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+            fill_operand(detail->x86.operands[1], llinsn.src[1]);
+            if (detail->x86.operands[1].type == X86_OP_IMM && detail->x86.operands[1].imm == 1) {
+                // SAL/SAR/SHL/SHR reg, 1 is a special case and affects the flags differently
+                switch (insn->id) {
+                    case X86_INS_SAL: // OF = (MSBorig == MSBorig-1)
+                    case X86_INS_SHL: // OF = (MSBorig == MSBorig-1)
+                    case X86_INS_SHR: // OF = MSBorig
+                        llinsn.alu().flags_modified.push_back(Flag::OVERFLOW);
+                        break;
+                    case X86_INS_SAR: // OF = 0
+                        llinsn.alu().flags_cleared.push_back(Flag::OVERFLOW);
+                        break;
+                }
+            } else {
+                llinsn.alu().flags_undefined = {Flag::OVERFLOW};
+            }
+            break;
+
         //
         // LoadStore
         //

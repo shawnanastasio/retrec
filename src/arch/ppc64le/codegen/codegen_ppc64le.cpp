@@ -112,6 +112,16 @@ status_code codegen_ppc64le<T>::init() {
     fixed_helper$imul_overflow$emit(ctx);
     alignment_padding();
 
+    /* shift_carry */
+    uint32_t shift_carry_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$shift_carry$emit(ctx);
+    alignment_padding();
+
+    /* shift_overflow */
+    uint32_t shift_overflow_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$shift_overflow$emit(ctx);
+    alignment_padding();
+
     // Second pass: resolve relocations
     res = resolve_relocations(ctx);
     if (res != status_code::SUCCESS) {
@@ -138,6 +148,8 @@ status_code codegen_ppc64le<T>::init() {
     ff_addresses.trap_patch_call = (uint32_t)(uintptr_t)function_table + trap_patch_call_offset;
     ff_addresses.trap_patch_jump = (uint32_t)(uintptr_t)function_table + trap_patch_jump_offset;
     ff_addresses.imul_overflow = (uint32_t)(uintptr_t)function_table + imul_overflow_offset;
+    ff_addresses.shift_carry = (uint32_t)(uintptr_t)function_table + shift_carry_offset;
+    ff_addresses.shift_overflow = (uint32_t)(uintptr_t)function_table + shift_overflow_offset;
 
     pr_debug("Emitted function table to %p\n", function_table);
     return status_code::SUCCESS;
@@ -352,6 +364,9 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Alu::Op::ADD:
                 case llir::Alu::Op::AND:
                 case llir::Alu::Op::IMUL:
+                case llir::Alu::Op::SAR:
+                case llir::Alu::Op::SHL:
+                case llir::Alu::Op::SHR:
                 case llir::Alu::Op::SUB:
                 case llir::Alu::Op::XOR:
                     llir$alu$2src_common(ctx, insn);
@@ -734,7 +749,9 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
                             ctx.assembler->extsb(target, gpr.gpr());
                             break;
                         case llir::Register::Mask::LowLowHigh8:
-                            TODO();
+                            ctx.assembler->rldicl(target, gpr.gpr(), 64-8, 64-8, false);
+                            ctx.assembler->extsb(target, target);
+                            break;
                         default:
                             ASSERT_NOT_REACHED();
                     }
@@ -968,10 +985,15 @@ LastFlagOp codegen_ppc64le<T>::llir$alu$helper$insn_to_lastflagop(const llir::In
             return LastFlagOp::IMUL;
         case llir::Alu::Op::SUB:
             return LastFlagOp::SUB;
+        case llir::Alu::Op::SHL:
+            return LastFlagOp::SHL;
+        case llir::Alu::Op::SHR:
+            return LastFlagOp::SHR;
+        case llir::Alu::Op::SAR:
+            return LastFlagOp::SAR;
         case llir::Alu::Op::AND:
         case llir::Alu::Op::XOR:
             return LastFlagOp::INVALID;
-
         default:
             TODO();
     }
@@ -1062,6 +1084,24 @@ void codegen_ppc64le<T>::llir$alu$2src_common(gen_context &ctx, const llir::Insn
             }
             break;
         }
+
+        case llir::Alu::Op::SAR:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1, llir::Extension::SIGN);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
+            ctx.assembler->srad(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            break;
+
+        case llir::Alu::Op::SHL:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
+            ctx.assembler->sld(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            break;
+
+        case llir::Alu::Op::SHR:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
+            ctx.assembler->srd(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2);
+            break;
 
         case llir::Alu::Op::SUB:
             llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
@@ -1752,10 +1792,10 @@ void codegen_ppc64le<T>::fixed_helper$imul_overflow$emit(gen_context &ctx) {
     assembler &a = *ctx.assembler;
 
     // Branch to calculation code for operation type
-    ctx.assembler->rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-2, false); // Extract FLAG_OP_TYPE[1:0] into r0
-    ctx.assembler->cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::IMUL_OVERFLOW_16BIT);
-    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_GT, 0); RELOC_FIXUP_LABEL("imul_ov_6432", AFTER); // >  -> 6432
-    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("imul_ov_16", AFTER); // == -> 16
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-2, false); // Extract FLAG_OP_TYPE[1:0] into r0
+    a.cmplwi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::IMUL_OVERFLOW_16BIT);
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_GT, 0); RELOC_FIXUP_LABEL("imul_ov_6432", AFTER); // >  -> 6432
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("imul_ov_16", AFTER); // == -> 16
     /* else: fallthrough to 8-bit */
 
     { // 8-bit - Manually calculate OV
@@ -1790,10 +1830,129 @@ void codegen_ppc64le<T>::fixed_helper$imul_overflow$emit(gen_context &ctx) {
     }
 
     // Set LAZYVALID for CF and OF, return
-    ctx.assembler->crset(CR_LAZYVALID_CARRY); RELOC_DECLARE_LABEL("imul_ov_common");
-    ctx.assembler->crset(CR_LAZYVALID_OVERFLOW);
+    a.crset(CR_LAZYVALID_CARRY); RELOC_DECLARE_LABEL("imul_ov_common");
+    a.crset(CR_LAZYVALID_OVERFLOW);
     a.blr();
 }
+
+/**
+ * fixed_helper$shift_carry$emit - Emit the fixed helper for calculating the status
+ * of the carry flag for a shift operation.
+ *
+ * Parameters:
+ *   - r0 : FLAG_OP_TYPE top field
+ * Clobbers:
+ *   reg_allocator
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$shift_carry$emit(gen_context &ctx) {
+    assembler &a = *ctx.assembler;
+
+    // Save cr0
+    a.mcrf(CR_SCRATCH, 0);
+
+    // As far as I can tell, a shift with count=0 shouldn't touch CF, so if OP2 is 0
+    // just skip to the end where we set LAZYVALID_CARRY.
+    //
+    // FIXME: This should use a branch hint to be marked as unlikely
+    a.cmplwi(0, GPR_FIXED_FLAG_OP2, 0);
+    a.bc(BO::FIELD_SET, assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("shift_cf_0shift", AFTER);
+
+    // Determine whether shift was left or right by checking MSBit of OP_ field
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 63, true);
+    a.bc(BO::FIELD_CLR, assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("shift_cf_right", AFTER); // MSBit set, odd, RIGHT
+    /* fallthrough to left */
+
+    { // left shift: offset <- RLDICL_OFFSET + shift_count
+        a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 0, 64-7, false); // Extract rldicl offset
+        a.add(0, 0, GPR_FIXED_FLAG_OP2);
+        a.b(0); RELOC_FIXUP_LABEL("shift_cf_common", AFTER);
+    }
+
+    { // right shift: offset <- RLDICL_OFFSET - shift_count
+        a.li(0, 65);
+        a.sub(0, 0, GPR_FIXED_FLAG_OP2); RELOC_DECLARE_LABEL("shift_cf_right");
+        /* fallthrough to common */
+    }
+
+    // Rotate op1 by op2 and mask off all but LSB to get carry flag
+    a.rldcl(0, GPR_FIXED_FLAG_OP1, 0, 63, true); RELOC_DECLARE_LABEL("shift_cf_common");
+
+    // Move cf from !cr0.EQ to CR_LAZY
+    a.crnot(CR_LAZY_FIELD_CARRY, assembler::CR_EQ);
+    a.crset(CR_LAZYVALID_CARRY); RELOC_DECLARE_LABEL("shift_cf_0shift");
+
+    // Restore cr0, return
+    a.mcrf(0, CR_SCRATCH);
+    a.blr();
+}
+
+/**
+ * fixed_helper$overflow_carry$emit - Emit the fixed helper for calculating the status
+ * of the overflow flag for a shift operation.
+ *
+ * This routine is pretty poorly optimized but since this is probably a pretty rare flag
+ * check it should be fine for now.
+ *
+ * Parameters:
+ *   - r0 : FLAG_OP_TYPE top field
+ * Clobbers:
+ *   reg_allocator
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$shift_overflow$emit(gen_context &ctx) {
+    assembler &a = *ctx.assembler;
+
+    // Save cr0
+    a.mcrf(CR_SCRATCH, 0);
+
+    // Determine whether shift was left or right by checking MSBit of OP_ field
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-4, true);
+    a.cmpwi(0, 0, (uint32_t)LastFlagOpData::OP_SHL >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
+    a.bc(BO::FIELD_SET, assembler::CR_LT, 0); RELOC_FIXUP_LABEL("shift_of_shr", AFTER); // LT -> shr
+    a.bc(BO::FIELD_SET, assembler::CR_GT, 0); RELOC_FIXUP_LABEL("shift_of_sar", AFTER); // GT -> sar
+    /* fallthrough to left */
+
+    { // left shift: OF = (OP1[MSB] != OP1[MSB-1])
+        auto tmp = ctx.reg_allocator().allocate_gpr();
+
+        // Shift MSB and MSB-1 into the LSBs of r0
+        a.rldicl(tmp.gpr(), GPR_FIXED_FLAG_OP_TYPE, 0, 64-7, false); // Extract rldicl offset
+        a.addi(0, tmp.gpr(), 2); // Add offset of 2 for 2 MSBs
+        a.rldcl(0, GPR_FIXED_FLAG_OP1, 0, 62, false);
+
+        // Compare 2 LSBs of r0
+        a.rldicl(tmp.gpr(), 0, 64-1, 63, false);
+        a.rldicl(0, 0, 0, 63, false);
+        a.cmpw(0, 0, tmp.gpr()); // CR0[eq] <- !OF
+
+        a.crnot(CR_LAZY_FIELD_OVERFLOW, 4*0 + assembler::CR_EQ);
+        a.b(0); RELOC_FIXUP_LABEL("shift_of_common", AFTER);
+    }
+
+    { // right shift (logical): OF=OP1[MSB]
+        auto tmp = ctx.reg_allocator().allocate_gpr();
+
+        // Shift MSB and MSB-1 into the LSBs of r0
+        a.rldicl(tmp.gpr(), GPR_FIXED_FLAG_OP_TYPE, 0, 64-7, false); RELOC_DECLARE_LABEL("shift_of_shr");
+        a.addi(0, tmp.gpr(), 1); // Add offset of 1 for 1 MSBs
+        a.rldcl(0, GPR_FIXED_FLAG_OP1, 0, 63, true);
+
+        a.crnot(CR_LAZY_FIELD_OVERFLOW, 4*0 + assembler::CR_EQ); // OF <- !CR0[eq]
+        a.b(0); RELOC_FIXUP_LABEL("shift_of_common", AFTER);
+    }
+
+    { // right shift (arithmetic): OF=0
+        a.crclr(CR_LAZY_FIELD_OVERFLOW); RELOC_DECLARE_LABEL("shift_of_sar");
+        /* fallthrough to common */
+    }
+
+    // Restore cr0, return
+    a.crset(CR_LAZYVALID_OVERFLOW); RELOC_DECLARE_LABEL("shift_of_common");
+    a.mcrf(0, CR_SCRATCH);
+    a.blr();
+}
+
 
 //
 // Macro assembler
@@ -1953,10 +2112,23 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx) {
     a.bc(BO::FIELD_SET, CR_LAZYVALID_CARRY, 0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
 
     // Branch to calculation code for operation type
-    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[16:14] into r0
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-4, false); // Extract FLAG_OP_TYPE[15:12] into r0
     a.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_IMUL >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
     a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("cf_addsub", AFTER); // Less than IMUL -> ADD/SUB
-    a.b(0); RELOC_FIXUP_LABEL("cf_imul", AFTER); // Else -> IMUL
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("cf_imul", AFTER);   // Equals -> IMUL
+    a.b(0); RELOC_FIXUP_LABEL("cf_shift", AFTER); // Else -> shift
+
+    { // cf_imul
+        // Call imul_overflow OF fixed helper
+        a.bla(ff_addresses.imul_overflow); RELOC_DECLARE_LABEL("cf_imul");
+        a.b(0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
+    }
+
+    { // cf_shift
+        // Call shift_carry fixed helper
+        a.bla(ff_addresses.shift_carry); RELOC_DECLARE_LABEL("cf_shift");
+        a.b(0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
+    }
 
     { // cf_addsub
         // Preserve cr0 in a scratch register
@@ -1973,12 +2145,6 @@ void codegen_ppc64le<T>::macro$branch$conditional$carry(gen_context &ctx) {
         // Otherwise, extract the carry bit according to the CARRY_* field
         a.rldcl(0, GPR_FIXED_FLAG_RES, 0, 63, true); // Put overflow flag into !cr0[eq]
         a.b(0); RELOC_FIXUP_LABEL("cf_addsub_common", AFTER);
-    }
-
-    { // cf_imul
-        // Call imul_overflow OF fixed helper
-        a.bla(ff_addresses.imul_overflow); RELOC_DECLARE_LABEL("cf_imul");
-        a.b(0); RELOC_FIXUP_LABEL("cf_skip", AFTER);
     }
 
     { // cf_add64
@@ -2017,16 +2183,23 @@ void codegen_ppc64le<T>::macro$branch$conditional$overflow(gen_context &ctx) {
     auto scratch1 = ctx.reg_allocator().allocate_gpr();
 
     // Branch to calculation code for operation type
-    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-2, false); // Extract FLAG_OP_TYPE[16:14] into r0
+    a.rldicl(0, GPR_FIXED_FLAG_OP_TYPE, 64-(uint32_t)LastFlagOpData::OP_TYPE_SHIFT, 64-4, false); // Extract FLAG_OP_TYPE[16:12] into r0
 
     a.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_ADD >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
     a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("of_sub", AFTER); // Less than ADD -> SUB
     a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("of_add", AFTER); // Equal to ADD
-    // Else, fallthrough to IMUL
+    a.cmpldi(CR_SCRATCH, 0, (uint32_t)LastFlagOpData::OP_SHR >> (uint32_t)LastFlagOpData::OP_TYPE_SHIFT);
+    a.bc(BO::FIELD_SET, 4*CR_SCRATCH+assembler::CR_LT, 0); RELOC_FIXUP_LABEL("of_imul", AFTER); // Less than SHR -> IMUL
+    // Else, fallthrough to shift
+
+    { // shift
+        a.bla(ff_addresses.shift_overflow);
+        a.b(0); RELOC_FIXUP_LABEL("of_skip", AFTER);
+    }
 
     { // IMUL
         // Call imul_overflow OF fixed helper
-        a.bla(ff_addresses.imul_overflow);
+        a.bla(ff_addresses.imul_overflow); RELOC_DECLARE_LABEL("of_imul");
         a.b(0); RELOC_FIXUP_LABEL("of_skip", AFTER);
     }
 

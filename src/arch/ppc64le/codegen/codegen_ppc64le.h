@@ -84,16 +84,28 @@ enum class LastFlagOpData : uint32_t {
     IMUL_OVERFLOW_32BIT = IMUL_OVERFLOW_16BIT + 2,
     IMUL_OVERFLOW_64BIT = IMUL_OVERFLOW_32BIT + 3,
 
-    // Operation type for flag calculation (7:0)
+    // Offset for shift_carry calculation (6:0)
+    SHIFT_OFFSET_8BIT = 56,
+    SHIFT_OFFSET_16BIT = 48,
+    SHIFT_OFFSET_32BIT = 32,
+    SHIFT_OFFSET_64BIT = 0,
+
+    // Operation type for flag calculation (15:12)
     OP_TYPE_SHIFT = 12,
     OP_SUB = (0 << OP_TYPE_SHIFT),
     OP_ADD = (1 << OP_TYPE_SHIFT),
     OP_IMUL = (2 << OP_TYPE_SHIFT),
+    OP_SHR = (3 << OP_TYPE_SHIFT),
+    OP_SHL = (4 << OP_TYPE_SHIFT),
+    OP_SAR = (5 << OP_TYPE_SHIFT),
 };
 enum class LastFlagOp : uint32_t {
     SUB,
     ADD,
     IMUL,
+    SHL,
+    SHR,
+    SAR,
     INVALID
 };
 
@@ -118,6 +130,8 @@ class codegen_ppc64le final : public codegen {
         uint32_t trap_patch_call;
         uint32_t trap_patch_jump;
         uint32_t imul_overflow;
+        uint32_t shift_carry;
+        uint32_t shift_overflow;
     } ff_addresses;
 
     /**
@@ -217,6 +231,8 @@ class codegen_ppc64le final : public codegen {
     void fixed_helper$trap_patch_call$emit(gen_context &ctx);
     void fixed_helper$trap_patch_jump$emit(gen_context &ctx);
     void fixed_helper$imul_overflow$emit(gen_context &ctx);
+    void fixed_helper$shift_carry$emit(gen_context &ctx);
+    void fixed_helper$shift_overflow$emit(gen_context &ctx);
 
     // Resolve all relocations in a given translation context
     status_code resolve_relocations(gen_context &ctx);
@@ -301,6 +317,35 @@ class codegen_ppc64le final : public codegen {
                     case llir::Register::Mask::LowLowHigh8:
                     case llir::Register::Mask::LowLowLow8:
                         data |= enum_cast(ppc64le::LastFlagOpData::IMUL_OVERFLOW_8BIT);
+                        break;
+                    case llir::Register::Mask::Special:
+                        ASSERT_NOT_REACHED();
+                }
+                break;
+
+            case ppc64le::LastFlagOp::SHL:
+                data |= enum_cast(ppc64le::LastFlagOpData::OP_SHL);
+                goto shift_common;
+            case ppc64le::LastFlagOp::SHR:
+                data |= enum_cast(ppc64le::LastFlagOpData::OP_SHR);
+                goto shift_common;
+            case ppc64le::LastFlagOp::SAR:
+                data |= enum_cast(ppc64le::LastFlagOpData::OP_SAR);
+                goto shift_common;
+            shift_common:
+                switch (mask) {
+                    case llir::Register::Mask::Full64:
+                        data |= enum_cast(ppc64le::LastFlagOpData::SHIFT_OFFSET_64BIT);
+                        break;
+                    case llir::Register::Mask::Low32:
+                        data |= enum_cast(ppc64le::LastFlagOpData::SHIFT_OFFSET_32BIT);
+                        break;
+                    case llir::Register::Mask::LowLow16:
+                        data |= enum_cast(ppc64le::LastFlagOpData::SHIFT_OFFSET_16BIT);
+                        break;
+                    case llir::Register::Mask::LowLowHigh8:
+                    case llir::Register::Mask::LowLowLow8:
+                        data |= enum_cast(ppc64le::LastFlagOpData::SHIFT_OFFSET_8BIT);
                         break;
                     case llir::Register::Mask::Special:
                         ASSERT_NOT_REACHED();

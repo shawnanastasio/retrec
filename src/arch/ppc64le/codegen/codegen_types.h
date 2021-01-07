@@ -88,9 +88,12 @@
     x(RLWIMI, &assembler::rlwimi) \
     x(RLWINM, &assembler::rlwinm) \
     x(SC, &assembler::sc) \
+    x(SLD, &assembler::sld) \
     x(SLDI, &assembler::sldi) \
+    x(SRAD, &assembler::srad) \
     x(SRADI, &assembler::sradi) \
     x(SRAWI, &assembler::srawi) \
+    x(SRD, &assembler::srd) \
     x(SRDI, &assembler::srdi) \
     x(STB, &assembler::stb) \
     x(STBU, &assembler::stbu) \

@@ -94,6 +94,9 @@ struct Alu {
         x(ADD) \
         x(AND) \
         x(IMUL) \
+        x(SAR) \
+        x(SHL) \
+        x(SHR) \
         x(SUB) \
         x(XOR) \
         x(LOAD_IMM) \
