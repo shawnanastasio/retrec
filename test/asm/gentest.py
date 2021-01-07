@@ -74,7 +74,8 @@ def alu_test_case_genstrs(test, n, f):
 
 def alu_test_case_gentest(test, n, f):
     f.write("{}: # Test {}\n".format(n * 10, n))
-    f.write("    mov {}, {}\n".format(test.reg1_str, test.imm1_str))
+    if test.imm1_str:
+        f.write("    mov {}, {}\n".format(test.reg1_str, test.imm1_str))
     if test.reg2_str == "":
         if test.res_reg:
             f.write("    {} {}, OFFSET {}\n".format(test.insn_str, test.res_reg, test.res_str))
@@ -83,13 +84,13 @@ def alu_test_case_gentest(test, n, f):
             f.write("    {} {}, OFFSET {}\n".format(test.insn_str, test.res_reg, test.res_str))
             f.write("    cmp {}, OFFSET {}\n".format(test.reg1_str, test.res_str))
     else:
-        if test.res_reg:
+        if test.imm2_str:
             f.write("    mov {}, OFFSET {}\n".format(test.reg2_str, test.imm2_str))
+        if test.res_reg:
             f.write("    {} {}, {}\n".format(test.insn_str, test.reg1_str, test.reg2_str))
             f.write("    mov {}, OFFSET {}\n".format(test.res_reg, test.res_str))
             f.write("    cmp {}, {}\n".format(test.reg1_str, test.res_reg))
         else:
-            f.write("    mov {}, OFFSET {}\n".format(test.reg2_str, test.imm2_str))
             f.write("    {} {}, {}\n".format(test.insn_str, test.reg1_str, test.reg2_str))
             f.write("    cmp {}, OFFSET {}\n".format(test.reg1_str, test.res_str))
     f.write("    je 1f\n")
@@ -221,199 +222,376 @@ LOAD_TESTS = [
 
 ALU_TESTS = [
     # SUB
-    AluTestCase(64, "sub", "rax", "rbx", "100", "99", "1"),
-    AluTestCase(64, "sub", "rax", "rbx", "0", "1", "-1"),
-    AluTestCase(64, "sub", "rax", "rbx", "1", "1", "0"),
+    #AluTestCase(64, "sub", "rax", "rbx", "100", "99", "1"),
+    #AluTestCase(64, "sub", "rax", "rbx", "0", "1", "-1"),
+    #AluTestCase(64, "sub", "rax", "rbx", "1", "1", "0"),
 
-    AluTestCase(32, "sub", "eax", "ebx", "100", "99", "1"),
-    AluTestCase(32, "sub", "eax", "ebx", "0", "1", "-1"),
-    AluTestCase(32, "sub", "eax", "ebx", "1", "1", "0"),
+    #AluTestCase(32, "sub", "eax", "ebx", "100", "99", "1"),
+    #AluTestCase(32, "sub", "eax", "ebx", "0", "1", "-1"),
+    #AluTestCase(32, "sub", "eax", "ebx", "1", "1", "0"),
 
-    AluTestCase(16, "sub", "ax", "bx", "100", "99", "1"),
-    AluTestCase(16, "sub", "ax", "bx", "0", "1", "-1"),
-    AluTestCase(16, "sub", "ax", "bx", "1", "1", "0"),
+    #AluTestCase(16, "sub", "ax", "bx", "100", "99", "1"),
+    #AluTestCase(16, "sub", "ax", "bx", "0", "1", "-1"),
+    #AluTestCase(16, "sub", "ax", "bx", "1", "1", "0"),
 
-    AluTestCase(8, "sub", "ah", "bh", "100", "99", "1"),
-    AluTestCase(8, "sub", "ah", "bh", "0", "1", "-1"),
-    AluTestCase(8, "sub", "ah", "bh", "1", "1", "0"),
+    #AluTestCase(8, "sub", "ah", "bh", "100", "99", "1"),
+    #AluTestCase(8, "sub", "ah", "bh", "0", "1", "-1"),
+    #AluTestCase(8, "sub", "ah", "bh", "1", "1", "0"),
 
-    AluTestCase(8, "sub", "al", "bl", "100", "99", "1"),
-    AluTestCase(8, "sub", "al", "bl", "0", "1", "-1"),
-    AluTestCase(8, "sub", "al", "bl", "1", "1", "0"),
+    #AluTestCase(8, "sub", "al", "bl", "100", "99", "1"),
+    #AluTestCase(8, "sub", "al", "bl", "0", "1", "-1"),
+    #AluTestCase(8, "sub", "al", "bl", "1", "1", "0"),
 
-    # ADD
-    AluTestCase(64, "add", "rax", "rbx", "1", "99", "100"),
-    AluTestCase(64, "add", "rax", "rbx", "0", "1", "1"),
-    AluTestCase(64, "add", "rax", "rbx", "1", "1", "2"),
-    AluTestCase(64, "add", "rax", "rbx", "1", "-1", "0"),
-    AluTestCase(64, "add", "rax", "rbx", "1", "-2", "-1"),
+    ## ADD
+    #AluTestCase(64, "add", "rax", "rbx", "1", "99", "100"),
+    #AluTestCase(64, "add", "rax", "rbx", "0", "1", "1"),
+    #AluTestCase(64, "add", "rax", "rbx", "1", "1", "2"),
+    #AluTestCase(64, "add", "rax", "rbx", "1", "-1", "0"),
+    #AluTestCase(64, "add", "rax", "rbx", "1", "-2", "-1"),
 
-    AluTestCase(32, "add", "eax", "ebx", "1", "99", "100"),
-    AluTestCase(32, "add", "eax", "ebx", "0", "1", "1"),
-    AluTestCase(32, "add", "eax", "ebx", "1", "1", "2"),
-    AluTestCase(32, "add", "eax", "ebx", "1", "-1", "0"),
-    AluTestCase(32, "add", "eax", "ebx", "1", "-2", "-1"),
+    #AluTestCase(32, "add", "eax", "ebx", "1", "99", "100"),
+    #AluTestCase(32, "add", "eax", "ebx", "0", "1", "1"),
+    #AluTestCase(32, "add", "eax", "ebx", "1", "1", "2"),
+    #AluTestCase(32, "add", "eax", "ebx", "1", "-1", "0"),
+    #AluTestCase(32, "add", "eax", "ebx", "1", "-2", "-1"),
 
-    AluTestCase(16, "add", "ax", "bx", "1", "99", "100"),
-    AluTestCase(16, "add", "ax", "bx", "0", "1", "1"),
-    AluTestCase(16, "add", "ax", "bx", "1", "1", "2"),
-    AluTestCase(16, "add", "ax", "bx", "1", "-1", "0"),
-    AluTestCase(16, "add", "ax", "bx", "1", "-2", "-1"),
+    #AluTestCase(16, "add", "ax", "bx", "1", "99", "100"),
+    #AluTestCase(16, "add", "ax", "bx", "0", "1", "1"),
+    #AluTestCase(16, "add", "ax", "bx", "1", "1", "2"),
+    #AluTestCase(16, "add", "ax", "bx", "1", "-1", "0"),
+    #AluTestCase(16, "add", "ax", "bx", "1", "-2", "-1"),
 
-    AluTestCase(8, "add", "ah", "bh", "1", "99", "100"),
-    AluTestCase(8, "add", "ah", "bh", "0", "1", "1"),
-    AluTestCase(8, "add", "ah", "bh", "1", "1", "2"),
-    AluTestCase(8, "add", "ah", "bh", "1", "-1", "0"),
-    AluTestCase(8, "add", "ah", "bh", "1", "-2", "-1"),
+    #AluTestCase(8, "add", "ah", "bh", "1", "99", "100"),
+    #AluTestCase(8, "add", "ah", "bh", "0", "1", "1"),
+    #AluTestCase(8, "add", "ah", "bh", "1", "1", "2"),
+    #AluTestCase(8, "add", "ah", "bh", "1", "-1", "0"),
+    #AluTestCase(8, "add", "ah", "bh", "1", "-2", "-1"),
 
-    AluTestCase(8, "add", "al", "bl", "1", "99", "100"),
-    AluTestCase(8, "add", "al", "bl", "0", "1", "1"),
-    AluTestCase(8, "add", "al", "bl", "1", "1", "2"),
-    AluTestCase(8, "add", "al", "bl", "1", "-1", "0"),
-    AluTestCase(8, "add", "al", "bl", "1", "-2", "-1"),
+    #AluTestCase(8, "add", "al", "bl", "1", "99", "100"),
+    #AluTestCase(8, "add", "al", "bl", "0", "1", "1"),
+    #AluTestCase(8, "add", "al", "bl", "1", "1", "2"),
+    #AluTestCase(8, "add", "al", "bl", "1", "-1", "0"),
+    #AluTestCase(8, "add", "al", "bl", "1", "-2", "-1"),
 
-    # XOR
-    AluTestCase(64, "xor", "rax", "rbx", "0xFFFFFFFF", "0xFF000000", "0x00FFFFFF"),
-    AluTestCase(32, "xor", "eax", "ebx", "0xFFFFFFFF", "0xFF000000", "0x00FFFFFF"),
-    AluTestCase(16, "xor", "ax", "bx", "0xFFFF", "0xFF00", "0x00FF"),
-    AluTestCase(8, "xor", "ah", "bl", "0xFF", "0xF0", "0x0F"),
-    AluTestCase(8, "xor", "al", "bl", "0xFF", "0xF0", "0x0F"),
+    ## XOR
+    #AluTestCase(64, "xor", "rax", "rbx", "0xFFFFFFFF", "0xFF000000", "0x00FFFFFF"),
+    #AluTestCase(32, "xor", "eax", "ebx", "0xFFFFFFFF", "0xFF000000", "0x00FFFFFF"),
+    #AluTestCase(16, "xor", "ax", "bx", "0xFFFF", "0xFF00", "0x00FF"),
+    #AluTestCase(8, "xor", "ah", "bl", "0xFF", "0xF0", "0x0F"),
+    #AluTestCase(8, "xor", "al", "bl", "0xFF", "0xF0", "0x0F"),
 
-    # AND
-    AluTestCase(64, "and", "rax", "rbx", "0xFFFFFFFFFFFFFFFF", "0xFFFF", "0xFFFF"),
-    AluTestCase(32, "and", "eax", "ebx", "0xFFFFFFFF", "0xFFFF", "0xFFFF"),
-    AluTestCase(16, "and", "ax", "bx", "0xFFFF", "0xFF", "0xFF"),
-    AluTestCase(8, "and", "ah", "bl", "0xFF", "0xF0", "0xF0"),
-    AluTestCase(8, "and", "al", "bl", "0xFF", "0xF0", "0xF0"),
+    ## AND
+    #AluTestCase(64, "and", "rax", "rbx", "0xFFFFFFFFFFFFFFFF", "0xFFFF", "0xFFFF"),
+    #AluTestCase(32, "and", "eax", "ebx", "0xFFFFFFFF", "0xFFFF", "0xFFFF"),
+    #AluTestCase(16, "and", "ax", "bx", "0xFFFF", "0xFF", "0xFF"),
+    #AluTestCase(8, "and", "ah", "bl", "0xFF", "0xF0", "0xF0"),
+    #AluTestCase(8, "and", "al", "bl", "0xFF", "0xF0", "0xF0"),
 
-    # MOVZX reg, reg
-    AluTestCase(16, "movzx", "rax", "bx", "0", "-1", "0xFFFF"),
-    AluTestCase(8,  "movzx", "rax", "bl", "0", "-1", "0xFF"),
-    AluTestCase(16, "movzx", "eax", "bx", "0", "-1", "0xFFFF"),
-    AluTestCase(8,  "movzx", "eax", "bl", "0", "-1", "0xFF"),
-    AluTestCase(8,  "movzx", "ax", "bl", "0", "-1", "0xFF"),
+    ## MOVZX reg, reg
+    #AluTestCase(16, "movzx", "rax", "bx", "0", "-1", "0xFFFF"),
+    #AluTestCase(8,  "movzx", "rax", "bl", "0", "-1", "0xFF"),
+    #AluTestCase(16, "movzx", "eax", "bx", "0", "-1", "0xFFFF"),
+    #AluTestCase(8,  "movzx", "eax", "bl", "0", "-1", "0xFF"),
+    #AluTestCase(8,  "movzx", "ax", "bl", "0", "-1", "0xFF"),
 
-    # MOVSX reg, reg
-    AluTestCase(32, "movsx", "rax", "ebx", "0", "-1", "-1"),
-    AluTestCase(16, "movsx", "rax", "bx", "0", "-1", "-1"),
-    AluTestCase(8,  "movsx", "rax", "bl", "0", "-1", "-1"),
-    AluTestCase(16, "movsx", "eax", "bx", "0", "-1", "-1"),
-    AluTestCase(8,  "movsx", "eax", "bl", "0", "-1", "-1"),
-    AluTestCase(8,  "movsx", "ax", "bl", "0", "-1", "-1"),
+    ## MOVSX reg, reg
+    #AluTestCase(32, "movsx", "rax", "ebx", "0", "-1", "-1"),
+    #AluTestCase(16, "movsx", "rax", "bx", "0", "-1", "-1"),
+    #AluTestCase(8,  "movsx", "rax", "bl", "0", "-1", "-1"),
+    #AluTestCase(16, "movsx", "eax", "bx", "0", "-1", "-1"),
+    #AluTestCase(8,  "movsx", "eax", "bl", "0", "-1", "-1"),
+    #AluTestCase(8,  "movsx", "ax", "bl", "0", "-1", "-1"),
 
-    # IMUL 2-operand
-    AluTestCase(64, "imul", "rax", "rbx", "-1", "-1", "1"),
-    AluTestCase(64, "imul", "rax", "rbx", "-1", "1", "-1"),
-    AluTestCase(64, "imul", "rax", "rbx", "0x3fffffffffffffff", "2", "0x7ffffffffffffffe", "rcx"),
-    AluTestCase(64, "imul", "rax", "rbx", "0x4000000000000000", "2", "0x8000000000000000", "rcx"),
+    ## IMUL 2-operand
+    #AluTestCase(64, "imul", "rax", "rbx", "-1", "-1", "1"),
+    #AluTestCase(64, "imul", "rax", "rbx", "-1", "1", "-1"),
+    #AluTestCase(64, "imul", "rax", "rbx", "0x3fffffffffffffff", "2", "0x7ffffffffffffffe", "rcx"),
+    #AluTestCase(64, "imul", "rax", "rbx", "0x4000000000000000", "2", "0x8000000000000000", "rcx"),
 
-    AluTestCase(32, "imul", "eax", "ebx", "-1", "-1", "1"),
-    AluTestCase(32, "imul", "eax", "ebx", "-1", "1", "-1"),
-    AluTestCase(32, "imul", "eax", "ebx", "0x3fffffff", "2", "0x7ffffffe"),
-    AluTestCase(32, "imul", "eax", "ebx", "0x40000000", "2", "0x80000000"),
+    #AluTestCase(32, "imul", "eax", "ebx", "-1", "-1", "1"),
+    #AluTestCase(32, "imul", "eax", "ebx", "-1", "1", "-1"),
+    #AluTestCase(32, "imul", "eax", "ebx", "0x3fffffff", "2", "0x7ffffffe"),
+    #AluTestCase(32, "imul", "eax", "ebx", "0x40000000", "2", "0x80000000"),
 
-    AluTestCase(16, "imul", "ax", "bx", "-1", "-1", "1"),
-    AluTestCase(16, "imul", "ax", "bx", "-1", "1", "-1"),
-    AluTestCase(16, "imul", "ax", "bx", "0x3fff", "2", "0x7ffe"),
-    AluTestCase(16, "imul", "ax", "bx", "0x4000", "2", "0x8000"),
+    #AluTestCase(16, "imul", "ax", "bx", "-1", "-1", "1"),
+    #AluTestCase(16, "imul", "ax", "bx", "-1", "1", "-1"),
+    #AluTestCase(16, "imul", "ax", "bx", "0x3fff", "2", "0x7ffe"),
+    #AluTestCase(16, "imul", "ax", "bx", "0x4000", "2", "0x8000"),
 
-    # IMUL 1-operand
-    #
-    # These tests look a little weird because they use comment injection to
-    # override the exact instruction used, and they also compare the result
-    # of the high bytes with a second pop+cmp test.
-    AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "-1", "-1", "1"),
-    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "-1", "1", "-1"),
-    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "-1"), # high should be all 1
-    AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "0x3fffffffffffffff", "2", "0x7ffffffffffffffe", "rcx"),
-    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "0x4000000000000000", "2", "0x8000000000000000", "rcx"),
-    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "0x7fffffffffffffff", "3", "0x7ffffffffffffffd", "rcx"),
-    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "1"), # high should be exactly 1
+    ## IMUL 1-operand
+    ##
+    ## These tests look a little weird because they use comment injection to
+    ## override the exact instruction used, and they also compare the result
+    ## of the high bytes with a second pop+cmp test.
+    #AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "-1", "-1", "1"),
+    #AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "-1", "1", "-1"),
+    #AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "-1"), # high should be all 1
+    #AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "0x3fffffffffffffff", "2", "0x7ffffffffffffffe", "rcx"),
+    #AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "0x4000000000000000", "2", "0x8000000000000000", "rcx"),
+    #AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(64, "imul rbx; push rdx#", "rax", "rbx", "0x7fffffffffffffff", "3", "0x7ffffffffffffffd", "rcx"),
+    #AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "1"), # high should be exactly 1
 
-    AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "-1", "-1", "1"),
-    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "-1", "1", "-1"),
-    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "-1"), # high should be all 1
-    AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "0x3fffffff", "2", "0x7ffffffe"),
-    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "0x40000000", "2", "0x80000000"),
-    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "0x7fffffff", "3", "0x7ffffffd"),
-    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "1"), # high should be exactly 1
+    #AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "-1", "-1", "1"),
+    #AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "-1", "1", "-1"),
+    #AluTestCase(32, "pop rdx#", "edx", "", "0", "", "-1"), # high should be all 1
+    #AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "0x3fffffff", "2", "0x7ffffffe"),
+    #AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "0x40000000", "2", "0x80000000"),
+    #AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(32, "imul ebx; push rdx#", "eax", "ebx", "0x7fffffff", "3", "0x7ffffffd"),
+    #AluTestCase(32, "pop rdx#", "edx", "", "0", "", "1"), # high should be exactly 1
 
-    AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "-1", "-1", "1"),
-    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "-1", "1", "-1"),
-    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "-1"), # high should be all 1
-    AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "0x3fff", "2", "0x7ffe"),
-    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "0x4000", "2", "0x8000"),
-    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be all 0
-    AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "0x7fff", "3", "0x7ffd"),
-    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "1"), # high should be exactly 1
+    #AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "-1", "-1", "1"),
+    #AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "-1", "1", "-1"),
+    #AluTestCase(16, "pop rdx#", "dx", "", "0", "", "-1"), # high should be all 1
+    #AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "0x3fff", "2", "0x7ffe"),
+    #AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "0x4000", "2", "0x8000"),
+    #AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be all 0
+    #AluTestCase(16, "imul bx; push rdx#", "ax", "bx", "0x7fff", "3", "0x7ffd"),
+    #AluTestCase(16, "pop rdx#", "dx", "", "0", "", "1"), # high should be exactly 1
 
-    AluTestCase(8, "imul bl#", "al", "bl", "-1", "-1", "1"),
-    AluTestCase(8, "imul bl#", "al", "bl", "-1", "1", "-1"),
-    AluTestCase(8, "imul bl#", "al", "bl", "0x3f", "2", "0x7e"),
-    AluTestCase(8, "imul bl#", "al", "bl", "0x40", "2", "0x80"),
+    #AluTestCase(8, "imul bl#", "al", "bl", "-1", "-1", "1"),
+    #AluTestCase(8, "imul bl#", "al", "bl", "-1", "1", "-1"),
+    #AluTestCase(8, "imul bl#", "al", "bl", "0x3f", "2", "0x7e"),
+    #AluTestCase(8, "imul bl#", "al", "bl", "0x40", "2", "0x80"),
+
+    # S{A,H}{R,L}
+    AluTestCase(64, "shl", "rax", "1", "1", "", "2"),
+    AluTestCase(64, "shl", "rax", "2", "1", "", "4"),
+    AluTestCase(64, "shl", "rax", "cl", "1", "1", "2"),
+    AluTestCase(64, "shr", "rax", "1", "1", "", "0"),
+    AluTestCase(64, "shr", "rax", "1", "2", "", "1"),
+    AluTestCase(64, "shr", "rax", "cl", "2", "1", "1"),
+    AluTestCase(64, "sar", "rax", "1", "1", "", "0"),
+    AluTestCase(64, "sar", "rax", "1", "2", "", "1"),
+    AluTestCase(64, "sar", "rax", "cl", "2", "1", "1"),
+    AluTestCase(64, "sar", "rax", "1", "-1", "", "-1"),
+    AluTestCase(64, "sar", "rax", "1", "-3", "", "-2"),
+    AluTestCase(64, "sar", "rax", "cl", "-3", "1", "-2"),
+
+    AluTestCase(32, "shl", "eax", "1", "1", "", "2"),
+    AluTestCase(32, "shl", "eax", "2", "1", "", "4"),
+    AluTestCase(32, "shl", "eax", "cl", "1", "1", "2"),
+    AluTestCase(32, "shr", "eax", "1", "1", "", "0"),
+    AluTestCase(32, "shr", "eax", "1", "2", "", "1"),
+    AluTestCase(32, "shr", "eax", "cl", "2", "1", "1"),
+    AluTestCase(32, "sar", "eax", "1", "1", "", "0"),
+    AluTestCase(32, "sar", "eax", "1", "2", "", "1"),
+    AluTestCase(32, "sar", "eax", "cl", "2", "1", "1"),
+    AluTestCase(32, "sar", "eax", "1", "-1", "", "-1"),
+    AluTestCase(32, "sar", "eax", "1", "-3", "", "-2"),
+    AluTestCase(32, "sar", "eax", "cl", "-3", "1", "-2"),
+
+    AluTestCase(16, "shl", "ax", "1", "1", "", "2"),
+    AluTestCase(16, "shl", "ax", "2", "1", "", "4"),
+    AluTestCase(16, "shl", "ax", "cl", "1", "1", "2"),
+    AluTestCase(16, "shr", "ax", "1", "1", "", "0"),
+    AluTestCase(16, "shr", "ax", "1", "2", "", "1"),
+    AluTestCase(16, "shr", "ax", "cl", "2", "1", "1"),
+    AluTestCase(16, "sar", "ax", "1", "1", "", "0"),
+    AluTestCase(16, "sar", "ax", "1", "2", "", "1"),
+    AluTestCase(16, "sar", "ax", "cl", "2", "1", "1"),
+    AluTestCase(16, "sar", "ax", "1", "-1", "", "-1"),
+    AluTestCase(16, "sar", "ax", "1", "-3", "", "-2"),
+    AluTestCase(16, "sar", "ax", "cl", "-3", "1", "-2"),
+
+    AluTestCase(8, "shl", "ah", "1", "1", "", "2"),
+    AluTestCase(8, "shl", "ah", "2", "1", "", "4"),
+    AluTestCase(8, "shl", "ah", "cl", "1", "1", "2"),
+    AluTestCase(8, "shr", "ah", "1", "1", "", "0"),
+    AluTestCase(8, "shr", "ah", "1", "2", "", "1"),
+    AluTestCase(8, "shr", "ah", "cl", "2", "1", "1"),
+    AluTestCase(8, "sar", "ah", "1", "1", "", "0"),
+    AluTestCase(8, "sar", "ah", "1", "2", "", "1"),
+    AluTestCase(8, "sar", "ah", "cl", "2", "1", "1"),
+    AluTestCase(8, "sar", "ah", "1", "-1", "", "-1"),
+    AluTestCase(8, "sar", "ah", "1", "-3", "", "-2"),
+    AluTestCase(8, "sar", "ah", "cl", "-3", "1", "-2"),
+
+    AluTestCase(8, "shl", "al", "1", "1", "", "2"),
+    AluTestCase(8, "shl", "al", "2", "1", "", "4"),
+    AluTestCase(8, "shl", "al", "cl", "1", "1", "2"),
+    AluTestCase(8, "shr", "al", "1", "1", "", "0"),
+    AluTestCase(8, "shr", "al", "1", "2", "", "1"),
+    AluTestCase(8, "shr", "al", "cl", "2", "1", "1"),
+    AluTestCase(8, "sar", "al", "1", "1", "", "0"),
+    AluTestCase(8, "sar", "al", "1", "2", "", "1"),
+    AluTestCase(8, "sar", "al", "cl", "2", "1", "1"),
+    AluTestCase(8, "sar", "al", "1", "-1", "", "-1"),
+    AluTestCase(8, "sar", "al", "1", "-3", "", "-2"),
+    AluTestCase(8, "sar", "al", "cl", "-3", "1", "-2"),
 ]
 
 CARRY_TESTS = [
     # SUB (cmp)
-    FlagTestCase(64, "rax", "rbx", "0", "-1", "cmp", "jc", "jnc"),
-    FlagTestCase(64, "rax", "rbx", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(64, "rax", "", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(32, "eax", "ebx", "1", "-1", "cmp", "jc", "jnc"),
-    FlagTestCase(32, "eax", "ebx", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(32, "eax", "", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(16, "ax", "bx", "0", "-1", "cmp", "jc", "jnc"),
-    FlagTestCase(16, "ax", "bx", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(16, "ax", "", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(8, "ah", "bh", "0", "-1", "cmp", "jc", "jnc"),
-    FlagTestCase(8, "ah", "bh", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(8, "ah", "", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(8, "al", "bl", "0", "-1", "cmp", "jc", "jnc"),
-    FlagTestCase(8, "al", "bl", "-1", "-1", "cmp", "jnc", "jc"),
-    FlagTestCase(8, "al", "", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(64, "rax", "rbx", "0", "-1", "cmp", "jc", "jnc"),
+    #FlagTestCase(64, "rax", "rbx", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(64, "rax", "", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "ebx", "1", "-1", "cmp", "jc", "jnc"),
+    #FlagTestCase(32, "eax", "ebx", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "bx", "0", "-1", "cmp", "jc", "jnc"),
+    #FlagTestCase(16, "ax", "bx", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(8, "ah", "bh", "0", "-1", "cmp", "jc", "jnc"),
+    #FlagTestCase(8, "ah", "bh", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(8, "ah", "", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(8, "al", "bl", "0", "-1", "cmp", "jc", "jnc"),
+    #FlagTestCase(8, "al", "bl", "-1", "-1", "cmp", "jnc", "jc"),
+    #FlagTestCase(8, "al", "", "-1", "-1", "cmp", "jnc", "jc"),
 
-    # IMUL
-    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "17", "imul", "jc", "jnc"),
-    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "16", "imul", "jnc", "jc"),
-    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "-17", "imul", "jc", "jnc"),
-    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "-16", "imul", "jnc", "jc"),
-    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "16", "imul", "jc", "jnc"),
-    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "15", "imul", "jnc", "jc"),
-    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "-17", "imul", "jc", "jnc"),
-    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "-16", "imul", "jnc", "jc"),
-    FlagTestCase(64, "rax", "rbx", "0", "0", "imul", "jnc", "jc"),
+    ## IMUL
+    #FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "17", "imul", "jc", "jnc"),
+    #FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "16", "imul", "jnc", "jc"),
+    #FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "-17", "imul", "jc", "jnc"),
+    #FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "-16", "imul", "jnc", "jc"),
+    #FlagTestCase(64, "rax", "rbx", "0x800000000000000", "16", "imul", "jc", "jnc"),
+    #FlagTestCase(64, "rax", "rbx", "0x800000000000000", "15", "imul", "jnc", "jc"),
+    #FlagTestCase(64, "rax", "rbx", "0x800000000000000", "-17", "imul", "jc", "jnc"),
+    #FlagTestCase(64, "rax", "rbx", "0x800000000000000", "-16", "imul", "jnc", "jc"),
+    #FlagTestCase(64, "rax", "rbx", "0", "0", "imul", "jnc", "jc"),
 
-    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "17", "imul", "jc", "jnc"),
-    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "16", "imul", "jnc", "jc"),
-    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "-17", "imul", "jc", "jnc"),
-    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "-16", "imul", "jnc", "jc"),
-    FlagTestCase(32, "eax", "ebx", "0x8000000", "16", "imul", "jc", "jnc"),
-    FlagTestCase(32, "eax", "ebx", "0x8000000", "15", "imul", "jnc", "jc"),
-    FlagTestCase(32, "eax", "ebx", "0x8000000", "-17", "imul", "jc", "jnc"),
-    FlagTestCase(32, "eax", "ebx", "0x8000000", "-16", "imul", "jnc", "jc"),
-    FlagTestCase(32, "eax", "ebx", "0", "0", "imul", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "17", "imul", "jc", "jnc"),
+    #FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "16", "imul", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "-17", "imul", "jc", "jnc"),
+    #FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "-16", "imul", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "ebx", "0x8000000", "16", "imul", "jc", "jnc"),
+    #FlagTestCase(32, "eax", "ebx", "0x8000000", "15", "imul", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "ebx", "0x8000000", "-17", "imul", "jc", "jnc"),
+    #FlagTestCase(32, "eax", "ebx", "0x8000000", "-16", "imul", "jnc", "jc"),
+    #FlagTestCase(32, "eax", "ebx", "0", "0", "imul", "jnc", "jc"),
 
-    FlagTestCase(16, "ax", "bx", "0x7FF", "17", "imul", "jc", "jnc"),
-    FlagTestCase(16, "ax", "bx", "0x7FF", "16", "imul", "jnc", "jc"),
-    FlagTestCase(16, "ax", "bx", "0x7FF", "-17", "imul", "jc", "jnc"),
-    FlagTestCase(16, "ax", "bx", "0x7FF", "-16", "imul", "jnc", "jc"),
-    FlagTestCase(16, "ax", "bx", "0x800", "16", "imul", "jc", "jnc"),
-    FlagTestCase(16, "ax", "bx", "0x800", "15", "imul", "jnc", "jc"),
-    FlagTestCase(16, "ax", "bx", "0x800", "-17", "imul", "jc", "jnc"),
-    FlagTestCase(16, "ax", "bx", "0x800", "-16", "imul", "jnc", "jc"),
-    FlagTestCase(16, "ax", "bx", "0", "0", "imul", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "bx", "0x7FF", "17", "imul", "jc", "jnc"),
+    #FlagTestCase(16, "ax", "bx", "0x7FF", "16", "imul", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "bx", "0x7FF", "-17", "imul", "jc", "jnc"),
+    #FlagTestCase(16, "ax", "bx", "0x7FF", "-16", "imul", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "bx", "0x800", "16", "imul", "jc", "jnc"),
+    #FlagTestCase(16, "ax", "bx", "0x800", "15", "imul", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "bx", "0x800", "-17", "imul", "jc", "jnc"),
+    #FlagTestCase(16, "ax", "bx", "0x800", "-16", "imul", "jnc", "jc"),
+    #FlagTestCase(16, "ax", "bx", "0", "0", "imul", "jnc", "jc"),
 
-    FlagTestCase(8, "al", "bl", "0x8", "17", "imul bl#", "jc", "jnc"),
-    FlagTestCase(8, "al", "bl", "0x8", "15", "imul bl#", "jnc", "jc"),
-    FlagTestCase(8, "al", "bl", "0x8", "-17", "imul bl#", "jc", "jnc"),
-    FlagTestCase(8, "al", "bl", "0x8", "-16", "imul bl#", "jnc", "jc"),
+    #FlagTestCase(8, "al", "bl", "0x8", "17", "imul bl#", "jc", "jnc"),
+    #FlagTestCase(8, "al", "bl", "0x8", "15", "imul bl#", "jnc", "jc"),
+    #FlagTestCase(8, "al", "bl", "0x8", "-17", "imul bl#", "jc", "jnc"),
+    #FlagTestCase(8, "al", "bl", "0x8", "-16", "imul bl#", "jnc", "jc"),
+
+    # Shifts
+    FlagTestCase(64, "rax", "", "1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-2", "1", "shr", "jnc", "jc"),
+    FlagTestCase(64, "rax", "", "2", "2", "shr", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-1", "2", "shr", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-4", "2", "shr", "jnc", "jc"),
+    FlagTestCase(64, "rax", "", "0x4000000000000000", "63", "shr", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-2", "1", "sar", "jnc", "jc"),
+    FlagTestCase(64, "rax", "", "2", "2", "sar", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-1", "2", "sar", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-4", "2", "sar", "jnc", "jc"),
+    FlagTestCase(64, "rax", "", "0x4000000000000000", "63", "sar", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "0x8000000000000000", "1", "shl", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-1", "1", "shl", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "0x7FFFFFFFFFFFFFFF", "1", "shl", "jnc", "jc"),
+    FlagTestCase(64, "rax", "", "0x4000000000000000", "2", "shl", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "-1", "2", "shl", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "0x3FFFFFFFFFFFFFFF", "2", "shl", "jnc", "jc"),
+    FlagTestCase(64, "rax", "", "2", "63", "shl", "jc", "jnc"),
+
+    FlagTestCase(32, "eax", "", "1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-2", "1", "shr", "jnc", "jc"),
+    FlagTestCase(32, "eax", "", "2", "2", "shr", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-1", "2", "shr", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-4", "2", "shr", "jnc", "jc"),
+    FlagTestCase(32, "eax", "", "0x40000000", "31", "shr", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-2", "1", "sar", "jnc", "jc"),
+    FlagTestCase(32, "eax", "", "2", "2", "sar", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-1", "2", "sar", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-4", "2", "sar", "jnc", "jc"),
+    FlagTestCase(32, "eax", "", "0x40000000", "31", "sar", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "0x80000000", "1", "shl", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-1", "1", "shl", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "0x7FFFFFFF", "1", "shl", "jnc", "jc"),
+    FlagTestCase(32, "eax", "", "0x40000000", "2", "shl", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "-1", "2", "shl", "jc", "jnc"),
+    FlagTestCase(32, "eax", "", "0x3FFFFFFF", "2", "shl", "jnc", "jc"),
+    FlagTestCase(32, "eax", "", "2", "31", "shl", "jc", "jnc"),
+
+    FlagTestCase(16, "ax", "", "1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-2", "1", "shr", "jnc", "jc"),
+    FlagTestCase(16, "ax", "", "2", "2", "shr", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-1", "2", "shr", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-4", "2", "shr", "jnc", "jc"),
+    FlagTestCase(16, "ax", "", "0x4000", "15", "shr", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-2", "1", "sar", "jnc", "jc"),
+    FlagTestCase(16, "ax", "", "2", "2", "sar", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-1", "2", "sar", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-4", "2", "sar", "jnc", "jc"),
+    FlagTestCase(16, "ax", "", "0x4000", "15", "sar", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "0x8000", "1", "shl", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-1", "1", "shl", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "0x7FFF", "1", "shl", "jnc", "jc"),
+    FlagTestCase(16, "ax", "", "0x4000", "2", "shl", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "-1", "2", "shl", "jc", "jnc"),
+    FlagTestCase(16, "ax", "", "0x3FFF", "2", "shl", "jnc", "jc"),
+    FlagTestCase(16, "ax", "", "2", "15", "shl", "jc", "jnc"),
+
+    FlagTestCase(8, "ah", "", "1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-2", "1", "shr", "jnc", "jc"),
+    FlagTestCase(8, "ah", "", "2", "2", "shr", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-1", "2", "shr", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-4", "2", "shr", "jnc", "jc"),
+    FlagTestCase(8, "ah", "", "0x40", "7", "shr", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-2", "1", "sar", "jnc", "jc"),
+    FlagTestCase(8, "ah", "", "2", "2", "sar", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-1", "2", "sar", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-4", "2", "sar", "jnc", "jc"),
+    FlagTestCase(8, "ah", "", "0x40", "7", "sar", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "0x80", "1", "shl", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-1", "1", "shl", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "0x7F", "1", "shl", "jnc", "jc"),
+    FlagTestCase(8, "ah", "", "0x40", "2", "shl", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "-1", "2", "shl", "jc", "jnc"),
+    FlagTestCase(8, "ah", "", "0x3F", "2", "shl", "jnc", "jc"),
+    FlagTestCase(8, "ah", "", "2", "7", "shl", "jc", "jnc"),
+
+    FlagTestCase(8, "al", "", "1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-1", "1", "shr", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-2", "1", "shr", "jnc", "jc"),
+    FlagTestCase(8, "al", "", "2", "2", "shr", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-1", "2", "shr", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-4", "2", "shr", "jnc", "jc"),
+    FlagTestCase(8, "al", "", "0x40", "7", "shr", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-1", "1", "sar", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-2", "1", "sar", "jnc", "jc"),
+    FlagTestCase(8, "al", "", "2", "2", "sar", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-1", "2", "sar", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-4", "2", "sar", "jnc", "jc"),
+    FlagTestCase(8, "al", "", "0x40", "7", "sar", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "0x80", "1", "shl", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-1", "1", "shl", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "0x7F", "1", "shl", "jnc", "jc"),
+    FlagTestCase(8, "al", "", "0x40", "2", "shl", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "-1", "2", "shl", "jc", "jnc"),
+    FlagTestCase(8, "al", "", "0x3F", "2", "shl", "jnc", "jc"),
+    FlagTestCase(8, "al", "", "2", "7", "shl", "jc", "jnc"),
 ]
 
 OVERFLOW_TESTS = [
@@ -488,6 +666,53 @@ OVERFLOW_TESTS = [
     FlagTestCase(8, "al", "", "0x7F", "1", "add", "jo", "jno"), # Negative overflow
     FlagTestCase(8, "al", "", "0", "-1", "add", "jno", "jo"), # No overflow
     FlagTestCase(8, "al", "", "-1", "-1", "add", "jno", "jo"), # No overflow
+
+    # Shifts
+    FlagTestCase(64, "rax", "", "0xC000000000000000", "1", "shl", "jno", "jo"),
+    FlagTestCase(64, "rax", "", "0", "1", "shl", "jno", "jo"),
+    FlagTestCase(64, "rax", "", "0x8000000000000000", "1", "shl", "jo", "jno"),
+    FlagTestCase(64, "rax", "", "0x4000000000000000", "1", "shl", "jo", "jno"),
+    FlagTestCase(64, "rax", "", "0x8000000000000000", "1", "shr", "jo", "jno"),
+    FlagTestCase(64, "rax", "", "0", "1", "shr", "jno", "jo"),
+    FlagTestCase(64, "rax", "", "0x8000000000000000", "1", "sar", "jno", "jo"),
+    FlagTestCase(64, "rax", "", "0", "1", "sar", "jno", "jo"),
+
+    FlagTestCase(32, "eax", "", "0xC0000000", "1", "shl", "jno", "jo"),
+    FlagTestCase(32, "eax", "", "0", "1", "shl", "jno", "jo"),
+    FlagTestCase(32, "eax", "", "0x80000000", "1", "shl", "jo", "jno"),
+    FlagTestCase(32, "eax", "", "0x40000000", "1", "shl", "jo", "jno"),
+    FlagTestCase(32, "eax", "", "0x80000000", "1", "shr", "jo", "jno"),
+    FlagTestCase(32, "eax", "", "0", "1", "shr", "jno", "jo"),
+    FlagTestCase(32, "eax", "", "0x80000000", "1", "sar", "jno", "jo"),
+    FlagTestCase(32, "eax", "", "0", "1", "sar", "jno", "jo"),
+
+    FlagTestCase(16, "ax", "", "0xC000", "1", "shl", "jno", "jo"),
+    FlagTestCase(16, "ax", "", "0", "1", "shl", "jno", "jo"),
+    FlagTestCase(16, "ax", "", "0x8000", "1", "shl", "jo", "jno"),
+    FlagTestCase(16, "ax", "", "0x4000", "1", "shl", "jo", "jno"),
+    FlagTestCase(16, "ax", "", "0x8000", "1", "shr", "jo", "jno"),
+    FlagTestCase(16, "ax", "", "0", "1", "shr", "jno", "jo"),
+    FlagTestCase(16, "ax", "", "0x8000", "1", "sar", "jno", "jo"),
+    FlagTestCase(16, "ax", "", "0", "1", "sar", "jno", "jo"),
+
+    FlagTestCase(8, "ah", "", "0xC0", "1", "shl", "jno", "jo"),
+    FlagTestCase(8, "ah", "", "0", "1", "shl", "jno", "jo"),
+    FlagTestCase(8, "ah", "", "0x80", "1", "shl", "jo", "jno"),
+    FlagTestCase(8, "ah", "", "0x40", "1", "shl", "jo", "jno"),
+    FlagTestCase(8, "ah", "", "0x80", "1", "shr", "jo", "jno"),
+    FlagTestCase(8, "ah", "", "0", "1", "shr", "jno", "jo"),
+    FlagTestCase(8, "ah", "", "0x80", "1", "sar", "jno", "jo"),
+    FlagTestCase(8, "ah", "", "0", "1", "sar", "jno", "jo"),
+
+    FlagTestCase(8, "al", "", "0xC0", "1", "shl", "jno", "jo"),
+    FlagTestCase(8, "al", "", "0", "1", "shl", "jno", "jo"),
+    FlagTestCase(8, "al", "", "0x80", "1", "shl", "jo", "jno"),
+    FlagTestCase(8, "al", "", "0x40", "1", "shl", "jo", "jno"),
+    FlagTestCase(8, "al", "", "0x80", "1", "shr", "jo", "jno"),
+    FlagTestCase(8, "al", "", "0", "1", "shr", "jno", "jo"),
+    FlagTestCase(8, "al", "", "0x80", "1", "sar", "jno", "jo"),
+    FlagTestCase(8, "al", "", "0", "1", "sar", "jno", "jo"),
+
 ]
 
 ABOVE_TESTS = [
