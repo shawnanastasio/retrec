@@ -24,11 +24,9 @@
 
 using namespace retrec;
 
-std::vector<std::string> build_argv_vec(int argc, char **argv) {
-    // Insert argument starting at argv[2]
-    if (argc <= 2)
-        return {};
-    return {&argv[2], &argv[argc]};
+std::vector<std::string> build_argv_vec(int start, int argc, char **argv) {
+    // Insert arguments starting at argv[start]
+    return {&argv[start], &argv[argc]};
 }
 
 std::vector<std::string> build_envp_vec(char **envp) {
@@ -56,7 +54,7 @@ int main(int argc, char **argv, char **envp) {
     // Initialize the dynamic recompiler and target environment
     target_environment env = {
         .binary = std::move(binary),
-        .argv = build_argv_vec(argc, argv),
+        .argv = build_argv_vec(1, argc, argv),
         .envp = build_envp_vec(envp)
     };
     dynamic_recompiler rec(Architecture::ppc64le, std::move(env));
