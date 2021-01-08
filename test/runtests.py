@@ -5,6 +5,7 @@ import glob
 import re
 import subprocess
 import os
+import json
 
 COLOR_RESET = "\u001b[0m"
 COLOR_YELLOW = "\u001b[33m"
@@ -13,10 +14,17 @@ COLOR_RED = "\u001b[31m"
 CARGS = {'reset': COLOR_RESET, 'yellow': COLOR_YELLOW, 'green': COLOR_GREEN, 'red': COLOR_RED}
 
 def run_test(retrec, test):
+    env_path = os.path.dirname(test) + "/." + os.path.basename(test) + ".env"
+    if os.path.isfile(env_path):
+        with open(env_path) as f:
+            env = json.load(f)
+    else:
+        env = None
+
     failures = []
     passes = []
 
-    result = subprocess.run([retrec, test], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    result = subprocess.run([retrec, test], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
     try:
         output = result.stdout.decode("UTF-8")
     except Exception as e:
@@ -32,7 +40,7 @@ def run_test(retrec, test):
         failures.append("Process exited with code {}".format(result.returncode))
         return (failures, passes)
 
-    expected_results_path = test + ".expected"
+    expected_results_path = os.path.dirname(test) + "/." + os.path.basename(test) + ".expected"
     if os.path.isfile(expected_results_path):
         # Compare output to expected
         with open(expected_results_path, "r") as f:

@@ -1,0 +1,11 @@
+argc=1
+-------
+argv:
+c/print_args.fs.bin
+-------
+-------
+envp:
+_=print_args.fs.bin
+SHELL=/bin/bash
+RETREC_ENVIRONMENT_WORKS=YES
+-------

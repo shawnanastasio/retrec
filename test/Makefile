@@ -13,9 +13,10 @@ GENERATED_ASM_TARGETS= \
 	asm/load.gen.bin
 GENERATED_ASM_SRCS=$(GENERATED_ASM_TARGETS:.bin=.S)
 
-C_SRCS:=$(shell find . -name "*.c")
-C_TARGETS:=$(C_SRCS:.c=.bin)
-CFLAGS:=-static -nostdlib -nostdinc -ffreestanding -Wall -O2 -std=gnu99
+# Freestanding (no libc) C targets
+FS_C_SRCS:=$(shell find . -name "*.fs.c")
+FS_C_TARGETS:=$(FS_C_SRCS:.c=.bin)
+FS_CFLAGS:=-static -nostdlib -nostdinc -ffreestanding -Wall -O2 -std=gnu99
 
 # Keep intermediate objects
 .SECONDARY:
@@ -29,7 +30,7 @@ CFLAGS:=-static -nostdlib -nostdinc -ffreestanding -Wall -O2 -std=gnu99
 LDFLAGS:=-z max-page-size=65536 --no-relax
 C_LDFLAGS:=-Wl,-z,max-page-size=65536
 
-all: $(ASM_TARGETS) $(C_TARGETS) $(GENERATED_ASM_TARGETS)
+all: $(ASM_TARGETS) $(FS_C_TARGETS) $(GENERATED_ASM_TARGETS)
 
 %.gen.S: asm/gentest.py
 	asm/gentest.py $(notdir $(@:.gen.S=)) $@
@@ -40,12 +41,12 @@ all: $(ASM_TARGETS) $(C_TARGETS) $(GENERATED_ASM_TARGETS)
 %.o: %.S
 	x86_64-unknown-linux-gnu-as $< -o $@
 
-%.bin: %.c
-	x86_64-unknown-linux-gnu-gcc $(C_LDFLAGS) $(CFLAGS) $< -o $@
+%.fs.bin: %.fs.c
+	x86_64-unknown-linux-gnu-gcc $(C_LDFLAGS) $(FS_CFLAGS) $< -o $@
 
 clean:
 	rm -rf $(ASM_TARGETS)
 	rm -rf *.o
 	rm -rf $(GENERATED_ASM_TARGETS)
 	rm -rf $(GENERATED_ASM_SRCS)
-	rm -rf $(C_TARGETS)
+	rm -rf $(FS_C_TARGETS)
