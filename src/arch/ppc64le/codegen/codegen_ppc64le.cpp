@@ -390,13 +390,18 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Alu::Op::XOR:
                     llir$alu$2src_common(ctx, insn);
                     break;
-
+                case llir::Alu::Op::LOAD_IMM:
+                    llir$alu$load_imm(ctx, insn);
+                    break;
+                case llir::Alu::Op::MOVE_REG:
+                    llir$alu$move_reg(ctx, insn);
+                    break;
                 case llir::Alu::Op::NOP:
                     ctx.assembler->nop();
                     break;
-
-                case llir::Alu::Op::LOAD_IMM: llir$alu$load_imm(ctx, insn); break;
-                case llir::Alu::Op::MOVE_REG: llir$alu$move_reg(ctx, insn); break;
+                case llir::Alu::Op::SETCC:
+                    llir$alu$setcc(ctx, insn);
+                    break;
                 default:
                     pr_debug("Unimplemented ALU op: %s\n", llir::to_string(insn.alu()).c_str());
                     TODO();
@@ -436,6 +441,10 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             switch (insn.interrupt().op) {
                 case llir::Interrupt::Op::SYSCALL:
                     llir$interrupt$syscall(ctx, insn);
+                    break;
+
+                case llir::Interrupt::Op::ILLEGAL:
+                    ctx.assembler->invalid();
                     break;
 
                 default:
@@ -1202,6 +1211,58 @@ void codegen_ppc64le<T>::llir$alu$move_reg(gen_context &ctx, const llir::Insn &i
     }
 }
 
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$setcc(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("alu$setcc\n");
+    assert(insn.dest_cnt == 1);
+    assert(insn.src_cnt == 1);
+
+    // Evaluate the condition and get the relevant CR field and BO type
+    uint8_t cr_field;
+    BO bo;
+    llir$branch$helper$evaluate_op(ctx, insn.src[0].branchop(), &cr_field, &bo);
+
+    // Branch on the condition and set the result to a temporary register
+    // FIXME: investigate whether it's faster to use isel here?
+    auto tmp = ctx.reg_allocator().allocate_gpr();
+    ctx.assembler->bc(bo, cr_field, 0); RELOC_FIXUP_LABEL("setcc_true", AFTER);
+    /* fallthrough to false */
+
+    { // condition is false
+        ctx.assembler->li(tmp.gpr(), 0);
+        ctx.assembler->b(0); RELOC_FIXUP_LABEL("setcc_common", AFTER);
+    }
+
+    { // condition is true
+        ctx.assembler->li(tmp.gpr(), 1); RELOC_DECLARE_LABEL("setcc_true");
+        ctx.assembler->nop();
+        /* fallthrough to common */
+    }
+    RELOC_DECLARE_LABEL_AFTER("setcc_common");
+
+    // Move from tmp register to destination
+    switch(insn.dest[0].type()) {
+        case llir::Operand::Type::REG:
+        {
+            // Copy result to destination register
+            auto dest = ctx.reg_allocator().get_fixed_gpr(insn.dest[0].reg());
+
+            macro$move_register_masked(*ctx.assembler, dest.gpr(), tmp.gpr(), insn.dest[0].reg().mask,
+                                       insn.dest[0].reg().mask, insn.dest[0].reg().zero_others, false);
+            break;
+        }
+
+        case llir::Operand::Type::MEM:
+            // Store result to memory
+            macro$loadstore(ctx, tmp.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                            llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
+            break;
+
+        default:
+            ASSERT_NOT_REACHED();
+    }
+}
+
 /**
  * Return target virtual address for given branch
  */
@@ -1224,123 +1285,11 @@ uint64_t codegen_ppc64le<T>::resolve_branch_target(const llir::Insn &insn) {
 }
 
 template <typename T>
-void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn) {
-    pr_debug("branch$unconditional\n");
-    assert(insn.src_cnt == 1);
-
-    if (!insn.branch().linkage) {
-        // Unconditional branch without linkage, i.e. JMP
-        assert(insn.dest_cnt == 0);
-        switch (insn.src[0].type()) {
-            case llir::Operand::Type::IMM:
-            {
-                // Emit a relocation to directly branch to the correct offset. We don't need any fixed_helper
-                // calls because the target is known (direct) AND we don't need to touch the call cache.
-                //
-                // In the case of 26-bit relative targets, this will resolve to 1 instruction and 3 NOPs.
-                // Otherwise it will resolve to a load_imm, mtctr, bctr.
-                uint64_t target = resolve_branch_target(insn);
-                macro$nop$relocation(ctx, DIRECT_JMP_PATCH_INSN_COUNT,
-                                     relocation{DIRECT_JMP_PATCH_INSN_COUNT, relocation::imm_rel_direct_jmp{target}});
-                break;
-            }
-
-            case llir::Operand::Type::MEM:
-                // Load operand into r0 and call fixed_helper$indirect_jmp
-                macro$loadstore(ctx, 0, insn.src[0], llir::LoadStore::Op::LOAD,
-                                llir$alu$helper$mask_from_width(insn.src[0].width), true, insn);
-                ctx.assembler->bla(ff_addresses.indirect_jmp);
-                break;
-
-            case llir::Operand::Type::REG:
-                // Load operand into r0 and call fixed_helper$indirect_jmp
-                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
-                macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
-                                           insn.src[0].reg().mask, true, false);
-                ctx.assembler->bla(ff_addresses.indirect_jmp);
-                break;
-        }
-    } else {
-        // Unconditional branch with linkage, i.e. CALL
-        assert(insn.dest_cnt == 1);
-        assert(insn.dest[0].type() == llir::Operand::Type::MEM);
-
-        switch (insn.src[0].type()) {
-            case llir::Operand::Type::IMM:
-            {
-                // Write return vaddr to memory operand
-                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
-                uint64_t ret_vaddr = insn.address + insn.size;
-                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
-                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
-
-                // Emit a relocation that will load the target host address into 0 and try to bla to
-                // fixed_helper$call_direct_pcrel
-                //
-                // We bother with a relocation here because if the target has a locally-known mapping,
-                // we can use $call_direct_pcrel instead of $call which avoids the run-time vaddr lookup, so
-                // it should be much faster.
-                //
-                // In the future when we could add support for patching $call callers to $call_direct after the
-                // first call once the vaddr mapping is known which would probably make this useless.
-                uint64_t target = resolve_branch_target(insn);
-                macro$nop$relocation(ctx, DIRECT_CALL_PATCH_INSN_COUNT,
-                                     relocation{DIRECT_CALL_PATCH_INSN_COUNT, relocation::imm_rel_direct_call{target}});
-                break;
-            }
-
-            case llir::Operand::Type::REG:
-            {
-                // Load destination vaddr in r0
-                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
-                macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
-                                           insn.src[0].reg().mask, true, false);
-
-                // Write return vaddr to memory operand
-                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
-                uint64_t ret_vaddr = insn.address + insn.size;
-                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
-                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
-
-                // Call fixed_helper$call
-                ctx.assembler->bla(ff_addresses.call);
-                break;
-            }
-
-            case llir::Operand::Type::MEM:
-            {
-                // Load destination vaddr in r0
-                macro$loadstore(ctx, 0, insn.src[0], llir::LoadStore::Op::LOAD, llir::Register::Mask::Full64, true, insn);
-
-                // Write return vaddr to memory operand
-                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
-                uint64_t ret_vaddr = insn.address + insn.size;
-                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
-                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
-                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
-
-                // Call fixed_helper$call
-                ctx.assembler->bla(ff_addresses.call);
-                break;
-            }
-        }
-    }
-}
-
-template <typename T>
-void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
-    pr_debug("branch$conditional\n");
-    assert(!insn.branch().linkage);
-    assert(insn.dest_cnt == 0);
-    assert(insn.src_cnt == 1);
-
-    //uint64_t target = resolve_branch_target(insn);
+void codegen_ppc64le<T>::llir$branch$helper$evaluate_op(gen_context &ctx, llir::Branch::Op op, uint8_t *cr_field_out, BO *bo_out) {
     uint8_t cr_field;
     BO bo;
 
-    switch (insn.branch().op) {
+    switch (op) {
         case llir::Branch::Op::EQ:
             // beq
             bo = BO::FIELD_SET;
@@ -1439,6 +1388,136 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
         default:
             TODO();
     }
+
+    if (cr_field_out)
+        *cr_field_out = cr_field;
+    if (bo_out)
+        *bo_out = bo;
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("branch$unconditional\n");
+    assert(insn.src_cnt == 1);
+
+    if (!insn.branch().linkage) {
+        // Unconditional branch without linkage, i.e. JMP
+        assert(insn.dest_cnt == 0);
+        switch (insn.src[0].type()) {
+            case llir::Operand::Type::IMM:
+            {
+                // Emit a relocation to directly branch to the correct offset. We don't need any fixed_helper
+                // calls because the target is known (direct) AND we don't need to touch the call cache.
+                //
+                // In the case of 26-bit relative targets, this will resolve to 1 instruction and 3 NOPs.
+                // Otherwise it will resolve to a load_imm, mtctr, bctr.
+                uint64_t target = resolve_branch_target(insn);
+                macro$nop$relocation(ctx, DIRECT_JMP_PATCH_INSN_COUNT,
+                                     relocation{DIRECT_JMP_PATCH_INSN_COUNT, relocation::imm_rel_direct_jmp{target}});
+                break;
+            }
+
+            case llir::Operand::Type::MEM:
+                // Load operand into r0 and call fixed_helper$indirect_jmp
+                macro$loadstore(ctx, 0, insn.src[0], llir::LoadStore::Op::LOAD,
+                                llir$alu$helper$mask_from_width(insn.src[0].width), true, insn);
+                ctx.assembler->bla(ff_addresses.indirect_jmp);
+                break;
+
+            case llir::Operand::Type::REG:
+            {
+                // Load operand into r0 and call fixed_helper$indirect_jmp
+                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
+                macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
+                                           insn.src[0].reg().mask, true, false);
+                ctx.assembler->bla(ff_addresses.indirect_jmp);
+                break;
+            }
+
+            case llir::Operand::Type::BRANCHOP: ASSERT_NOT_REACHED();
+        }
+    } else {
+        // Unconditional branch with linkage, i.e. CALL
+        assert(insn.dest_cnt == 1);
+        assert(insn.dest[0].type() == llir::Operand::Type::MEM);
+
+        switch (insn.src[0].type()) {
+            case llir::Operand::Type::IMM:
+            {
+                // Write return vaddr to memory operand
+                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
+                uint64_t ret_vaddr = insn.address + insn.size;
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
+
+                // Emit a relocation that will load the target host address into 0 and try to bla to
+                // fixed_helper$call_direct_pcrel
+                //
+                // We bother with a relocation here because if the target has a locally-known mapping,
+                // we can use $call_direct_pcrel instead of $call which avoids the run-time vaddr lookup, so
+                // it should be much faster.
+                //
+                // In the future when we could add support for patching $call callers to $call_direct after the
+                // first call once the vaddr mapping is known which would probably make this useless.
+                uint64_t target = resolve_branch_target(insn);
+                macro$nop$relocation(ctx, DIRECT_CALL_PATCH_INSN_COUNT,
+                                     relocation{DIRECT_CALL_PATCH_INSN_COUNT, relocation::imm_rel_direct_call{target}});
+                break;
+            }
+
+            case llir::Operand::Type::REG:
+            {
+                // Load destination vaddr in r0
+                auto dest_reg = ctx.reg_allocator().get_fixed_gpr(insn.src[0].reg());
+                macro$move_register_masked(*ctx.assembler, 0, dest_reg.gpr(), llir::Register::Mask::Full64,
+                                           insn.src[0].reg().mask, true, false);
+
+                // Write return vaddr to memory operand
+                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
+                uint64_t ret_vaddr = insn.address + insn.size;
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
+
+                // Call fixed_helper$call
+                ctx.assembler->bla(ff_addresses.call);
+                break;
+            }
+
+            case llir::Operand::Type::MEM:
+            {
+                // Load destination vaddr in r0
+                macro$loadstore(ctx, 0, insn.src[0], llir::LoadStore::Op::LOAD, llir::Register::Mask::Full64, true, insn);
+
+                // Write return vaddr to memory operand
+                auto ret_vaddr_reg = ctx.reg_allocator().allocate_gpr();
+                uint64_t ret_vaddr = insn.address + insn.size;
+                macro$load_imm(*ctx.assembler, ret_vaddr_reg.gpr(), ret_vaddr, llir::Register::Mask::Full64, true);
+                macro$loadstore(ctx, ret_vaddr_reg.gpr(), insn.dest[0], llir::LoadStore::Op::STORE,
+                                llir$alu$helper$mask_from_width(insn.dest[0].width), true, insn);
+
+                // Call fixed_helper$call
+                ctx.assembler->bla(ff_addresses.call);
+                break;
+            }
+
+            case llir::Operand::Type::BRANCHOP: ASSERT_NOT_REACHED();
+        }
+    }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("branch$conditional\n");
+    assert(!insn.branch().linkage);
+    assert(insn.dest_cnt == 0);
+    assert(insn.src_cnt == 1);
+
+    //uint64_t target = resolve_branch_target(insn);
+    uint8_t cr_field;
+    BO bo;
+    llir$branch$helper$evaluate_op(ctx, insn.branch().op, &cr_field, &bo);
 
     auto invert_bo = [](BO bo) -> BO {
         switch (bo) {

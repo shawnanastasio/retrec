@@ -222,8 +222,11 @@ class codegen_ppc64le final : public codegen {
     void llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$2src_common(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$move_reg(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$setcc(gen_context &ctx, const llir::Insn &insn);
 
     /* Branch */
+    void llir$branch$helper$evaluate_op(gen_context &ctx, llir::Branch::Op op, uint8_t *cr_field_out, ppc64le::BO *bo_out);
+
     void llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn);
     void llir$branch$conditional(gen_context &ctx, const llir::Insn &insn);
 

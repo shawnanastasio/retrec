@@ -110,17 +110,22 @@ struct Alu {
     enum class Op {
 #   define LLIR_ENUMERATE_ALU_OPS(x) \
         x(INVALID) \
+        /* Standard ALU operations */ \
         x(ADD) \
         x(AND) \
         x(IMUL) \
+        x(OR) \
         x(SAR) \
+        x(SETCC) \
         x(SHL) \
         x(SHR) \
         x(SUB) \
         x(XOR) \
         x(LOAD_IMM) \
         x(MOVE_REG) \
-        x(NOP)
+        x(NOP) \
+        /* Special/architecture-specific ops */ \
+        x(X86_CPUID)
         LLIR_ENUMERATE_ALU_OPS(X_LIST)
     } op {};
 
@@ -171,6 +176,7 @@ struct Alu {
 struct Branch {
     enum class Op {
 #   define LLIR_ENUMERATE_BRANCH_OPS(x) \
+        x(INVALID) \
         x(UNCONDITIONAL) \
         x(EQ) \
         x(NOT_EQ) \
@@ -207,6 +213,7 @@ struct Interrupt {
     enum class Op {
         INVALID,
         SYSCALL,
+        ILLEGAL,
     } op {};
 };
 
@@ -224,7 +231,8 @@ class Operand {
         /* Parameters are: type, accessor_name, enum_value */ \
         x(Register, reg, REG) \
         x(int64_t, imm, IMM) \
-        x(MemOp, memory, MEM)
+        x(MemOp, memory, MEM) \
+        x(Branch::Op, branchop, BRANCHOP)
     MAGIC_VARIANT_DECLARE(LLIR_ENUMERATE_OPERAND_TYPES)
 public:
     using Type = VariantEnumT;
@@ -318,14 +326,19 @@ inline std::string to_string(const Alu &alu) {
     ASSERT_NOT_REACHED();
 }
 
-template <>
-inline std::string to_string(const Branch &branch) {
-    std::string ret = "";
-    switch (branch.op) {
-#define add_enum_name(x) case Branch::Op::x: ret += #x ","; break;
+template<>
+inline std::string to_string(const Branch::Op &branchop) {
+    switch (branchop) {
+#define add_enum_name(x) case Branch::Op::x: return #x; break;
         LLIR_ENUMERATE_BRANCH_OPS(add_enum_name)
 #undef add_enum_name
     }
+    ASSERT_NOT_REACHED();
+}
+
+template <>
+inline std::string to_string(const Branch &branch) {
+    std::string ret = to_string(branch.op) + ", ";
 
     switch (branch.target) {
         case Branch::Target::RELATIVE: ret += "RELATIVE"; break;
@@ -340,6 +353,7 @@ template<>
 inline std::string to_string(const Interrupt &interrupt) {
     switch (interrupt.op) {
         case Interrupt::Op::SYSCALL: return "SYSCALL";
+        case Interrupt::Op::ILLEGAL: return "ILLEGAL";
         case Interrupt::Op::INVALID: ASSERT_NOT_REACHED();
     }
     ASSERT_NOT_REACHED();
@@ -432,6 +446,7 @@ inline std::string to_string(const Operand &operand) {
         case Operand::Type::IMM: ret += "Immediate=" + std::to_string((int64_t)operand.imm()); break;
         case Operand::Type::MEM: ret += "Memory("+ to_string(operand.memory()) + ")"; break;
         case Operand::Type::REG: ret += "Reg=" + to_string(operand.reg()); break;
+        case Operand::Type::BRANCHOP: ret += "Branchop=" + to_string(operand.branchop()); break;
     }
     ret += ",width=";
     switch (operand.width) {
@@ -439,7 +454,7 @@ inline std::string to_string(const Operand &operand) {
         case Operand::Width::_32BIT: ret += "32"; break;
         case Operand::Width::_16BIT: ret += "16"; break;
         case Operand::Width::_8BIT: ret += "8"; break;
-        case Operand::Width::INVALID: ASSERT_NOT_REACHED();
+        case Operand::Width::INVALID: ret += "INVALID"; break;
     }
     return ret;
 }

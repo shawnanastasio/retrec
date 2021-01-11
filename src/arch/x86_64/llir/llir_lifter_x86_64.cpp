@@ -162,6 +162,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
         case X86_INS_AND:  llinsn.alu().op = llir::Alu::Op::AND; llinsn.dest_cnt = 1; goto alu_bitwise_2op_common;
         case X86_INS_TEST: llinsn.alu().op = llir::Alu::Op::AND; llinsn.dest_cnt = 0; goto alu_bitwise_2op_common;
+        case X86_INS_OR:   llinsn.alu().op = llir::Alu::Op::OR;  llinsn.dest_cnt = 1; goto alu_bitwise_2op_common;
         case X86_INS_XOR:  llinsn.alu().op = llir::Alu::Op::XOR; llinsn.dest_cnt = 1; goto alu_bitwise_2op_common;
         alu_bitwise_2op_common:
             assert(detail->x86.op_count == 2);
@@ -176,9 +177,10 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
             break;
 
-        case X86_INS_INC:
+        case X86_INS_INC: llinsn.alu().op = llir::Alu::Op::ADD; goto incdec_common;
+        case X86_INS_DEC: llinsn.alu().op = llir::Alu::Op::SUB; goto incdec_common;
+        incdec_common:
             assert(detail->x86.op_count == 1);
-            llinsn.alu().op = llir::Alu::Op::ADD;
             llinsn.src_cnt = 2;
             llinsn.dest_cnt = 1;
             llinsn.alu().modifies_flags = true;
@@ -292,6 +294,32 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             }
             break;
 
+        case X86_INS_SETA:  llinsn.src[0].branchop() = llir::Branch::Op::X86_ABOVE; goto setcc_common;
+        case X86_INS_SETAE: llinsn.src[0].branchop() = llir::Branch::Op::NOT_CARRY; goto setcc_common;
+        case X86_INS_SETB:  llinsn.src[0].branchop() = llir::Branch::Op::CARRY; goto setcc_common;
+        case X86_INS_SETBE: llinsn.src[0].branchop() = llir::Branch::Op::X86_BELOW_EQ; goto setcc_common;
+        case X86_INS_SETE:  llinsn.src[0].branchop() = llir::Branch::Op::EQ; goto setcc_common;
+        case X86_INS_SETG:  llinsn.src[0].branchop() = llir::Branch::Op::X86_GREATER; goto setcc_common;
+        case X86_INS_SETGE: llinsn.src[0].branchop() = llir::Branch::Op::X86_GREATER_EQ; goto setcc_common;
+        case X86_INS_SETL:  llinsn.src[0].branchop() = llir::Branch::Op::X86_LESS; goto setcc_common;
+        case X86_INS_SETLE: llinsn.src[0].branchop() = llir::Branch::Op::X86_LESS_EQ; goto setcc_common;
+        case X86_INS_SETP:  TODO();
+        case X86_INS_SETNP: TODO();
+        case X86_INS_SETS:  llinsn.src[0].branchop() = llir::Branch::Op::NEGATIVE; goto setcc_common;
+        case X86_INS_SETNS: llinsn.src[0].branchop() = llir::Branch::Op::NOT_NEGATIVE; goto setcc_common;
+        case X86_INS_SETO:  llinsn.src[0].branchop() = llir::Branch::Op::OVERFLOW; goto setcc_common;
+        case X86_INS_SETNO: llinsn.src[0].branchop() = llir::Branch::Op::NOT_OVERFLOW; goto setcc_common;
+        setcc_common:
+            llinsn.alu().op = llir::Alu::Op::SETCC;
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt  = 1;
+            fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+            break;
+
+        case X86_INS_CPUID:
+            llinsn.alu().op = llir::Alu::Op::X86_CPUID;
+            break;
+
         //
         // LoadStore
         //
@@ -386,6 +414,14 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.dest_cnt = 0;
             llinsn.src_cnt = 0;
             break;
+
+        case X86_INS_HLT: goto privileged_common;
+        privileged_common:
+            assert(contains_group(detail, X86_GRP_PRIVILEGE));
+            // We're a userspace emulator, so treat all privileged instructions as invalid
+            llinsn.interrupt().op = llir::Interrupt::Op::ILLEGAL;
+            break;
+
 
         default:
             return status_code::UNIMPL_INSN;
