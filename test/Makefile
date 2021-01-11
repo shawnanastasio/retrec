@@ -10,7 +10,8 @@ GENERATED_ASM_TARGETS= \
 	asm/greater_eq.gen.bin \
 	asm/greater.gen.bin \
 	asm/alu.gen.bin \
-	asm/load.gen.bin
+	asm/load.gen.bin \
+	asm/setcc.gen.bin
 GENERATED_ASM_SRCS=$(GENERATED_ASM_TARGETS:.bin=.S)
 
 # Freestanding (no libc) C targets

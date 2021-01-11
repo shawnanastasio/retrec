@@ -182,6 +182,43 @@ LoadTestCase = namedtuple("LoadTestCase", ["width", "insn_str",
                                            "res_str", "f_genstrs", "f_gentest"],
                                           defaults=(None,None,None,None,None,None,None,load_test_case_genstrs,load_test_case_gentest))
 
+SETCC_TESTS = [
+    # SETE
+    FlagTestCase(64, "rax", "", "1", "1", "cmp rax, 1; sete al; cmp al, 1#", "je", "jne"),
+    FlagTestCase(64, "rax", "", "0", "1", "cmp rax, 1; sete al; cmp al, 1#", "jne", "je"),
+
+    # SETC
+    FlagTestCase(64, "rax", "rbx", "0", "-1", "cmp rax, rbx; setc al; cmp al, 1#", "je", "jne"),
+    FlagTestCase(64, "rax", "rbx", "-1", "-1", "cmp rax, rbx; setc al; cmp al, 1#", "jne", "je"),
+
+    # SETO
+    FlagTestCase(64, "rax", "rbx", "0x8000000000000000", "1", "cmp rax, rbx; seto al; cmp al, 1#", "je", "jne"),
+    FlagTestCase(64, "rax", "", "0", "1", "cmp rax, rbx; seto al; cmp al, 1#", "jne", "je"),
+
+    # SETA
+    FlagTestCase(64, "rax", "rbx", "1", "0", "cmp rax, rbx; seta al; cmp al, 1#", "je", "jne"),  # !CF, !ZF
+    FlagTestCase(64, "rax", "rbx", "1", "1", "cmp rax, rbx; seta al; cmp al, 1#", "jne", "je"),  # !CF, ZF
+    FlagTestCase(64, "rax", "rbx", "1", "-1", "cmp rax, rbx; seta al; cmp al, 1#", "jne", "je"), # CF, !ZF
+
+    # SETGE
+    FlagTestCase(64, "rax", "rbx", "-1", "-2", "cmp rax, rbx; setge al; cmp al, 1#", "je", "jne"), # SF=OF=1
+    FlagTestCase(64, "rax", "rbx", "-2", "-1", "cmp rax, rbx; setge al; cmp al, 1#", "jne", "je"), # SF=1, OF=0
+    FlagTestCase(64, "rax", "rbx", "-1", "1", "cmp rax, rbx; setge al; cmp al, 1#", "jne", "je"),  # SF=0, OF=1
+
+    # SETS
+    FlagTestCase(64, "rax", "rbx", "0", "1", "cmp rax, rbx; sets al; cmp al, 1#", "je", "jne"), # SF=1
+    FlagTestCase(64, "rax", "rbx", "1", "1", "cmp rax, rbx; sets al; cmp al, 1#", "jne", "je"),  # SF=0
+
+    # SETG
+    FlagTestCase(64, "rax", "rbx", "1", "0", "cmp rax, rbx; setg al; cmp al, 1#", "je", "jne"), # !ZF, !SF, !OF
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFFF", "-1", "cmp rax, rbx; setg al; cmp al, 1#", "je", "jne"), # !ZF, SF, OF
+    FlagTestCase(64, "rax", "rbx", "1", "1", "cmp rax, rbx; setg al; cmp al, 1#", "jne", "je"), # ZF, !SF, !OF
+    FlagTestCase(64, "rax", "rbx", "-1", "-1", "cmp rax, rbx; setg al; cmp al, 1#", "jne", "je"), # ZF, !SF, OF
+    FlagTestCase(64, "rax", "rbx", "-2", "-1", "cmp rax, rbx; setg al; cmp al, 1#", "jne", "je"), # ZF, !SF, OF
+    FlagTestCase(64, "rax", "rbx", "0", "1", "cmp rax, rbx; setg al; cmp al, 1#", "jne", "je"), # !ZF, SF, OF
+
+]
+
 LOAD_TESTS = [
     # Test plain loads of all widths
     LoadTestCase(64, "mov", "", "", "rax", "0xDEADBEEFCAFEBABA", "rbx", "0xDEADBEEFCAFEBABA"),
@@ -914,6 +951,7 @@ SUITES = {
     "GREATER" : GREATER_TESTS,
     "ALU" : ALU_TESTS,
     "LOAD" : LOAD_TESTS,
+    "SETCC" : SETCC_TESTS,
 }
 
 def width_to_cast(width):
