@@ -310,6 +310,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_SETB:  llinsn.src[0].branchop() = llir::Branch::Op::CARRY; goto setcc_common;
         case X86_INS_SETBE: llinsn.src[0].branchop() = llir::Branch::Op::X86_BELOW_EQ; goto setcc_common;
         case X86_INS_SETE:  llinsn.src[0].branchop() = llir::Branch::Op::EQ; goto setcc_common;
+        case X86_INS_SETNE: llinsn.src[0].branchop() = llir::Branch::Op::NOT_EQ; goto setcc_common;
         case X86_INS_SETG:  llinsn.src[0].branchop() = llir::Branch::Op::X86_GREATER; goto setcc_common;
         case X86_INS_SETGE: llinsn.src[0].branchop() = llir::Branch::Op::X86_GREATER_EQ; goto setcc_common;
         case X86_INS_SETL:  llinsn.src[0].branchop() = llir::Branch::Op::X86_LESS; goto setcc_common;
