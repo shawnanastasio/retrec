@@ -390,6 +390,7 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Alu::Op::ADD:
                 case llir::Alu::Op::AND:
                 case llir::Alu::Op::IMUL:
+                case llir::Alu::Op::OR:
                 case llir::Alu::Op::SAR:
                 case llir::Alu::Op::SHL:
                 case llir::Alu::Op::SHR:
@@ -1030,6 +1031,7 @@ LastFlagOp codegen_ppc64le<T>::llir$alu$helper$insn_to_lastflagop(const llir::In
         case llir::Alu::Op::SAR:
             return LastFlagOp::SAR;
         case llir::Alu::Op::AND:
+        case llir::Alu::Op::OR:
         case llir::Alu::Op::XOR:
             return LastFlagOp::INVALID;
         default:
@@ -1122,6 +1124,12 @@ void codegen_ppc64le<T>::llir$alu$2src_common(gen_context &ctx, const llir::Insn
             }
             break;
         }
+
+        case llir::Alu::Op::OR:
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1);
+            llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[1], GPR_FIXED_FLAG_OP2);
+            ctx.assembler->_or(GPR_FIXED_FLAG_RES, GPR_FIXED_FLAG_OP1, GPR_FIXED_FLAG_OP2, modify_cr);
+            break;
 
         case llir::Alu::Op::SAR:
             llir$alu$helper$load_operand_into_gpr(ctx, insn, insn.src[0], GPR_FIXED_FLAG_OP1, llir::Extension::SIGN);
