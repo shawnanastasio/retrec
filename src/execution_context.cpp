@@ -77,7 +77,7 @@ status_code execution_context::allocate_new_stack(size_t size, void **stack_out)
         return res;
 
     // Mark the guard page as !R, !W, !X
-    mprotect((void *)stack, page_size, 0);
+    mprotect((void *)stack, page_size, PROT_NONE);
 
     *stack_out = (void *)((char *)stack + allocation_size);
     return status_code::SUCCESS;
