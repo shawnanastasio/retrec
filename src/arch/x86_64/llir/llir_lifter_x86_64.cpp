@@ -51,6 +51,17 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     llir::Extension extension = llir::Extension::NONE;
     using Flag = llir::Alu::Flag;
 
+    // Decode instruction prefixes
+    switch (insn->detail->x86.prefix[0]) {
+        case X86_PREFIX_LOCK:
+            llinsn.atomic = true;
+            break;
+        case X86_PREFIX_REPE:
+        case X86_PREFIX_REPNE:
+            TODO();
+    }
+
+    // Decode instruction from ID
     switch (insn->id) {
         //
         // Branch

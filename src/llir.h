@@ -271,9 +271,12 @@ public:
 
     // Operands
     uint8_t dest_cnt { 0 };
-    std::array<Operand, 2> dest = {};
+    std::array<Operand, 2> dest {};
     uint8_t src_cnt { 0 };
-    std::array<Operand, 2> src = {};
+    std::array<Operand, 2> src {};
+
+    // Atomic? On x86_64 this means the insn had a LOCK prefix
+    bool atomic { false };
 };
 
 //
