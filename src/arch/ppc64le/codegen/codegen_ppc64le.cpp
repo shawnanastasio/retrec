@@ -1766,6 +1766,7 @@ void codegen_ppc64le<T>::fixed_helper$call_direct$emit(gen_context &ctx, bool re
             // Keep going if idx < sizeof(call_cache_entry)*CALL_CACHE_SIZE
             a.cmpldi(CR_SCRATCH, idx.gpr(), virtual_address_mapper::CALL_CACHE_SIZE * sizeof(virtual_address_mapper::call_cache_entry));
             a.bc(BO::FIELD_SET, CR_SCRATCH*4 + assembler::CR_LT, 0); RELOC_FIXUP_LABEL("fh_call_direct_scan_loop", BEFORE);
+            a.b(0); RELOC_FIXUP_LABEL("fh_call_direct_skip_cache", AFTER); // No free slots
         }
 
         // vam_ptr+idx points to a free cache entry, populate it with vaddr and haddr of return
