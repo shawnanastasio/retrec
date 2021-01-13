@@ -570,6 +570,8 @@ llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
         case X86_REG_BPL:  ret.x86_64 = llir::X86_64Register::RBP; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_SIL:  ret.x86_64 = llir::X86_64Register::RSI; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_DIL:  ret.x86_64 = llir::X86_64Register::RDI; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
+        case X86_REG_R8B:  ret.x86_64 = llir::X86_64Register::R8;  ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
+        case X86_REG_R9B:  ret.x86_64 = llir::X86_64Register::R9;  ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_R10B: ret.x86_64 = llir::X86_64Register::R10; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_R11B: ret.x86_64 = llir::X86_64Register::R11; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_R12B: ret.x86_64 = llir::X86_64Register::R12; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
