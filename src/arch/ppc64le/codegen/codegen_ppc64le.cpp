@@ -2837,7 +2837,7 @@ void codegen_ppc64le<T>::macro$call_native_function(gen_context &ctx, Args... ar
     // Write a second backchain pointer if stack is misaligned
     static_assert(magic::array_find_occurrences<difference.size()>(difference, llir::PPC64Register::CR));
     a.andi_(3 /* scratch */, 1, 0xF); // clobbers CR
-    a.bc(BO::FIELD_SET, assembler::CR_EQ, 1*4);
+    a.bc(BO::FIELD_SET, assembler::CR_EQ, 2*4);
     a.stdu(scratch1_gpr, 1, -8);
 
     // Load parameters
