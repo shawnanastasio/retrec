@@ -96,6 +96,7 @@
     x(MULHW, &assembler::mulhw) \
     x(MULLD, &assembler::mulld) \
     x(MULLW, &assembler::mullw) \
+    x(NAND, &assembler::nand) \
     x(NEG, &assembler::neg) \
     x(OR, &assembler::_or) \
     x(ORI, &assembler::ori) \
@@ -107,6 +108,7 @@
     x(RLWIMI, &assembler::rlwimi) \
     x(RLWINM, &assembler::rlwinm) \
     x(SC, &assembler::sc) \
+    x(SETB, &assembler::setb) \
     x(SLD, &assembler::sld) \
     x(SLDI, &assembler::sldi) \
     x(SRAD, &assembler::srad) \

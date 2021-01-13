@@ -858,6 +858,13 @@ public:
     }
     void _xor_(uint8_t ra, uint8_t rs, uint8_t rb) { _xor(ra, rs, rb, true); }
 
+    void nand(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting nand%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
+        EMIT_INSN(Operation::NAND, [=] {
+            return self->x_form(31, rs, ra, rb, 476, modify_cr);
+        }, ra, rs, rb, modify_cr);
+    }
+
     void _or(uint8_t ra, uint8_t rs, uint8_t rb, bool modify_cr = false) {
         ASM_LOG("Emitting or%s r%u, r%u, r%u\n", modify_cr?".":"", ra, rs, rb);
         EMIT_INSN(Operation::OR, [=] {
@@ -1041,6 +1048,13 @@ public:
         EMIT_INSN(Operation::MFCR, [=] {
             return self->xfx_form(31, rt, 0, 19);
         }, rt);
+    }
+
+    void setb(uint8_t rt, uint8_t bfa) {
+        ASM_LOG("Emitting setb r%u, %d\n", rt, bfa);
+        EMIT_INSN(Operation::SETB, [=] {
+            return self->x_form(31, rt, (uint8_t)(bfa << 2), 0, 128, 0);
+        }, rt, bfa);
     }
 
     //
