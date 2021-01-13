@@ -151,6 +151,7 @@ class codegen_ppc64le final : public codegen {
         uint32_t imul_overflow;
         uint32_t shift_carry;
         uint32_t shift_overflow;
+        uint32_t cpuid;
     } ff_addresses;
 
     /**
@@ -223,6 +224,7 @@ class codegen_ppc64le final : public codegen {
     void llir$alu$2src_common(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$move_reg(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$setcc(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$x86_cpuid(gen_context &ctx, const llir::Insn &insn);
 
     /* Branch */
     void llir$branch$helper$evaluate_op(gen_context &ctx, llir::Branch::Op op, uint8_t *cr_field_out, ppc64le::BO *bo_out);
@@ -255,6 +257,7 @@ class codegen_ppc64le final : public codegen {
     void fixed_helper$imul_overflow$emit(gen_context &ctx);
     void fixed_helper$shift_carry$emit(gen_context &ctx);
     void fixed_helper$shift_overflow$emit(gen_context &ctx);
+    void fixed_helper$cpuid$emit(gen_context &ctx);
 
     // Resolve all relocations in a given translation context
     status_code resolve_relocations(gen_context &ctx);

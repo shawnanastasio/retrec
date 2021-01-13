@@ -22,6 +22,7 @@
 #include <arch/ppc64le/codegen/codegen_types.h>
 #include <arch/ppc64le/codegen/assembler.h>
 #include <arch/ppc64le/codegen/abi.h>
+#include <arch/x86_64/target_environment.h>
 
 #include <type_traits>
 #include <unordered_map>
@@ -141,6 +142,11 @@ status_code codegen_ppc64le<T>::init() {
     fixed_helper$shift_overflow$emit(ctx);
     alignment_padding();
 
+    /* cpuid */
+    uint32_t cpuid_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$cpuid$emit(ctx);
+    alignment_padding();
+
     // Second pass: resolve relocations
     res = resolve_relocations(ctx);
     if (res != status_code::SUCCESS) {
@@ -169,6 +175,7 @@ status_code codegen_ppc64le<T>::init() {
     ff_addresses.imul_overflow = (uint32_t)(uintptr_t)function_table + imul_overflow_offset;
     ff_addresses.shift_carry = (uint32_t)(uintptr_t)function_table + shift_carry_offset;
     ff_addresses.shift_overflow = (uint32_t)(uintptr_t)function_table + shift_overflow_offset;
+    ff_addresses.cpuid = (uint32_t)(uintptr_t)function_table + cpuid_offset;
 
     pr_debug("Emitted function table to %p\n", function_table);
     return status_code::SUCCESS;
@@ -401,6 +408,9 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                     break;
                 case llir::Alu::Op::SETCC:
                     llir$alu$setcc(ctx, insn);
+                    break;
+                case llir::Alu::Op::X86_CPUID:
+                    llir$alu$x86_cpuid(ctx, insn);
                     break;
                 default:
                     pr_debug("Unimplemented ALU op: %s\n", llir::to_string(insn.alu()).c_str());
@@ -1263,6 +1273,12 @@ void codegen_ppc64le<T>::llir$alu$setcc(gen_context &ctx, const llir::Insn &insn
     }
 }
 
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$x86_cpuid(gen_context &ctx, [[maybe_unused]] const llir::Insn &insn) {
+    pr_debug("alu$x86_cpuid\n");
+    ctx.assembler->bla(ff_addresses.cpuid);
+}
+
 /**
  * Return target virtual address for given branch
  */
@@ -2052,6 +2068,47 @@ void codegen_ppc64le<T>::fixed_helper$shift_overflow$emit(gen_context &ctx) {
     a.blr();
 }
 
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$cpuid$emit(gen_context &ctx) {
+    assembler &a = *ctx.assembler;
+
+    // Save LR
+    a.mfspr(0, SPR::LR);
+    a.stdu(0, 1, -8);
+
+    // Allocate a buffer for the result
+    auto out_ptr_reg = llir::PPC64RegisterGPRIndex(ABIRetrec<T>::argument_regs[0]);
+    a.addi(1, 1, (int16_t)sizeof(x86_64::CpuidResult) * -1);
+    a.mr(out_ptr_reg, 1);
+
+    {
+        // The function and subfunc for rax are stored in EAX, ECX
+        auto func_reg = ctx.reg_allocator().get_fixed_gpr(llir::X86_64Register::RAX);
+        auto subfunc_reg = ctx.reg_allocator().get_fixed_gpr(llir::X86_64Register::RCX);
+
+        // Call x86_64::get_cpuid
+        macro$load_imm(a, 12, (uintptr_t)&x86_64::get_cpuid, llir::Register::Mask::Full64, true);
+        a.mtspr(SPR::CTR, 12);
+        macro$call_native_function(ctx, func_reg.gpr(), subfunc_reg.gpr(), out_ptr_reg);
+    }
+
+    // Load EAX,EBX,ECX,EDX from result
+    auto eax = ctx.reg_allocator().get_fixed_gpr(llir::X86_64Register::RAX);
+    auto ebx = ctx.reg_allocator().get_fixed_gpr(llir::X86_64Register::RBX);
+    auto ecx = ctx.reg_allocator().get_fixed_gpr(llir::X86_64Register::RCX);
+    auto edx = ctx.reg_allocator().get_fixed_gpr(llir::X86_64Register::RDX);
+    a.lwz(eax.gpr(), 1, 0);
+    a.lwz(ebx.gpr(), 1, 4);
+    a.lwz(ecx.gpr(), 1, 8);
+    a.lwz(edx.gpr(), 1, 12);
+
+    // Restore stack frame, LR
+    a.ld(0, 1, 16);
+    a.mtspr(SPR::LR, 0);
+    a.addi(1, 1, sizeof(x86_64::CpuidResult) + 8);
+
+    a.blr();
+}
 
 //
 // Macro assembler

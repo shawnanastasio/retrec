@@ -99,6 +99,7 @@ public:
 
     AllocatedGprT allocate_gpr();
     AllocatedGprT get_fixed_gpr(const llir::Register &reg);
+    AllocatedGprT get_fixed_gpr(typename TargetTraits::RegisterT reg);
 
 private:
     void free_gpr(gpr_t gpr);

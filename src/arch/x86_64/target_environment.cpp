@@ -18,8 +18,10 @@
  */
 
 #include <arch/x86_64/target_environment.h>
+#include <util/util.h>
 
 #include <cstdint>
+#include <cstring>
 
 using namespace retrec;
 using namespace retrec::x86_64;
@@ -92,4 +94,89 @@ void *x86_64::initialize_target_stack(void *stack, const std::vector<std::string
     *(--sp64) = argv.size();
 
     return sp64;
+}
+
+
+void x86_64::get_cpuid(uint32_t func, uint32_t subfunc, CpuidResult *res) {
+    // For now, we just return the values that `qemu-x86_64 -cpu Westmere` does.
+    // In the future we'll want to support multiple virtual CPU models selectable
+    // at run-time, and the CPUID should reflect that.
+    memset(res, 0, sizeof(*res));
+
+    switch (func) {
+        case 0x00:
+            // GenuineIntel :)
+            res->eax = 0x0000000B;
+            res->ebx = 0x756E6547;
+            res->ecx = 0x6C65746E;
+            res->edx = 0x69746E65;
+            break;
+
+        case 0x01:
+            res->eax = 0x00800F11;
+            res->ebx = 0x0F100800;
+            res->ecx = 0x7ED8320B;
+            res->edx = 0x178BFBFF;
+            break;
+
+        case 0x80000000:
+            res->eax = 0x80000008;
+            res->ebx = 0x756E6547;
+            res->ecx = 0x6C65746E;
+            res->edx = 0x49656E69;
+            break;
+
+        case 0x80000001:
+            res->eax = 0x000206C1;
+            res->ebx = 0x00000000;
+            res->ecx = 0x00000001;
+            res->edx = 0x20100800;
+            break;
+
+        case 0x80000002:
+            res->eax = 0x74736557;
+            res->ebx = 0x6572656D;
+            res->ecx = 0x36354520;
+            res->edx = 0x4C2F7878;
+            break;
+
+        case 0x80000003:
+            res->eax = 0x78783635;
+            res->ebx = 0x3635582F;
+            res->ecx = 0x28207878;
+            res->edx = 0x6168654E;
+            break;
+
+        case 0x80000004:
+            res->eax = 0x2D6D656C;
+            res->ebx = 0x00002943;
+            res->ecx = 0x00000000;
+            res->edx = 0x00000000;
+            break;
+
+        case 0x80000005:
+            res->eax = 0x01FF01FF;
+            res->ebx = 0x01FF01FF;
+            res->ecx = 0x40020140;
+            res->edx = 0x40020140;
+            break;
+
+        case 0x80000006:
+            res->eax = 0x00000000;
+            res->ebx = 0x42004200;
+            res->ecx = 0x02008140;
+            res->edx = 0x00808140;
+            break;
+
+        case 0x80000008:
+            res->eax = 0x00003028;
+            res->ebx = 0x00000000;
+            res->ecx = 0x00000000;
+            res->edx = 0x00000000;
+            break;
+
+        default:
+            pr_info("Unsupported CPUID func 0x%x,0x%x, returning all 0s.\n", func, subfunc);
+            break;
+    }
 }

@@ -24,6 +24,7 @@
 
 #include <vector>
 #include <string>
+#include <cstdint>
 
 namespace retrec {
 namespace x86_64 {
@@ -34,6 +35,19 @@ namespace x86_64 {
  */
 void *initialize_target_stack(void *stack, const std::vector<std::string> &argv,
                               const std::vector<std::string> &envp);
+
+
+struct CpuidResult {
+    uint32_t eax;
+    uint32_t ebx;
+    uint32_t ecx;
+    uint32_t edx;
+};
+
+/**
+ * Returns the CPUID(func, subfunc) result for the target CPU
+ */
+void get_cpuid(uint32_t func, uint32_t subfunc, CpuidResult *res);
 
 }
 }

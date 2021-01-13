@@ -80,6 +80,13 @@ typename register_allocator<T>::AllocatedGprT register_allocator<T>::get_fixed_g
 }
 
 template <typename T>
+typename register_allocator<T>::AllocatedGprT register_allocator<T>::get_fixed_gpr(typename T::RegisterT reg) {
+    gpr_t ret = static_allocations.allocations[static_allocations.reserved_index(reg)];
+    assert(ret != GPR_INVALID);
+    return register_allocator<T>::AllocatedGprT(ret, this);
+}
+
+template <typename T>
 void register_allocator<T>::free_gpr(gpr_t gpr) {
     assert(gpr != GPR_INVALID);
     if (gprs[gpr].state == RegisterInfo::State::RESERVED)
