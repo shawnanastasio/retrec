@@ -202,6 +202,14 @@ status_code elf_loader::load_all() {
                 break;
             }
 
+            case PT_NOTE:
+                pr_debug("Skipping PT_NOTE program header\n");
+                break;
+
+            case PT_TLS:
+                pr_warn("Skipping unimplemented PT_TLS program header\n");
+                break;
+
             case PHDR_GNU_RELRO:
                 pr_warn("Skipping unimplemented GNU_RELRO program header\n");
                 break;
