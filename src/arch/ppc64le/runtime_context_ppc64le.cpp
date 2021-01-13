@@ -83,9 +83,9 @@ status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry,
 
 status_code runtime_context_ppc64le::execute() {
     for (;;) {
-        pr_debug("Entering translated code at 0x%lx\n", host_translated_context.nip);
+        pr_info("Entering translated code at 0x%lx\n", host_translated_context.nip);
         arch_enter_translated_code(nullptr, this);
-        pr_debug("Left translated code\n");
+        pr_info("Left translated code\n");
 
         // If the translated code wanted to call a native function, do so and resume
         switch (native_function_call_target) {
