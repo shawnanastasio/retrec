@@ -114,6 +114,7 @@ struct Alu {
         x(ADD) \
         x(AND) \
         x(IMUL) \
+        x(MUL) \
         x(OR) \
         x(SAR) \
         x(SETCC) \

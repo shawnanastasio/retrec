@@ -276,6 +276,66 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             }
             break;
 
+        case X86_INS_MUL:
+            llinsn.alu().op = llir::Alu::Op::MUL;
+            llinsn.alu().modifies_flags = true;
+            llinsn.alu().flags_modified = llir::Alu::all_flags;
+            llinsn.alu().flags_undefined = {Flag::SIGN, Flag::ZERO, Flag::AUXILIARY_CARRY, Flag::PARITY};
+            llinsn.src_cnt = 2;
+
+            switch (detail->x86.operands[0].size) {
+                case 1:
+                    // 8-bit - AL * OP1 -> AX
+                    llinsn.dest_cnt = 1;
+                    llinsn.dest[0].reg() = get_reg(X86_REG_AX);
+                    llinsn.dest[0].width = llir::Operand::Width::_16BIT;
+                    llinsn.src[0].reg() = get_reg(X86_REG_AL);
+                    llinsn.src[0].width = llir::Operand::Width::_8BIT;
+                    fill_operand(detail->x86.operands[0], llinsn.src[1]);
+                    break;
+
+                case 2:
+                    // 16-bit - AX * OP1 -> DX:AX
+                    llinsn.dest_cnt = 2;
+                    llinsn.dest[0].reg() = get_reg(X86_REG_AX);
+                    llinsn.dest[0].width = llir::Operand::Width::_16BIT;
+                    llinsn.dest[1].reg() = get_reg(X86_REG_DX);
+                    llinsn.dest[1].width = llir::Operand::Width::_16BIT;
+                    llinsn.src[0].reg() = get_reg(X86_REG_AX);
+                    llinsn.src[0].width = llir::Operand::Width::_16BIT;
+                    fill_operand(detail->x86.operands[0], llinsn.src[1]);
+                    break;
+
+                case 4:
+                    // 32-bit - EAX * OP1 -> EDX:EAX
+                    llinsn.dest_cnt = 2;
+                    llinsn.dest[0].reg() = get_reg(X86_REG_EAX);
+                    llinsn.dest[0].width = llir::Operand::Width::_32BIT;
+                    llinsn.dest[1].reg() = get_reg(X86_REG_EDX);
+                    llinsn.dest[1].width = llir::Operand::Width::_32BIT;
+                    llinsn.src[0].reg() = get_reg(X86_REG_EAX);
+                    llinsn.src[0].width = llir::Operand::Width::_32BIT;
+                    fill_operand(detail->x86.operands[0], llinsn.src[1]);
+                    break;
+
+                case 8:
+                    // 64-bit - RAX * OP1 -> RDX:RAX
+                    llinsn.dest_cnt = 2;
+                    llinsn.dest[0].reg() = get_reg(X86_REG_RAX);
+                    llinsn.dest[0].width = llir::Operand::Width::_64BIT;
+                    llinsn.dest[1].reg() = get_reg(X86_REG_RDX);
+                    llinsn.dest[1].width = llir::Operand::Width::_64BIT;
+                    llinsn.src[0].reg() = get_reg(X86_REG_RAX);
+                    llinsn.src[0].width = llir::Operand::Width::_64BIT;
+                    fill_operand(detail->x86.operands[0], llinsn.src[1]);
+                    break;
+
+                default:
+                    TODO();
+            }
+
+            break;
+
         case X86_INS_SAL: llinsn.alu().op = llir::Alu::Op::SHL; goto shift_common;
         case X86_INS_SAR: llinsn.alu().op = llir::Alu::Op::SAR; goto shift_common;
         case X86_INS_SHL: llinsn.alu().op = llir::Alu::Op::SHL; goto shift_common;

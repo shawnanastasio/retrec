@@ -99,9 +99,9 @@ enum class LastFlagOpData : uint32_t {
 
     // Jump table for IMUL overflow calculation (1:0)
     IMUL_OVERFLOW_8BIT  = 0,
-    IMUL_OVERFLOW_16BIT = IMUL_OVERFLOW_8BIT + 1,
-    IMUL_OVERFLOW_32BIT = IMUL_OVERFLOW_16BIT + 2,
-    IMUL_OVERFLOW_64BIT = IMUL_OVERFLOW_32BIT + 3,
+    IMUL_OVERFLOW_16BIT = 1,
+    IMUL_OVERFLOW_32BIT = 2,
+    IMUL_OVERFLOW_64BIT = 3,
 
     // Offset for shift_carry calculation (6:0)
     SHIFT_OFFSET_8BIT = 56,
@@ -111,17 +111,19 @@ enum class LastFlagOpData : uint32_t {
 
     // Operation type for flag calculation (15:12)
     OP_TYPE_SHIFT = 12,
-    OP_SUB = (0 << OP_TYPE_SHIFT),
-    OP_ADD = (1 << OP_TYPE_SHIFT),
+    OP_SUB  = (0 << OP_TYPE_SHIFT),
+    OP_ADD  = (1 << OP_TYPE_SHIFT),
     OP_IMUL = (2 << OP_TYPE_SHIFT),
-    OP_SHR = (3 << OP_TYPE_SHIFT),
-    OP_SHL = (4 << OP_TYPE_SHIFT),
-    OP_SAR = (5 << OP_TYPE_SHIFT),
+    OP_MUL  = (3 << OP_TYPE_SHIFT),
+    OP_SHR  = (5 << OP_TYPE_SHIFT),
+    OP_SHL  = (6 << OP_TYPE_SHIFT),
+    OP_SAR  = (7 << OP_TYPE_SHIFT),
 };
 enum class LastFlagOp : uint32_t {
     SUB,
     ADD,
     IMUL,
+    MUL,
     SHL,
     SHR,
     SAR,
@@ -152,6 +154,7 @@ class codegen_ppc64le final : public codegen {
         uint32_t shift_carry;
         uint32_t shift_overflow;
         uint32_t cpuid;
+        uint32_t mul_overflow;
     } ff_addresses;
 
     /**
@@ -259,6 +262,7 @@ class codegen_ppc64le final : public codegen {
     void fixed_helper$shift_carry$emit(gen_context &ctx);
     void fixed_helper$shift_overflow$emit(gen_context &ctx);
     void fixed_helper$cpuid$emit(gen_context &ctx);
+    void fixed_helper$mul_overflow$emit(gen_context &ctx);
 
     // Resolve all relocations in a given translation context
     status_code resolve_relocations(gen_context &ctx);
@@ -328,8 +332,9 @@ class codegen_ppc64le final : public codegen {
                 }
                 break;
 
-            case ppc64le::LastFlagOp::IMUL:
-                data |= enum_cast(ppc64le::LastFlagOpData::OP_IMUL);
+            case ppc64le::LastFlagOp::MUL:  data |= enum_cast(ppc64le::LastFlagOpData::OP_MUL); goto mul_common;
+            case ppc64le::LastFlagOp::IMUL: data |= enum_cast(ppc64le::LastFlagOpData::OP_IMUL); goto mul_common;
+            mul_common:
                 switch (mask) {
                     case llir::Register::Mask::Full64:
                         data |= enum_cast(ppc64le::LastFlagOpData::IMUL_OVERFLOW_64BIT);

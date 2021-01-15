@@ -750,11 +750,11 @@ public:
         }, rt, ra, rb, modify_cr, modify_ov);
     }
 
-    void mulhw(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
-        ASM_LOG("Emitting mulhw%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
+    void mulhw(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting mulhw%s r%u, r%u, r%u\n", modify_cr?".":"", rt, ra, rb);
         EMIT_INSN(Operation::MULHW, [=] {
-            return self->xo_form(31, rt, ra, rb, modify_ov, 75, modify_cr);
-        }, rt, ra, rb, modify_cr, modify_ov);
+            return self->xo_form(31, rt, ra, rb, 0, 75, modify_cr);
+        }, rt, ra, rb, modify_cr);
     }
 
     void mulld(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
@@ -764,11 +764,18 @@ public:
         }, rt, ra, rb, modify_cr, modify_ov);
     }
 
-    void mulhd(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false, bool modify_ov = false) {
-        ASM_LOG("Emitting mulhd%s%s r%u, r%u, r%u\n", modify_ov?"o":"", modify_cr?".":"", rt, ra, rb);
+    void mulhd(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting mulhd%s r%u, r%u, r%u\n", modify_cr?".":"", rt, ra, rb);
         EMIT_INSN(Operation::MULHD, [=] {
-            return self->xo_form(31, rt, ra, rb, modify_ov, 73, modify_cr);
-        }, rt, ra, rb, modify_cr, modify_ov);
+            return self->xo_form(31, rt, ra, rb, 0, 73, modify_cr);
+        }, rt, ra, rb, modify_cr);
+    }
+
+    void mulhdu(uint8_t rt, uint8_t ra, uint8_t rb, bool modify_cr = false) {
+        ASM_LOG("Emitting mulhdu%s r%u, r%u, r%u\n", modify_cr?".":"", rt, ra, rb);
+        EMIT_INSN(Operation::MULHDU, [=] {
+            return self->xo_form(31, rt, ra, rb, 0, 9, modify_cr);
+        }, rt, ra, rb, modify_cr);
     }
 
     // 3.3.10 Fixed-Point Compare Instructions

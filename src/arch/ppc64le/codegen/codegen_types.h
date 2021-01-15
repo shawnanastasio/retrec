@@ -93,6 +93,7 @@
     x(MTOCRF, &assembler::mtocrf) \
     x(MTSPR, &assembler::mtspr) \
     x(MULHD, &assembler::mulhd) \
+    x(MULHDU, &assembler::mulhdu) \
     x(MULHW, &assembler::mulhw) \
     x(MULLD, &assembler::mulld) \
     x(MULLW, &assembler::mullw) \
