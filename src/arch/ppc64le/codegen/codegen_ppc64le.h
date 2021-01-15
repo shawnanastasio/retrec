@@ -227,6 +227,7 @@ class codegen_ppc64le final : public codegen {
     void llir$alu$x86_cpuid(gen_context &ctx, const llir::Insn &insn);
 
     /* Branch */
+    ppc64le::BO llir$branch$helper$invert_bo(ppc64le::BO bo);
     void llir$branch$helper$evaluate_op(gen_context &ctx, llir::Branch::Op op, uint8_t *cr_field_out, ppc64le::BO *bo_out);
 
     void llir$branch$unconditional(gen_context &ctx, const llir::Insn &insn);

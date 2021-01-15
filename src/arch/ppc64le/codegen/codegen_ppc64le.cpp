@@ -384,6 +384,26 @@ status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, u
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
     ctx.local_branch_targets.insert({ insn.address, ctx.stream->size() });
+
+    // If instruction has a condition attached to it, guard the translation with a branch
+    switch (insn.condition) {
+        case llir::Branch::Op::UNCONDITIONAL:
+            break;
+        case llir::Branch::Op::INVALID:
+            ASSERT_NOT_REACHED();
+        default:
+        {
+            // Evaluate condition
+            uint8_t cr_field;
+            BO bo;
+            llir$branch$helper$evaluate_op(ctx, insn.condition, &cr_field, &bo);
+
+            // Branch end of this insn's translation if condition is not true
+            bo = llir$branch$helper$invert_bo(bo);
+            ctx.assembler->bc(bo, cr_field, 0); RELOC_FIXUP_LABEL("dispatch_condition_false", AFTER);
+        }
+    }
+
     switch (insn.iclass()) {
         case llir::Insn::Class::ALU:
             switch (insn.alu().op) {
@@ -479,6 +499,8 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
         default:
             TODO();
     }
+
+    RELOC_DECLARE_LABEL_AFTER("dispatch_condition_false");
 }
 
 template <typename T>
@@ -1540,6 +1562,19 @@ void codegen_ppc64le<T>::llir$branch$unconditional(gen_context &ctx, const llir:
 }
 
 template <typename T>
+BO codegen_ppc64le<T>::llir$branch$helper$invert_bo(BO bo) {
+    switch (bo) {
+        case BO::ALWAYS:
+            return BO::ALWAYS;
+        case BO::FIELD_CLR:
+            return BO::FIELD_SET;
+        case BO::FIELD_SET:
+            return BO::FIELD_CLR;
+    }
+    ASSERT_NOT_REACHED();
+}
+
+template <typename T>
 void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &ctx, const llir::Insn &insn) {
     pr_debug("branch$conditional\n");
     assert(!insn.branch().linkage);
@@ -1550,18 +1585,6 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     uint8_t cr_field;
     BO bo;
     llir$branch$helper$evaluate_op(ctx, insn.branch().op, &cr_field, &bo);
-
-    auto invert_bo = [](BO bo) -> BO {
-        switch (bo) {
-            case BO::ALWAYS:
-                return BO::ALWAYS;
-            case BO::FIELD_CLR:
-                return BO::FIELD_SET;
-            case BO::FIELD_SET:
-                return BO::FIELD_CLR;
-        }
-        ASSERT_NOT_REACHED();
-    };
 
     // Now that the condition fields have been determined and lazily evaluated (if necessary),
     // it's time to emit the branch. To make it easier to handle all operand types and reduce
@@ -1579,7 +1602,8 @@ void codegen_ppc64le<T>::llir$branch$conditional(codegen_ppc64le::gen_context &c
     //
     // FIXME: In the future we should optimize for cases where the target is an immediate, local,
     // and 26-bit rel addressable.
-    ctx.assembler->bc(invert_bo(bo), cr_field, 0); RELOC_FIXUP_LABEL("branch_conditional_skip", AFTER);
+    ctx.assembler->bc(llir$branch$helper$invert_bo(bo), cr_field, 0);
+    RELOC_FIXUP_LABEL("branch_conditional_skip", AFTER);
     llir$branch$unconditional(ctx, insn);
     RELOC_DECLARE_LABEL_AFTER("branch_conditional_skip");
 }

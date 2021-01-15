@@ -277,6 +277,9 @@ public:
 
     // Atomic? On x86_64 this means the insn had a LOCK prefix
     bool atomic { false };
+
+    // Condition - must be satisfied for insn to execute
+    Branch::Op condition { Branch::Op::UNCONDITIONAL };
 };
 
 //

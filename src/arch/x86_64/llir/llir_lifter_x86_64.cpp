@@ -336,12 +336,29 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         // LoadStore
         //
 
-        case X86_INS_MOVZX:   extension = llir::Extension::ZERO; goto mov_common;
-        case X86_INS_MOVSX:   extension = llir::Extension::SIGN; goto mov_common;
-        case X86_INS_MOVSXD:  extension = llir::Extension::SIGN; goto mov_common;
-        case X86_INS_LEA:     goto mov_common;
-        case X86_INS_MOVABS:  goto mov_common;
-        case X86_INS_MOV:     goto mov_common;
+
+        case X86_INS_CMOVA:  llinsn.condition = llir::Branch::Op::X86_ABOVE; goto mov_common;
+        case X86_INS_CMOVAE: llinsn.condition = llir::Branch::Op::NOT_CARRY; goto mov_common;
+        case X86_INS_CMOVB:  llinsn.condition = llir::Branch::Op::CARRY; goto mov_common;
+        case X86_INS_CMOVBE: llinsn.condition = llir::Branch::Op::X86_BELOW_EQ; goto mov_common;
+        case X86_INS_CMOVE:  llinsn.condition = llir::Branch::Op::EQ; goto mov_common;
+        case X86_INS_CMOVNE: llinsn.condition = llir::Branch::Op::NOT_EQ; goto mov_common;
+        case X86_INS_CMOVG:  llinsn.condition = llir::Branch::Op::X86_GREATER; goto mov_common;
+        case X86_INS_CMOVGE: llinsn.condition = llir::Branch::Op::X86_GREATER_EQ; goto mov_common;
+        case X86_INS_CMOVL:  llinsn.condition = llir::Branch::Op::X86_LESS; goto mov_common;
+        case X86_INS_CMOVLE: llinsn.condition = llir::Branch::Op::X86_LESS_EQ; goto mov_common;
+        case X86_INS_CMOVP:  TODO();
+        case X86_INS_CMOVNP: TODO();
+        case X86_INS_CMOVS:  llinsn.condition = llir::Branch::Op::NEGATIVE; goto mov_common;
+        case X86_INS_CMOVNS: llinsn.condition = llir::Branch::Op::NOT_NEGATIVE; goto mov_common;
+        case X86_INS_CMOVO:  llinsn.condition = llir::Branch::Op::OVERFLOW; goto mov_common;
+        case X86_INS_CMOVNO: llinsn.condition = llir::Branch::Op::NOT_OVERFLOW; goto mov_common;
+        case X86_INS_MOVZX:  extension = llir::Extension::ZERO; goto mov_common;
+        case X86_INS_MOVSX:  extension = llir::Extension::SIGN; goto mov_common;
+        case X86_INS_MOVSXD: extension = llir::Extension::SIGN; goto mov_common;
+        case X86_INS_LEA:    goto mov_common;
+        case X86_INS_MOVABS: goto mov_common;
+        case X86_INS_MOV:    goto mov_common;
         mov_common:
             assert(detail->x86.op_count == 2);
             llinsn.dest_cnt = 1;
