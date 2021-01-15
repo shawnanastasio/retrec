@@ -446,7 +446,6 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
         case X86_INS_HLT: goto privileged_common;
         privileged_common:
-            assert(contains_group(detail, X86_GRP_PRIVILEGE));
             // We're a userspace emulator, so treat all privileged instructions as invalid
             llinsn.interrupt().op = llir::Interrupt::Op::ILLEGAL;
             break;
