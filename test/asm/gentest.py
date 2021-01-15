@@ -463,6 +463,12 @@ ALU_TESTS = [
     AluTestCase(8, "sar", "al", "1", "-1", "", "-1"),
     AluTestCase(8, "sar", "al", "1", "-3", "", "-2"),
     AluTestCase(8, "sar", "al", "cl", "-3", "1", "-2"),
+
+    # CMOVcc
+    AluTestCase(64, "cmp rax, rbx; cmova", "rax", "rbx", "1", "0", "0"), # (1 > 0) = true
+    AluTestCase(64, "cmp rax, rbx; cmova", "rax", "rbx", "1", "2", "1"), # (1 > 2) = false
+    AluTestCase(64, "cmp rax, rbx; cmovae", "rax", "rbx", "1", "0", "0"), # (1 >= 0) = true
+    AluTestCase(64, "cmp rax, rbx; cmovae", "rax", "rbx", "0", "1", "0"), # (0 >= 1) = false
 ]
 
 CARRY_TESTS = [
