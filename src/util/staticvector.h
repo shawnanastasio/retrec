@@ -57,8 +57,15 @@ public:
     constexpr StaticVector() : arr() {}
     constexpr StaticVector(const StaticVector &other) :
         arr(other.arr), count(other.count) {}
+    constexpr StaticVector(StaticVector &&other) :
+        arr(std::move(other.arr)), count(other.count) {}
     constexpr StaticVector &operator=(const StaticVector &other) {
         arr = other.arr;
+        count = other.count;
+        return *this;
+    }
+    constexpr StaticVector &operator=(StaticVector &&other) {
+        arr = std::move(other.arr);
         count = other.count;
         return *this;
     }
@@ -74,9 +81,14 @@ public:
         return arr == other.arr;
     }
 
-    void push_back(T val) {
+    void push_back(const T &val) {
         assert(count < MAX_SIZE);
         arr[count++] = val;
+    }
+
+    void push_back(T &&val) {
+        assert(count < MAX_SIZE);
+        arr[count++] = std::forward<T>(val);
     }
 
     void remove(size_t i) {

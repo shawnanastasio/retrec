@@ -363,7 +363,7 @@ status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, u
         }
 
         default:
-            // No patch nnecessary, just set NIP to the provided target and return
+            // No patch necessary, just set NIP to the provided target and return
             nip = resolved_haddr;
             break;
     }
@@ -375,11 +375,11 @@ status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, u
  * Helper macros for using relocations with local labels
  */
 #define RELOC_DECLARE_LABEL(name) \
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label{name}});
+    do ctx.stream->add_aux(true, relocation{1, relocation::declare_label{name}}); while (0)
 #define RELOC_DECLARE_LABEL_AFTER(name) \
-    ctx.stream->set_aux(true, relocation{1, relocation::declare_label_after{name}});
+    do ctx.stream->add_aux(true, relocation{1, relocation::declare_label_after{name}}); while (0)
 #define RELOC_FIXUP_LABEL(name, pos) \
-    ctx.stream->set_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}});
+    do ctx.stream->add_aux(true, relocation{1, relocation::imm_rel_label_fixup{name, LabelPosition::pos}}); while (0)
 
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
@@ -487,7 +487,13 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
     bool first_pass = true;         // Whether we're on the first pass or not
     size_t insn_i;                  // Index of current instruction
     std::unordered_map<std::string, std::vector<size_t>> labels;         // Map of label:insn_index for use in label resolution
-    std::vector<std::pair<size_t, instruction_stream_entry *>> deferred; // Vector of idx:insn for deferred relocations
+
+    struct Deferral {
+        size_t idx;     // Index of the deferred instruction in the stream
+        size_t aux_idx; // Index of aux_data for deferred relocation
+        instruction_stream_entry *entry;
+    };
+    std::vector<Deferral> deferred;
 
     // Helper to fix up absolute branches
     auto fixup_absolute_branch = [](auto &insn) {
@@ -693,30 +699,32 @@ status_code codegen_ppc64le<T>::resolve_relocations(codegen_ppc64le<T>::gen_cont
         insn = &(*ctx.stream)[i];
         insn_i = i;
 
-        if (!insn->aux || !insn->aux->relocation)
-            continue;
+        for (size_t aux_i = 0; aux_i < insn->aux_data().size(); aux_i++) {
+            auto &aux = insn->aux_data()[aux_i];
+            if (!aux->relocation)
+                continue;
 
-        // Attempt to resolve this relocation
-        auto res = std::visit(relocation_visitor, insn->aux->relocation->data);
-        if (res == status_code::DEFER) {
-            // Try again after other relocations have been resovled
-            deferred.push_back({insn_i, insn});
-        } else if (res != status_code::SUCCESS) {
-            // Failure - bail out
-            return res;
+            // Attempt to resolve this relocation
+            auto res = std::visit(relocation_visitor, aux->relocation->data);
+            if (res == status_code::DEFER) {
+                // Try again after other relocations have been resovled
+                deferred.push_back({insn_i, aux_i, insn});
+            } else if (res != status_code::SUCCESS) {
+                // Failure - bail out
+                return res;
+            }
         }
     }
 
     // If there are any deferred relocations, do a second pass
     first_pass = false;
     for (size_t i = 0; i < deferred.size(); i++) {
-        auto &insn_pair = deferred[i];
-        insn_i = insn_pair.first;
-        insn = insn_pair.second;
-        assert(insn->aux && insn->aux->relocation);
+        auto &deferral = deferred[i];
+        insn_i = deferral.idx;
+        insn = deferral.entry;
 
         // Attempt again to resolve this relocation
-        auto res = std::visit(relocation_visitor, insn->aux->relocation->data);
+        auto res = std::visit(relocation_visitor, insn->aux_data()[deferral.aux_idx]->relocation->data);
 
         // Bail out if a relocation failed
         if (res != status_code::SUCCESS)
@@ -2959,7 +2967,7 @@ void codegen_ppc64le<T>::macro$nop$relocation(gen_context &ctx, size_t count, re
 
     // Emit first nop and attach relocation to it
     ctx.assembler->nop();
-    ctx.stream->set_aux(true, std::forward<relocation>(reloc));
+    ctx.stream->add_aux(true, std::forward<relocation>(reloc));
 
     // Emit any extra nops
     macro$nops(*ctx.assembler, count - 1);

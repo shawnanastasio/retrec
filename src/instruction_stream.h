@@ -47,7 +47,7 @@ namespace retrec {
  *   Public constructor that can be called through a perfect forwarding template
  *   Move constructor
  *   status_code operator()(assembler*) - Method to emit the instruction using the provided assembler
- *   void set_aux(...) - Method to construct an auxiliary data structure in-place to store with the instruction
+ *   void add_aux(...) - Method to construct an auxiliary data structure in-place to store with the instruction
  */
 template <typename Traits>
 class instruction_stream {
@@ -63,9 +63,9 @@ public:
      * Append auxiliary data to the last instruction emitted.
      */
     template <typename... Ts>
-    void set_aux(Ts&&... args) {
+    void add_aux(Ts&&... args) {
         assert(insns.size());
-        (*(insns.end() - 1)).set_aux(std::forward<Ts>(args)...);
+        (*(insns.end() - 1)).add_aux(std::forward<Ts>(args)...);
     }
 
     /**

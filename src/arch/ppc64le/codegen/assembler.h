@@ -22,6 +22,7 @@
 #include <type_traits>
 #include <util/util.h>
 #include <util/magic.h>
+#include <util/staticvector.h>
 #include <arch/ppc64le/codegen/codegen_types.h>
 #include <allocators.h>
 #include <instruction_stream.h>
@@ -65,10 +66,11 @@ public:
     ~instruction_stream_entry();
 
     instruction_stream_entry(instruction_stream_entry&& other)
-        : aux(std::move(other.aux)), op(other.op),
-          emit(std::move(other.emit)), parameters(std::move(other.parameters)) {}
+        : op(other.op), emit(std::move(other.emit)),
+          parameters(std::move(other.parameters)),
+          aux_vec(std::move(other.aux_vec)) {}
     instruction_stream_entry &operator=(instruction_stream_entry &&other) {
-        std::swap(aux, other.aux);
+        std::swap(aux_vec, other.aux_vec);
         std::swap(op, other.op);
         std::swap(emit, other.emit);
         std::swap(parameters, other.parameters);
@@ -80,7 +82,7 @@ public:
      * Unlike the move constructor, our auxiliary data is preserved.
      */
     void replace_with(instruction_stream_entry&& other) {
-        assert(!other.aux);
+        assert(other.aux_vec.size() == 0);
         std::swap(op, other.op);
         std::swap(emit, other.emit);
         std::swap(parameters, other.parameters);
@@ -100,9 +102,9 @@ public:
      * Set the auxiliary data value
      */
     template <typename... Ts>
-    void set_aux(Ts&&... args) {
-        assert(!aux);
-        aux = std::make_unique<instruction_aux>(std::forward<Ts>(args)...);
+    void add_aux(Ts&&... args) {
+        auto aux = std::make_unique<instruction_aux>(std::forward<Ts>(args)...);
+        aux_vec.push_back(std::move(aux));
     }
 
     //
@@ -139,13 +141,16 @@ public:
     }
 
     Operation operation() const { return op; }
+    auto &aux_data() { return aux_vec; }
 
-    std::unique_ptr<instruction_aux> aux;
 private:
+    static constexpr size_t MAX_AUX_COUNT = 2;
+
     Operation op;
     // This will call our write32() function to write the instruction to `out_buf`.
     std::function<status_code(assembler*, asm_param*)> emit;
     std::array<asm_param, 6> parameters;
+    StaticVector<std::unique_ptr<instruction_aux>, MAX_AUX_COUNT> aux_vec;
 };
 
 struct instruction_stream_traits {
