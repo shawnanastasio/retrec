@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.10)
 project(retrec)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -34,7 +34,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRETREC_MINIMUM_LOG_LEVEL=${MIN_LOG_LEV
 # Compiler flags
 #
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wconversion -Wextra -Werror=conversion -Wno-sign-conversion -Wpessimizing-move -Wno-psabi")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wextra -Wno-sign-conversion -Wpessimizing-move -Wno-psabi")
 set(CMAKE_SOURCE_DIR "src")
 
 message(STATUS "Build type is: ${CMAKE_BUILD_TYPE}")
@@ -46,6 +46,16 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -DDEBUG_BUILD=0 -Wno-unused-variable -Wno-unused-parameter")
 else()
     message(FATAL_ERROR "Unknown CMAKE_BUILD_TYPE: Choices are 'Release', 'ReleaseDebug', 'Debug'")
+endif()
+
+# Compiler-specific flags
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.0)
+        # GCC >=10 has non-broken -Wconversion, so we can enable it
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion")
+    endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion")
 endif()
 
 # Architecture-specific flags
