@@ -59,7 +59,7 @@ public:
     dynamic_recompiler(Architecture host_, target_environment target_env_) :
         host(host_),
         target_env(std::move(target_env_)),
-        econtext(target_env),
+        econtext(target_env, loader),
         loader(econtext, target_env_.binary),
         disasm(loader)
     {

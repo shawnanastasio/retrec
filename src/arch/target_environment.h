@@ -20,6 +20,7 @@
 #pragma once
 
 #include <util/util.h>
+#include <elf_loader.h>
 #include <arch/x86_64/target_environment.h>
 
 #include <vector>
@@ -29,10 +30,11 @@ namespace retrec {
 
 static inline void *initialize_target_stack(Architecture target, void *stack,
                                             const std::vector<std::string> &argv,
-                                            const std::vector<std::string> &envp) {
+                                            const std::vector<std::string> &envp,
+                                            const elf_loader &elf_loader) {
     switch (target) {
         case Architecture::X86_64:
-            return x86_64::initialize_target_stack(stack, argv, envp);
+            return x86_64::initialize_target_stack(stack, argv, envp, elf_loader);
         default:
             TODO();
     }

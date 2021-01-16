@@ -164,6 +164,8 @@ status_code elf_loader::load_all() {
             case PT_LOAD:
             {
                 assert(phdr.p_paddr != 0);
+                if (phdr.p_offset == 0)
+                    base_load_address = phdr.p_vaddr;
 
                 uint64_t aligned_start = phdr.p_vaddr & (~(getpagesize() - 1));
                 uint64_t alignment = phdr.p_vaddr - aligned_start;

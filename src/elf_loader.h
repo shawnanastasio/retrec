@@ -39,7 +39,8 @@ class elf_loader {
     GElf_Ehdr ehdr;
     Architecture arch;
 
-    uint64_t text_shndx;
+    uint64_t text_shndx { 0 };
+    uint64_t base_load_address { 0 };
     GElf_Shdr text_shdr;
 public:
     DISABLE_COPY_AND_MOVE(elf_loader)
@@ -77,11 +78,12 @@ public:
     [[nodiscard]] uint64_t get_symbol_size(const Symbol &sym) const;
     const void *get_symbol_data_ptr(const elf_loader::Symbol &sym);
 
-    [[nodiscard]] Architecture target_arch() const { return arch; }
-    [[nodiscard]] uint64_t entrypoint() const { return ehdr.e_entry; }
-    [[nodiscard]] const std::vector<Symbol> &symbol_table() const { return symbols; }
-    [[nodiscard]] uint64_t text_section_index() const { return text_shndx; }
-
+    Architecture target_arch() const { return arch; }
+    uint64_t entrypoint() const { return ehdr.e_entry; }
+    const std::vector<Symbol> &symbol_table() const { return symbols; }
+    uint64_t text_section_index() const { return text_shndx; }
+    const auto &get_ehdr() const { return ehdr; }
+    auto get_base_address() const { return base_load_address; }
 
 private:
     std::vector<Symbol> symbols;

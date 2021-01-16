@@ -22,61 +22,116 @@
 
 #include <cstdint>
 #include <cstring>
+#include <unistd.h>
+#include <sys/types.h>
+
+#include <libelf.h>
 
 using namespace retrec;
 using namespace retrec::x86_64;
 
+/**
+ * Build an ELF auxiliary vector on the target stack. Mimicks the vector that QEMU builds.
+ */
+static void build_elf_aux(uint64_t *&sp64, const elf_loader &loader,
+                          const std::vector<uint8_t *> &argv_offsets) {
+    auto push_entry = [&](uint64_t type, uint64_t val) {
+        *(--sp64) = val;
+        *(--sp64) = type;
+    };
+
+    // Push the string "x86_64\0\0" for AT_PLATFORM. Real Linux/QEMU doesn't seem
+    // to store this string on the stack, but there's nothing that says you can't.
+    *(--sp64) = 0x000034365f363878ul; // "x86_64\0\0" as a little endian u64
+    char *platform_name_ptr = (char *)sp64;
+
+    // Push 16 random bytes for AT_RANDOM. Same deal as AT_PLATFORM - real Linux doesn't
+    // use the stack for this but we should be free to do so.
+    //
+    // Guaranteed 100% random number :)
+    *(--sp64) = 0xDEADBEEFCAFEBABA;
+    *(--sp64) = 0xFACEFEED2BADC0DE;
+    char *random_ptr = (char *)sp64;
+
+    // We're building in reverse, so AT_NULL goes first
+    push_entry(AT_NULL, 0);
+
+    // Push the rest of the entries in the order that QEMU does
+    push_entry(AT_PLATFORM, (uint64_t)platform_name_ptr);
+    push_entry(AT_EXECFN,   (uint64_t)argv_offsets[0]); // Reuse argv[0] for program name pointer
+    push_entry(AT_SECURE,   0 /* lol */);
+    push_entry(AT_RANDOM,   (uint64_t)random_ptr);
+    push_entry(AT_CLKTCK,   100); // Same value QEMU returns - not sure if we really need to calculate this.
+    push_entry(AT_HWCAP,    0x078BFBFD); // Seems to be the same as CPUID[01h].EDX
+    push_entry(AT_EGID,     getegid());
+    push_entry(AT_GID,      getgid());
+    push_entry(AT_EUID,     geteuid());
+    push_entry(AT_UID,      getuid());
+    push_entry(AT_ENTRY,    loader.entrypoint());
+    push_entry(AT_FLAGS,    0);
+    push_entry(AT_BASE,     0);
+    push_entry(AT_PAGESZ,   getpagesize());
+    push_entry(AT_PHNUM,    loader.get_ehdr().e_phnum);
+    push_entry(AT_PHENT,    loader.get_ehdr().e_phentsize);
+    push_entry(AT_PHDR,     loader.get_base_address() + loader.get_ehdr().e_phoff);
+}
+
 void *x86_64::initialize_target_stack(void *stack, const std::vector<std::string> &argv,
-                               const std::vector<std::string> &envp) {
+                               const std::vector<std::string> &envp, const elf_loader &elf_loader) {
     // Initialize the stack with argc/argv/envp process arguments as expected by an
     // x86_64 linux userspace process. The stack will look like this after we're done:
     //
-    // top --> ---------------------
+    // top -->+---------------------+
     //        |                     |
-    //        |  /* STRING POOL */  | <-
-    //        |                     |   |
-    //        | ------------------- |   |
-    //        |              NULL   |   |
-    //        |            envp[n]  | --
-    //        | /* envp */   ...    |   |
-    //        |            envp[0]  | --
-    //        | ------------------- |   |
-    //        |              NULL   |   |
-    //        |            argv[n]  | --
-    //        | /* argv */   ...    |   |
-    //        |            argv[0]  | --
-    //        | --------------------|
+    //        |  /* STRING POOL */  | <--+
+    //        |                     |    |
+    //        + ------------------- +    |
+    //        |         elf_aux[n]  |    |
+    //        | /* elf     ...      |    |
+    //        |    aux */  ...      |    |
+    //        |         elf_aux[0]  |    |
+    //        + ------------------- +    |
+    //        |              NULL   |    |
+    //        |            envp[n]  | ---+
+    //        | /* envp */   ...    |    |
+    //        |            envp[0]  | ---+
+    //        + ------------------- +    |
+    //        |              NULL   |    |
+    //        |            argv[n]  | ---+
+    //        | /* argv */   ...    |    |
+    //        |            argv[0]  | ---+
+    //        + --------------------+
     // sp --> |      /* argc */     |
-    //         ---------------------
+    //        +---------------------+
     //
     uint8_t *sp = (uint8_t *)stack;
 
-    // Dump strings on to the stack first
-    std::vector<uint8_t *> argv_offsets;
-    for (auto &str : argv) {
-        // Copy this string to the stack in reverse
+    auto push_string = [&](const auto &str) {
         *(--sp) = '\0';
         for (size_t i = str.size(); i-- > 0;)
             *(--sp) = str[i];
+    };
 
-        // Save the offset
+    // Dump argv/envp strings on to the stack first
+    std::vector<uint8_t *> argv_offsets;
+    std::vector<uint8_t *> envp_offsets;
+    for (const auto &str : argv) {
+        // Push string and save start offset
+        push_string(str);
         argv_offsets.push_back(sp);
     }
-
-    std::vector<uint8_t *> envp_offsets;
-    for (auto &str : envp) {
-        // Copy this string to the stack in reverse
-        *(--sp) = '\0';
-        for (size_t i = str.size(); i-- > 0;)
-            *(--sp) = str[i];
-
-        // Save the offset
+    for (const auto &str : envp) {
+        // Push string and save start offset
+        push_string(str);
         envp_offsets.push_back(sp);
     }
 
     // Align stack to 8 bytes
     sp = (uint8_t *)((uintptr_t)sp & ~0b111);
     uint64_t *sp64 = (uint64_t *)sp;
+
+    // Build ELF auxiliary vector
+    build_elf_aux(sp64, elf_loader, argv_offsets);
 
     // Push envp pointers in reverse
     *(--sp64) = 0;

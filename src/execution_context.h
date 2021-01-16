@@ -36,6 +36,9 @@ namespace retrec {
 class translated_code_region;
 struct runtime_context;
 
+// Forward-declare elf_loader
+class elf_loader;
+
 //
 // Configuration of target environment
 //
@@ -52,6 +55,7 @@ class execution_context {
     process_memory_map vaddr_map;
     long page_size;
     const target_environment &target_env;
+    elf_loader &loader;
     simple_placement_allocator code_allocator;
 
     std::unique_ptr<retrec::runtime_context> runtime_context;
@@ -61,7 +65,7 @@ class execution_context {
 
 public:
     DISABLE_COPY_AND_MOVE(execution_context)
-    execution_context(const target_environment &target_env_);
+    execution_context(const target_environment &target_env_, elf_loader &loader_);
     ~execution_context();
     status_code init();
 

@@ -26,8 +26,9 @@
 
 using namespace retrec;
 
-execution_context::execution_context(const target_environment &target_env_) : vaddr_map(getpid()),
-                                         page_size(sysconf(_SC_PAGESIZE)), target_env(target_env_) {}
+execution_context::execution_context(const target_environment &target_env_, elf_loader &loader_)
+                                    : vaddr_map(getpid()), page_size(sysconf(_SC_PAGESIZE)),
+                                      target_env(target_env_), loader(loader_) {}
 
 execution_context::~execution_context() {}
 
@@ -128,7 +129,7 @@ status_code execution_context::initialize_runtime_context(Architecture target_ar
     }
 
     // Initialize the stack with program arguments
-    void *sp = initialize_target_stack(target_arch, new_stack, target_env.argv, target_env.envp);
+    void *sp = initialize_target_stack(target_arch, new_stack, target_env.argv, target_env.envp, loader);
 
     // Call host-architecture-specific function to populate the runtime context
     runtime_context = std::make_unique<retrec::runtime_context>();

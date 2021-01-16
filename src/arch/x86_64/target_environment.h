@@ -26,6 +26,8 @@
 #include <string>
 #include <cstdint>
 
+#include <elf_loader.h>
+
 namespace retrec {
 namespace x86_64 {
 
@@ -34,7 +36,7 @@ namespace x86_64 {
  * Returns the decremented stack pointer that should be passed to translated runtime.
  */
 void *initialize_target_stack(void *stack, const std::vector<std::string> &argv,
-                              const std::vector<std::string> &envp);
+                              const std::vector<std::string> &envp, const elf_loader &elf_loader);
 
 
 struct CpuidResult {
