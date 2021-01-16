@@ -398,6 +398,39 @@ ALU_TESTS = [
     AluTestCase(8, "imul bl#", "al", "bl", "0x3f", "2", "0x7e"),
     AluTestCase(8, "imul bl#", "al", "bl", "0x40", "2", "0x80"),
 
+    # MUL
+    AluTestCase(64, "mul rbx; push rdx#", "rax", "rbx", "-1", "-1", "1"),
+    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "-2"), # high should be exactly -2
+    AluTestCase(64, "mul rbx; push rdx#", "rax", "rbx", "0x8000000000000000", "0x8000000000000000", "0"),
+    AluTestCase(64, "pop rdx; mov", "rdx", "", "0", "", "0x4000000000000000", "rcx"), # high should have second MSB set
+    AluTestCase(64, "mul rbx; push rdx#", "rax", "rbx", "0x8000000000000000", "2", "0"),
+    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "1"), # high should be exactly 1
+    AluTestCase(64, "mul rbx; push rdx#", "rax", "rbx", "0x7fffffffffffffff", "2", "-2"),
+    AluTestCase(64, "pop rdx#", "rdx", "", "0", "", "0"), # high should be exactly 0
+
+    AluTestCase(32, "mul ebx; push rdx#", "eax", "ebx", "-1", "-1", "1"),
+    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "-2"), # high should be exactly -2
+    AluTestCase(32, "mul ebx; push rdx#", "eax", "ebx", "0x80000000", "0x80000000", "0"),
+    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0x40000000"), # high should have second MSB set
+    AluTestCase(32, "mul ebx; push rdx#", "eax", "ebx", "0x80000000", "2", "0"),
+    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "1"), # high should be exactly 1
+    AluTestCase(32, "mul ebx; push rdx#", "eax", "ebx", "0x7fffffff", "2", "-2"),
+    AluTestCase(32, "pop rdx#", "edx", "", "0", "", "0"), # high should be exactly 0
+
+    AluTestCase(16, "mul bx; push rdx#", "ax", "bx", "-1", "-1", "1"),
+    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "-2"), # high should be exactly -2
+    AluTestCase(16, "mul bx; push rdx#", "ax", "bx", "0x8000", "0x8000", "0"),
+    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0x4000"), # high should have second MSB set
+    AluTestCase(16, "mul bx; push rdx#", "ax", "bx", "0x8000", "2", "0"),
+    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "1"), # high should be exactly 1
+    AluTestCase(16, "mul bx; push rdx#", "ax", "bx", "0x7fff", "2", "-2"),
+    AluTestCase(16, "pop rdx#", "dx", "", "0", "", "0"), # high should be exactly 0
+
+    AluTestCase(8, "mul bl; push rdx#", "ax", "bl", "-1", "-1", "0xfe01"),
+    AluTestCase(8, "mul bl; push rdx#", "ax", "bl", "0x80", "0x80", "0x4000"),
+    AluTestCase(8, "mul bl; push rdx#", "ax", "bl", "0x80", "2", "0x0100"),
+    AluTestCase(8, "mul bl; push rdx#", "ax", "bl", "0x7f", "2", "0x00fe"),
+
     # S{A,H}{R,L}
     AluTestCase(64, "shl", "rax", "1", "1", "", "2"),
     AluTestCase(64, "shl", "rax", "2", "1", "", "4"),
@@ -524,6 +557,19 @@ CARRY_TESTS = [
     FlagTestCase(8, "al", "bl", "0x8", "15", "imul bl#", "jnc", "jc"),
     FlagTestCase(8, "al", "bl", "0x8", "-17", "imul bl#", "jc", "jnc"),
     FlagTestCase(8, "al", "bl", "0x8", "-16", "imul bl#", "jnc", "jc"),
+
+    # MUL
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFFF", "3", "mul rbx#", "jc", "jnc"),
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFFF", "2", "mul rbx#", "jnc", "jc"),
+
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFFF", "3", "mul ebx#", "jc", "jnc"),
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFFF", "2", "mul ebx#", "jnc", "jc"),
+
+    FlagTestCase(16, "ax", "bx", "0x7FFF", "3", "mul bx#", "jc", "jnc"),
+    FlagTestCase(16, "ax", "bx", "0x7FFF", "2", "mul bx#", "jnc", "jc"),
+
+    FlagTestCase(8, "al", "bl", "0x7F", "3", "mul bl#", "jc", "jnc"),
+    FlagTestCase(8, "al", "bl", "0x7F", "2", "mul bl#", "jnc", "jc"),
 
     # Shifts
     FlagTestCase(64, "rax", "", "1", "1", "shr", "jc", "jnc"),
@@ -709,6 +755,55 @@ OVERFLOW_TESTS = [
     FlagTestCase(8, "al", "", "0x7F", "1", "add", "jo", "jno"), # Negative overflow
     FlagTestCase(8, "al", "", "0", "-1", "add", "jno", "jo"), # No overflow
     FlagTestCase(8, "al", "", "-1", "-1", "add", "jno", "jo"), # No overflow
+
+    # IMUL
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "17", "imul", "jo", "jno"),
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "16", "imul", "jno", "jo"),
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "-17", "imul", "jo", "jno"),
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFF", "-16", "imul", "jno", "jo"),
+    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "16", "imul", "jo", "jno"),
+    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "15", "imul", "jno", "jo"),
+    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "-17", "imul", "jo", "jno"),
+    FlagTestCase(64, "rax", "rbx", "0x800000000000000", "-16", "imul", "jno", "jo"),
+    FlagTestCase(64, "rax", "rbx", "0", "0", "imul", "jno", "jo"),
+
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "17", "imul", "jo", "jno"),
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "16", "imul", "jno", "jo"),
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "-17", "imul", "jo", "jno"),
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFF", "-16", "imul", "jno", "jo"),
+    FlagTestCase(32, "eax", "ebx", "0x8000000", "16", "imul", "jo", "jno"),
+    FlagTestCase(32, "eax", "ebx", "0x8000000", "15", "imul", "jno", "jo"),
+    FlagTestCase(32, "eax", "ebx", "0x8000000", "-17", "imul", "jo", "jno"),
+    FlagTestCase(32, "eax", "ebx", "0x8000000", "-16", "imul", "jno", "jo"),
+    FlagTestCase(32, "eax", "ebx", "0", "0", "imul", "jno", "jo"),
+
+    FlagTestCase(16, "ax", "bx", "0x7FF", "17", "imul", "jo", "jno"),
+    FlagTestCase(16, "ax", "bx", "0x7FF", "16", "imul", "jno", "jo"),
+    FlagTestCase(16, "ax", "bx", "0x7FF", "-17", "imul", "jo", "jno"),
+    FlagTestCase(16, "ax", "bx", "0x7FF", "-16", "imul", "jno", "jo"),
+    FlagTestCase(16, "ax", "bx", "0x800", "16", "imul", "jo", "jno"),
+    FlagTestCase(16, "ax", "bx", "0x800", "15", "imul", "jno", "jo"),
+    FlagTestCase(16, "ax", "bx", "0x800", "-17", "imul", "jo", "jno"),
+    FlagTestCase(16, "ax", "bx", "0x800", "-16", "imul", "jno", "jo"),
+    FlagTestCase(16, "ax", "bx", "0", "0", "imul", "jno", "jo"),
+
+    FlagTestCase(8, "al", "bl", "0x8", "17", "imul bl#", "jo", "jno"),
+    FlagTestCase(8, "al", "bl", "0x8", "15", "imul bl#", "jno", "jo"),
+    FlagTestCase(8, "al", "bl", "0x8", "-17", "imul bl#", "jo", "jno"),
+    FlagTestCase(8, "al", "bl", "0x8", "-16", "imul bl#", "jno", "jo"),
+
+    # MUL
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFFF", "3", "mul rbx#", "jo", "jno"),
+    FlagTestCase(64, "rax", "rbx", "0x7FFFFFFFFFFFFFFF", "2", "mul rbx#", "jno", "jo"),
+
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFFF", "3", "mul ebx#", "jo", "jno"),
+    FlagTestCase(32, "eax", "ebx", "0x7FFFFFFF", "2", "mul ebx#", "jno", "jo"),
+
+    FlagTestCase(16, "ax", "bx", "0x7FFF", "3", "mul bx#", "jo", "jno"),
+    FlagTestCase(16, "ax", "bx", "0x7FFF", "2", "mul bx#", "jno", "jo"),
+
+    FlagTestCase(8, "al", "bl", "0x7F", "3", "mul bl#", "jo", "jno"),
+    FlagTestCase(8, "al", "bl", "0x7F", "2", "mul bl#", "jno", "jo"),
 
     # Shifts
     FlagTestCase(64, "rax", "", "0xC000000000000000", "1", "shl", "jno", "jo"),
