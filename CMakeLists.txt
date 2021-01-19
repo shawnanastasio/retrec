@@ -10,6 +10,11 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+set(RETREC_DEBUG_BUILD 0)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(RETREC_DEBUG_BUILD 1)
+endif()
+
 # Compile external dependencies
 include(external/external.cmake)
 
@@ -34,16 +39,17 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRETREC_MINIMUM_LOG_LEVEL=${MIN_LOG_LEV
 # Compiler flags
 #
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wextra -Wno-sign-conversion -Wpessimizing-move -Wno-psabi")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE -fno-exceptions -Wall -Wimplicit-fallthrough -Wextra -Wpessimizing-move -Wno-psabi")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DRETREC_DEBUG_BUILD=${RETREC_DEBUG_BUILD}")
 set(CMAKE_SOURCE_DIR "src")
 
 message(STATUS "Build type is: ${CMAKE_BUILD_TYPE}")
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -DDEBUG_BUILD=1 -Werror=switch")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Og -g -Werror=switch")
 elseif (CMAKE_BUILD_TYPE STREQUAL "ReleaseDebug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -DDEBUG_BUILD=1 -DNDEBUG -Wno-unused-variable -Wno-unused-parameter")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -mcpu=power9 -g -DNDEBUG -Wno-unused-variable -Wno-unused-parameter")
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -DDEBUG_BUILD=0 -Wno-unused-variable -Wno-unused-parameter")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wno-unused-variable -Wno-unused-parameter")
 else()
     message(FATAL_ERROR "Unknown CMAKE_BUILD_TYPE: Choices are 'Release', 'ReleaseDebug', 'Debug'")
 endif()
@@ -52,10 +58,10 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.0)
         # GCC >=10 has non-broken -Wconversion, so we can enable it
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion -Wno-sign-conversion")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion -Wno-sign-conversion")
 endif()
 
 # Architecture-specific flags
