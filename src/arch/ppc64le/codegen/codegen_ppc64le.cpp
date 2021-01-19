@@ -2713,6 +2713,7 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
                      bool reg_zero_others, const llir::Insn &insn, llir::Extension extension) {
     auto mem = mem_op.memory();
     assert(mem.arch == Architecture::X86_64);
+    assert(mem.x86_64.segment.x86_64 == llir::X86_64Register::INVALID); // FIXME: Support fs/gs TLS
     auto update = mem.update;
     auto mem_width = mem_op.width;
     bool sign_ext = extension == llir::Extension::SIGN;
