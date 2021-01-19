@@ -426,4 +426,14 @@ public:
     status_code patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) override;
 };
 
+template <typename... ArgsT>
+auto make_codegen_ppc64le(Architecture target_arch, ArgsT&&... args) {
+    switch (target_arch) {
+        case Architecture::X86_64:
+            return std::make_unique<codegen_ppc64le<ppc64le::TargetTraitsX86_64>>(target_arch, std::forward<ArgsT>(args)...);
+        default:
+            TODO();
+    }
+}
+
 }

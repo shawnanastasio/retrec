@@ -52,11 +52,12 @@ const char *retrec::status_code_str(status_code code) {
             return "Operation would result in memory region overlap";
         case status_code::UNIMPL_INSN:
             return "Unimplemented instruction";
+        case status_code::UNIMPL_SYSCALL:
+            return "Unimplemented syscall";
         case status_code::UNTRANSLATED:
             return "Attempt to reference untranslated code";
-        default:
-            TODO();
     }
+    UNREACHABLE();
 }
 
 const char *log_level_names[] = {

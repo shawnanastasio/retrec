@@ -46,8 +46,7 @@ namespace magic {
  *   my_types<2> baz; // Same as `char baz`
  */
 template <typename... Args>
-struct type_list
-{
+struct type_list {
    template <std::size_t N>
    using type = typename std::tuple_element<N, std::tuple<Args...>>::type;
 };
@@ -318,8 +317,8 @@ public: \
  *
  * This is probably the most magic thing in this file.
  */
-#define GEN_ENUM_TO_TYPE_LOOKUP(xm, name, enum_accessor, type_accessor, EnumT) \
-constexpr EnumT name ## _enums[] { \
+#define MAGIC_GEN_ENUM_TO_TYPE_LOOKUP(xm, name, enum_accessor, type_accessor, EnumT) \
+static constexpr EnumT name ## _enums[] { \
     xm(enum_accessor) \
 }; \
 template <size_t n> \
@@ -328,7 +327,7 @@ using name ## _types = \
                      xm(type_accessor) \
                                void>::type<n>; \
 template <EnumT e, size_t n = 0> \
-constexpr size_t name ## _lookup_type_index() { \
+static constexpr size_t name ## _lookup_type_index() { \
     if constexpr (name ## _enums[n] == e || ARRAY_SIZE(name ## _enums) - 1 == n) \
         return n; \
     else \
@@ -336,4 +335,40 @@ constexpr size_t name ## _lookup_type_index() { \
 } \
 template <EnumT e> \
 using name ## _look_up_type = name ## _types<name ## _lookup_type_index<e>()>;
+
+/**
+ * Same as above but declares parallel arrays of types. Can be used to map
+ * one type to another at compile-time.
+ */
+#define MAGIC_GEN_TYPE_TO_TYPE_LOOKUP(xm, name, type_a_accessor, type_b_accessor) \
+template <size_t n> \
+using name ## _types_a = \
+    magic::type_list< \
+                     xm(type_a_accessor) \
+                               Sentinel<0>>::type<n>; \
+template <size_t n> \
+using name ## _types_b = \
+    magic::type_list< \
+                     xm(type_b_accessor) \
+                               Sentinel<0>>::type<n>; \
+template <typename TypeA, size_t n = 0> \
+static constexpr size_t name ## _lookup_type_a_index() { \
+    static_assert(!std::is_same_v<name ## _types_a<n>, Sentinel<0>>, "Unknown type mapping!"); \
+    if constexpr (std::is_same_v<TypeA, name ## _types_a<n>>) \
+        return n; \
+    else \
+        return name ## _lookup_type_a_index<TypeA, n + 1>(); \
+} \
+template <typename TypeB, size_t n = 0> \
+static constexpr size_t name ## _lookup_type_b_index() { \
+    static_assert(!std::is_same_v<name ## _types_b<n>, Sentinel<0>>, "Unknown type mapping!"); \
+    if constexpr (std::is_same_v<TypeB, name ## _types_b<n>>) \
+        return n; \
+    else \
+        return name ## _lookup_type_b_index<TypeB, n + 1>(); \
+} \
+template <typename TypeA> \
+using name ## _look_up_type_b = name ## _types_b<name ## _lookup_type_a_index<TypeA>()>; \
+template <typename TypeB> \
+using name ## _look_up_type_a = name ## _types_a<name ## _lookup_type_b_index<TypeB>()>;
 

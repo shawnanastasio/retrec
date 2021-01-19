@@ -20,13 +20,15 @@
 #pragma once
 
 #include <util/util.h>
-#include <arch/x86_64/cpu_context_x86_64.h>
 #include <arch/ppc64le/cpu_context_ppc64le.h>
+#include <arch/x86_64/cpu_context_x86_64.h>
 #include <virtual_address_mapper.h>
 
 #include <unordered_map>
 
 namespace retrec {
+
+class syscall_emulator; // Forward
 
 /**
  * Data accessed by translated code and retrec runtime
@@ -68,10 +70,14 @@ struct runtime_context_ppc64le {
     bool should_exit;
     int exit_code;
 
+    // Pointer to syscall emulator, used by native code
+    syscall_emulator *syscall_emu;
+
     //
     // Initialization and accessor functions
     //
-    status_code init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam);
+    status_code init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam_,
+                     syscall_emulator *syscall_emu_);
     status_code execute();
 };
 static_assert(std::is_pod<runtime_context_ppc64le>::value, "Runtime context must be POD, since we access it manually from emitted ASM.");

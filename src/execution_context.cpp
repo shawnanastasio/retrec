@@ -119,7 +119,8 @@ void *execution_context::get_region_ptr(uint64_t ptr) {
     return (void *)ptr;
 }
 
-status_code execution_context::initialize_runtime_context(Architecture target_arch, void *entry, virtual_address_mapper *vam) {
+status_code execution_context::initialize_runtime_context(Architecture target_arch, void *entry, virtual_address_mapper *vam,
+                                                          syscall_emulator *syscall_emu) {
     // Allocate an initial stack + guard page
     void *new_stack;
     auto res = allocate_new_stack(DEFAULT_STACK_SIZE, &new_stack);
@@ -133,7 +134,7 @@ status_code execution_context::initialize_runtime_context(Architecture target_ar
 
     // Call host-architecture-specific function to populate the runtime context
     runtime_context = std::make_unique<retrec::runtime_context>();
-    res = runtime_context->init(target_arch, entry, sp, vam);
+    res = runtime_context->init(target_arch, entry, sp, vam, syscall_emu);
     if (res != status_code::SUCCESS)
         return res;
 

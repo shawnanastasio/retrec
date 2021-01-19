@@ -24,6 +24,7 @@ add_executable(retrec
     arch/ppc64le/llir/llir_registers_ppc64le.h
     arch/ppc64le/runtime_context_ppc64le.cpp
     arch/ppc64le/runtime_context_ppc64le.h
+    arch/ppc64le/syscalls.cpp
     arch/ppc64le/syscalls.h
     arch/target_environment.h
     arch/x86_64/cpu_context_x86_64.h
@@ -48,9 +49,11 @@ add_executable(retrec
     main.cpp
     mapped_file.cpp
     mapped_file.h
+    platform/generic_syscalls.cpp
     platform/generic_syscalls.h
-    platform/syscall_emulation.cpp
-    platform/syscall_emulation.h
+    platform/syscall_emulator.cpp
+    platform/syscall_emulator.h
+    platform/syscall_types.h
     process_memory_map.cpp
     process_memory_map.h
     util/magic.h

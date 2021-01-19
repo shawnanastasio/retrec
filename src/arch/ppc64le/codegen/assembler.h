@@ -1115,7 +1115,7 @@ public:
  */
 #define ENUM_X(a, ignore) Operation::a,
 #define TYPE_X(ignore, a) decltype(a),
-GEN_ENUM_TO_TYPE_LOOKUP(PPC64LE_ENUMERATE_OPERATIONS, operations, ENUM_X, TYPE_X, Operation)
+MAGIC_GEN_ENUM_TO_TYPE_LOOKUP(PPC64LE_ENUMERATE_OPERATIONS, operations, ENUM_X, TYPE_X, Operation)
 #undef ENUM_X
 #undef TYPE_X
 

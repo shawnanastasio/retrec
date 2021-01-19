@@ -27,6 +27,7 @@
 #include <codegen.h>
 #include <virtual_address_mapper.h>
 #include <arch/ppc64le/codegen/codegen_ppc64le.h>
+#include <platform/syscall_emulator.h>
 
 #include <list>
 #include <memory>
@@ -46,6 +47,7 @@ class dynamic_recompiler {
     std::unique_ptr<codegen> gen;
     std::list<translated_code_region> translated_regions;
     virtual_address_mapper vam;
+    std::unique_ptr<syscall_emulator> syscall_emu;
 
     //
     // Translation helpers

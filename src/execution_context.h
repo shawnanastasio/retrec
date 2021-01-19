@@ -93,7 +93,8 @@ public:
     status_code allocate_region(uint64_t start, size_t len, int prot, void **region_out,
                                 process_memory_map::Mapping::Type type = process_memory_map::Mapping::Type::USER);
     status_code protect_region(uint64_t start, size_t len, int prot);
-    status_code initialize_runtime_context(Architecture target_arch, void *entry, virtual_address_mapper *vam);
+    status_code initialize_runtime_context(Architecture target_arch, void *entry, virtual_address_mapper *vam,
+                                           syscall_emulator *syscall_emu);
     status_code enter_translated_code();
 };
 

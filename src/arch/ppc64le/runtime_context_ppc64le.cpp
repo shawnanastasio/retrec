@@ -19,7 +19,7 @@
 
 #include <arch/ppc64le/runtime_context_ppc64le.h>
 #include <arch/ppc64le/codegen/abi.h>
-#include <platform/syscall_emulation.h>
+#include <platform/syscall_emulator.h>
 #include <codegen.h>
 
 #include <cstdlib>
@@ -33,7 +33,7 @@ using NativeTarget = runtime_context_ppc64le::NativeTarget;
 // runtime_context_ppc64le
 //
 
-static void native_callback$syscall(runtime_context_ppc64le *ctx);
+static status_code native_callback$syscall(runtime_context_ppc64le *ctx);
 
 template <typename TargetTraits>
 int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTraits::RegisterT reg) {
@@ -53,10 +53,12 @@ int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTr
     }
 }
 
-status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam) {
+status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam_,
+                                          syscall_emulator *syscall_emu_) {
     memset(this, 0, sizeof(runtime_context_ppc64le));
     arch = target_arch;
     leave_translated_code_ptr = arch_leave_translated_code;
+    syscall_emu = syscall_emu_;
 
     switch (target_arch) {
         case Architecture::X86_64:
@@ -68,7 +70,7 @@ status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry,
     }
 
     // Setup virtual address mapper
-    this->vam = vam;
+    vam = vam_;
     vam_lookup_and_update_call_cache = &virtual_address_mapper::lookup_and_update_call_cache;
     vam_lookup_check_call_cache = &virtual_address_mapper::lookup_check_call_cache;
 
@@ -90,8 +92,13 @@ status_code runtime_context_ppc64le::execute() {
         // If the translated code wanted to call a native function, do so and resume
         switch (native_function_call_target) {
             case NativeTarget::SYSCALL:
-                native_callback$syscall(this);
+            {
+                status_code res = native_callback$syscall(this);
+                if (res != status_code::SUCCESS)
+                    return res;
+
                 break;
+            }
 
             case NativeTarget::CALL:
             case NativeTarget::JUMP:
@@ -120,23 +127,27 @@ status_code runtime_context_ppc64le::execute() {
 // Native callbacks
 //
 
-static void native_callback$syscall(runtime_context_ppc64le *ctx) {
+static status_code native_callback$syscall(runtime_context_ppc64le *ctx) {
     switch (ctx->arch) {
         case Architecture::X86_64:
         {
-            auto syscall_ret = get_syscall_emulator().emulate_syscall(
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RAX),
+            int64_t syscall_number = *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RAX);
+            SyscallParameters params {
                 *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RDI),
                 *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RSI),
                 *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RDX),
                 *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::R10),
                 *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::R8),
                 *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::R9)
-            );
+            };
+            auto syscall_ret_maybe = ctx->syscall_emu->emulate_syscall(syscall_number, params);
+            if (auto *res = std::get_if<status_code>(&syscall_ret_maybe))
+                return *res;
+            auto &syscall_ret = *std::get_if<SyscallRet>(&syscall_ret_maybe);
 
             // Fill response into context
             *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RAX) = syscall_ret.ret;
-            if (syscall_ret.should_exit) {
+            if (syscall_ret.should_halt) {
                 ctx->should_exit = true;
                 ctx->exit_code = (int)syscall_ret.ret;
             }
@@ -147,4 +158,6 @@ static void native_callback$syscall(runtime_context_ppc64le *ctx) {
         default:
             TODO();
     }
+
+    return status_code::SUCCESS;
 }

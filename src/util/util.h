@@ -49,6 +49,7 @@ enum class status_code {
     OVERFLOW,
     OVERLAP,
     UNIMPL_INSN,
+    UNIMPL_SYSCALL,
     UNTRANSLATED,
 };
 const char *status_code_str(status_code code);
@@ -157,6 +158,8 @@ void log_impl(log_level level, const char *file, int line, const char *fmt, ...)
 #define DISALLOW_IMPLICIT_INT_CONVERSION() do { \
     _Pragma("GCC diagnostic pop"); \
 } while (0)
+
+#define UNREACHABLE() __builtin_unreachable()
 
 #ifndef RETREC_MINIMUM_LOG_LEVEL
 #error "RETREC_MINIMUM_LOG_LEVEL not defined! Broken build system?"

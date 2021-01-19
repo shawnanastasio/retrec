@@ -18,7 +18,6 @@
  */
 
 #include <dynamic_recompiler.h>
-#include <platform/syscall_emulation.h>
 
 using namespace retrec;
 
@@ -43,7 +42,7 @@ status_code dynamic_recompiler::init() {
     // the correct architecture detected by the elf loader.
     switch (host) {
         case Architecture::ppc64le:
-            gen = std::make_unique<codegen_ppc64le<ppc64le::TargetTraitsX86_64>>(loader.target_arch(), econtext, &vam);
+            gen = make_codegen_ppc64le(loader.target_arch(), econtext, &vam);
             break;
         default:
             TODO();
@@ -53,7 +52,7 @@ status_code dynamic_recompiler::init() {
     if (ret != status_code::SUCCESS)
         return ret;
 
-    init_syscall_emulator<syscall_emulator>(loader.target_arch());
+    syscall_emu = std::make_unique<syscall_emulator>(host, loader.target_arch());
 
     return status_code::SUCCESS;
 }
@@ -79,7 +78,7 @@ status_code dynamic_recompiler::execute() {
     auto &code = *translated_regions.begin();
 
     // Initialize runtime context with entrypoint as target
-    res = econtext.initialize_runtime_context(loader.target_arch(), code.code(), &vam);
+    res = econtext.initialize_runtime_context(loader.target_arch(), code.code(), &vam, syscall_emu.get());
     if (res != status_code::SUCCESS) {
         pr_error("Failed to initialize runtime context for translated code!\n");
         return res;
