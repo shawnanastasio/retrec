@@ -38,6 +38,38 @@ using namespace retrec::ppc64le;
 #define TRANSLATED_CTX_OFF(member) (uint16_t)(offsetof(runtime_context_ppc64le, host_translated_context) + \
                                               offsetof(cpu_context_ppc64le, member))
 
+#if RETREC_DEBUG_BUILD
+
+#include <fstream>
+#include <iomanip>
+const char *FUNCTION_MAP_OUTPUT_PATH = "retrec_codegen_ppc64le_map.txt";
+
+template <typename T>
+void codegen_ppc64le<T>::write_function_map(gen_context &ctx, uint64_t output_haddr) {
+    static bool first = true;
+    std::ofstream of;
+    of.open(FUNCTION_MAP_OUTPUT_PATH, first ? std::ios_base::out : std::ios_base::app);
+    if (first)
+        first = false;
+
+    auto find_vaddr = [&](size_t i) {
+        for (const auto &pair : ctx.local_branch_targets) {
+            if (pair.second == i)
+                return pair.first;
+        }
+        return 0ul;
+    };
+
+    for (size_t i = 0; i < ctx.stream->size(); i++) {
+        // Write the vaddr : haddr mapping for this insn
+        uint64_t haddr = i * INSN_SIZE + output_haddr;
+        uint64_t vaddr = find_vaddr(i);
+        of << std::hex << std::setw(16) << std::setfill('0') << vaddr << " : " << haddr << "\n";
+    }
+}
+
+#endif // RETREC_DEBUG_BUILD
+
 template <typename T>
 codegen_ppc64le<T>::gen_context::gen_context(virtual_address_mapper *vam_) : vam(vam_) {
     assembler = std::make_unique<ppc64le::assembler>();
@@ -217,6 +249,9 @@ status_code codegen_ppc64le<T>::translate(const lifted_llir_block& llir, std::op
         pr_error("Failed to emit instructions to code buffer: %s!\n", status_code_str(res));
         return res;
     }
+
+    if constexpr(RETREC_DEBUG_BUILD)
+        write_function_map(ctx, (uint64_t)code);
 
     // Return translated code region
     out = {code, code_size};

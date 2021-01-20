@@ -174,6 +174,8 @@ class codegen_ppc64le final : public codegen {
         auto &reg_allocator() { return m_reg_allocator; }
     };
 
+    void write_function_map(gen_context &ctx, uint64_t output_haddr);
+
     static uint64_t resolve_branch_target(const llir::Insn &insn);
 
     // All ALU flags that are stored in Rc=0 (i.e. not lazily evaluated)
