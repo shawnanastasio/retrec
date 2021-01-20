@@ -29,4 +29,7 @@ struct X86_64MemOp {
     Register index;
     uint8_t scale;
     int64_t disp;
+
+    // Whether or not disp's sign is determined by the direction flag
+    bool disp_sign_from_df { false };
 };

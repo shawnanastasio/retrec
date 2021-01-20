@@ -65,11 +65,15 @@ struct Register {
 
 // Architecture-specific operand definitions
 #include <arch/x86_64/llir/llir_operands_x86_64.h>
-struct MemOp {
-    Architecture arch;
-    union {
-        X86_64MemOp x86_64;
-    };
+class MemOp {
+#   define LLIR_ENUMERATE_MEMOP_TYPES(x) \
+        /* Parameters are: type, accessor_name, enum_value */ \
+        x(X86_64MemOp, x86_64, X86_64)
+    MAGIC_VARIANT_DECLARE(LLIR_ENUMERATE_MEMOP_TYPES)
+public:
+    // Accessors for underlying enum discriminator
+    using Architecture = VariantEnumT;
+    Architecture arch() const { return variant_enum_val; }
 
     // Specify whether the memory source register is updated with the newly
     // calculated address.
@@ -125,6 +129,8 @@ struct Alu {
         x(LOAD_IMM) \
         x(MOVE_REG) \
         x(NOP) \
+        x(SETFLAG) /* setflag - set the single flag in flags_modified to '1' */ \
+        x(CLRFLAG) /* clrflag - set the single flag in flags_modified to '0' */ \
         /* Special/architecture-specific ops */ \
         x(X86_CPUID)
         LLIR_ENUMERATE_ALU_OPS(X_LIST)
@@ -146,6 +152,7 @@ struct Alu {
         ZERO,
         SIGN,
         OVERFLOW,
+        DIRECTION,
 
         COUNT
     };
@@ -424,16 +431,14 @@ inline std::string to_string(const Register &reg) {
 template<>
 inline std::string to_string(const MemOp &memop) {
     std::string ret;
-    switch (memop.arch) {
-        case Architecture::X86_64:
-            ret =  "Segment=" + to_string(memop.x86_64.segment) +
-                   " Base=" + to_string(memop.x86_64.base) +
-                   " Index=" + to_string(memop.x86_64.index) +
-                   " Scale=" + std::to_string(memop.x86_64.scale) +
-                   " Disp=" + std::to_string(memop.x86_64.disp);
+    switch (memop.arch()) {
+        case MemOp::Architecture::X86_64:
+            ret =  "Segment=" + to_string(memop.x86_64().segment) +
+                   " Base=" + to_string(memop.x86_64().base) +
+                   " Index=" + to_string(memop.x86_64().index) +
+                   " Scale=" + std::to_string(memop.x86_64().scale) +
+                   " Disp=" + std::to_string(memop.x86_64().disp);
             break;
-
-        case Architecture::ppc64le: TODO();
     }
 
     ret += " update=";
@@ -477,6 +482,7 @@ inline std::string to_string(const decltype(Alu::flags_modified) &flags) {
             case Alu::Flag::ZERO: ret += "Zero"; break;
             case Alu::Flag::SIGN: ret += "Sign"; break;
             case Alu::Flag::OVERFLOW: ret += "Overflow"; break;
+            case Alu::Flag::DIRECTION: ret += "DIRECTION"; break;
             case Alu::Flag::INVALID: break;
             case Alu::Flag::COUNT: break;
         }

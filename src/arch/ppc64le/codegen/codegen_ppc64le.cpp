@@ -472,6 +472,10 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Alu::Op::SETCC:
                     llir$alu$setcc(ctx, insn);
                     break;
+                case llir::Alu::Op::SETFLAG:
+                case llir::Alu::Op::CLRFLAG:
+                    llir$alu$setclrflag(ctx, insn);
+                    break;
                 case llir::Alu::Op::X86_CPUID:
                     llir$alu$x86_cpuid(ctx, insn);
                     break;
@@ -1400,6 +1404,50 @@ void codegen_ppc64le<T>::llir$alu$setcc(gen_context &ctx, const llir::Insn &insn
             break;
 
         default:
+            ASSERT_NOT_REACHED();
+    }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$setclrflag(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("alu$setclrflag\n");
+
+    auto setclr = [&](uint8_t cr_field) {
+        switch (insn.alu().op) {
+            case llir::Alu::Op::SETFLAG:
+                ctx.assembler->crset(cr_field);
+                break;
+            case llir::Alu::Op::CLRFLAG:
+                ctx.assembler->crclr(cr_field);
+                break;
+            default: ASSERT_NOT_REACHED();
+        }
+    };
+
+    llir::Alu::Flag modified = insn.alu().flags_modified[0];
+    switch (modified) {
+        case llir::Alu::Flag::CARRY:
+            ctx.assembler->crset(CR_LAZY_FIELD_CARRY);
+            setclr(CR_LAZY_FIELD_CARRY);
+            break;
+        case llir::Alu::Flag::OVERFLOW:
+            ctx.assembler->crset(CR_LAZY_FIELD_OVERFLOW);
+            setclr(CR_LAZY_FIELD_OVERFLOW);
+            break;
+        case llir::Alu::Flag::SIGN:
+            setclr(0*4 + assembler::CR_LT);
+            break;
+        case llir::Alu::Flag::ZERO:
+            setclr(0*4 + assembler::CR_EQ);
+            break;
+        case llir::Alu::Flag::DIRECTION:
+            setclr(CR_MISCFLAGS_FIELD_DIRECTION);
+            break;
+        case llir::Alu::Flag::PARITY:
+        case llir::Alu::Flag::AUXILIARY_CARRY:
+            TODO();
+        case llir::Alu::Flag::COUNT:
+        case llir::Alu::Flag::INVALID:
             ASSERT_NOT_REACHED();
     }
 }
@@ -2747,15 +2795,15 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
                      const llir::Operand &mem_op, llir::LoadStore::Op op, llir::Register::Mask reg_mask,
                      bool reg_zero_others, const llir::Insn &insn, llir::Extension extension) {
     auto mem = mem_op.memory();
-    assert(mem.arch == Architecture::X86_64);
     auto update = mem.update;
     auto mem_width = mem_op.width;
+    auto &x86_64 = mem.x86_64();
     bool sign_ext = extension == llir::Extension::SIGN;
     assert(mem_width == mask_to_width(reg_mask));
     uint64_t tls_base_off = 0;
 
     // Partially handle segment for TLS
-    switch (mem.x86_64.segment.x86_64) {
+    switch (mem.x86_64().segment.x86_64) {
         case llir::X86_64Register::FS:
             // Use the emulated CPU context's FS register as the TLS base
             tls_base_off = offsetof(runtime_context_ppc64le, x86_64_ucontext)
@@ -2938,6 +2986,26 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
 #undef STORE_INDEXED
 
     auto loadstore_disp_auto = [&](gpr_t reg, gpr_t ra, int64_t disp) {
+        // If the operation uses post increment, use a displacement of 0 and add disp to ra afterwards.
+        if (update == llir::MemOp::Update::POST) {
+            loadstore_disp(reg, ra, 0);
+            if (!x86_64.disp_sign_from_df) {
+                macro$alu$add_imm(ctx, ra, x86_64.disp);
+            } else {
+                auto temp = ctx.reg_allocator().allocate_gpr();
+                macro$load_imm(*ctx.assembler, temp.gpr(), disp, llir::Register::Mask::Full64, true);
+
+                // Negate if DF is set
+                ctx.assembler->bc(BO::FIELD_CLR, CR_MISCFLAGS_FIELD_DIRECTION, 2 * 4);
+                ctx.assembler->neg(temp.gpr(), temp.gpr());
+                ctx.assembler->add(ra, ra, temp.gpr());
+            }
+            return;
+        }
+
+        // Otherwise, use the provided displacement for the load/store
+        assert(!x86_64.disp_sign_from_df); // Add support in the future if necessary
+
         bool disp_fits;
         if (op == llir::LoadStore::Op::LEA || (reg_mask != llir::Register::Mask::Full64
             && !(reg_mask == llir::Register::Mask::Low32 && extension == llir::Extension::SIGN)))
@@ -2946,6 +3014,7 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
         else
             // For 64-bit loads/stores, the displacement must have the two least significant bits cleared
             disp_fits = assembler::fits_in_mask(disp, 0xFFFCU);
+
 
         if (disp_fits) {
             if (tls_base_off) {
@@ -2974,7 +3043,7 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
 
     auto scale_reg = [&](auto index, auto &memop) {
         auto temp = ctx.reg_allocator().allocate_gpr();
-        switch (memop.x86_64.scale) {
+        switch (memop.x86_64().scale) {
             case 2:
                 ctx.assembler->sldi(temp.gpr(), index.gpr(), 1);
                 return temp;
@@ -2990,7 +3059,6 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
         return index;
     };
 
-    auto &x86_64 = mem.x86_64;
     typename register_allocator<TargetTraitsX86_64>::AllocatedGprT base, index;
 
     // Obtain GPRs for base and index if present
@@ -3032,13 +3100,7 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
         }
     } else if (base) {
         // Only base is present - use a displacement load/store
-        if (update == llir::MemOp::Update::POST) {
-            // Special case for POST update - use 0 disp and add disp to base.gpr() after
-            loadstore_disp_auto(reg, base.gpr(), 0);
-            macro$alu$add_imm(ctx, base.gpr(), x86_64.disp);
-        } else {
-            loadstore_disp_auto(reg, base.gpr(), x86_64.disp);
-        }
+        loadstore_disp_auto(reg, base.gpr(), x86_64.disp);
     } else if (index) {
         // Only index is present - scale it and use a displacement load/store
         auto scaled_index = scale_reg(std::move(index), mem);

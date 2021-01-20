@@ -91,12 +91,11 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 1;
 
             // Create an X86_64MemOp with base=(RSP), disp=(-8), update=PRE as the destination
-            llinsn.dest[0].memory().arch = Architecture::X86_64;
-            llinsn.dest[0].memory().x86_64.base = get_reg(X86_REG_RSP);
-            llinsn.dest[0].memory().x86_64.disp = -8;
-            llinsn.dest[0].memory().x86_64.segment = get_reg(X86_REG_INVALID);
-            llinsn.dest[0].memory().x86_64.index = get_reg(X86_REG_INVALID);
-            llinsn.dest[0].memory().x86_64.scale = 1;
+            llinsn.dest[0].memory().x86_64().base = get_reg(X86_REG_RSP);
+            llinsn.dest[0].memory().x86_64().disp = -8;
+            llinsn.dest[0].memory().x86_64().segment = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory().x86_64().index = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory().x86_64().scale = 1;
             llinsn.dest[0].memory().update = llir::MemOp::Update::PRE;
             llinsn.dest[0].width = llir::Operand::Width::_32BIT;
 
@@ -112,12 +111,11 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.src_cnt = 1;
 
             // Create an X86_64MemOp with base=(RSP), disp=(8), update=POST as the source
-            llinsn.src[0].memory().arch = Architecture::X86_64;
-            llinsn.src[0].memory().x86_64.base = get_reg(X86_REG_RSP);
-            llinsn.src[0].memory().x86_64.disp = 8;
-            llinsn.src[0].memory().x86_64.segment = get_reg(X86_REG_INVALID);
-            llinsn.src[0].memory().x86_64.index = get_reg(X86_REG_INVALID);
-            llinsn.src[0].memory().x86_64.scale = 1;
+            llinsn.src[0].memory().x86_64().base = get_reg(X86_REG_RSP);
+            llinsn.src[0].memory().x86_64().disp = 8;
+            llinsn.src[0].memory().x86_64().segment = get_reg(X86_REG_INVALID);
+            llinsn.src[0].memory().x86_64().index = get_reg(X86_REG_INVALID);
+            llinsn.src[0].memory().x86_64().scale = 1;
             llinsn.src[0].memory().update = llir::MemOp::Update::POST;
             llinsn.src[0].width = llir::Operand::Width::_64BIT;
             break;
@@ -392,10 +390,14 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.alu().op = llir::Alu::Op::X86_CPUID;
             break;
 
+        case X86_INS_STD: llinsn.alu().op = llir::Alu::Op::SETFLAG; llinsn.alu().flags_modified = { Flag::DIRECTION }; break;
+        case X86_INS_CLD: llinsn.alu().op = llir::Alu::Op::CLRFLAG; llinsn.alu().flags_modified = { Flag::DIRECTION }; break;
+        case X86_INS_STC: llinsn.alu().op = llir::Alu::Op::SETFLAG; llinsn.alu().flags_modified = { Flag::CARRY }; break;
+        case X86_INS_CLC: llinsn.alu().op = llir::Alu::Op::CLRFLAG; llinsn.alu().flags_modified = { Flag::CARRY }; break;
+
         //
         // LoadStore
         //
-
 
         case X86_INS_CMOVA:  llinsn.condition = llir::Branch::Op::X86_ABOVE; goto mov_common;
         case X86_INS_CMOVAE: llinsn.condition = llir::Branch::Op::NOT_CARRY; goto mov_common;
@@ -461,12 +463,11 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.loadstore().op = llir::LoadStore::Op::STORE;
 
             // Create an X86_64MemOp with base=(RSP), disp=(-8), update=PRE as the destination
-            llinsn.dest[0].memory().arch = Architecture::X86_64;
-            llinsn.dest[0].memory().x86_64.base = get_reg(X86_REG_RSP);
-            llinsn.dest[0].memory().x86_64.disp = -8;
-            llinsn.dest[0].memory().x86_64.segment = get_reg(X86_REG_INVALID);
-            llinsn.dest[0].memory().x86_64.index = get_reg(X86_REG_INVALID);
-            llinsn.dest[0].memory().x86_64.scale = 1;
+            llinsn.dest[0].memory().x86_64().base = get_reg(X86_REG_RSP);
+            llinsn.dest[0].memory().x86_64().disp = -8;
+            llinsn.dest[0].memory().x86_64().segment = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory().x86_64().index = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory().x86_64().scale = 1;
             llinsn.dest[0].memory().update = llir::MemOp::Update::PRE;
             llinsn.dest[0].width = llir::Operand::Width::_64BIT;
 
@@ -481,17 +482,33 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.loadstore().op = llir::LoadStore::Op::LOAD;
 
             // Create an X86_64MemOp with base=(RSP), disp=(8), update=POST, as the Source
-            llinsn.src[0].memory().arch = Architecture::X86_64;
-            llinsn.src[0].memory().x86_64.base = get_reg(X86_REG_RSP);
-            llinsn.src[0].memory().x86_64.disp = 8;
-            llinsn.src[0].memory().x86_64.segment = get_reg(X86_REG_INVALID);
-            llinsn.src[0].memory().x86_64.index = get_reg(X86_REG_INVALID);
-            llinsn.src[0].memory().x86_64.scale = 1;
+            llinsn.src[0].memory().x86_64().base = get_reg(X86_REG_RSP);
+            llinsn.src[0].memory().x86_64().disp = 8;
+            llinsn.src[0].memory().x86_64().segment = get_reg(X86_REG_INVALID);
+            llinsn.src[0].memory().x86_64().index = get_reg(X86_REG_INVALID);
+            llinsn.src[0].memory().x86_64().scale = 1;
             llinsn.src[0].memory().update = llir::MemOp::Update::POST;
             llinsn.src[0].width = llir::Operand::Width::_64BIT;
 
             // Fill the Destination with operand 0
             fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+            break;
+
+        case X86_INS_STOSB: llinsn.dest[0].memory().x86_64().disp = 1; llinsn.src[0] = get_reg_op(X86_REG_AL); goto stos_common;
+        case X86_INS_STOSW: llinsn.dest[0].memory().x86_64().disp = 2; llinsn.src[0] = get_reg_op(X86_REG_AX); goto stos_common;
+        case X86_INS_STOSD: llinsn.dest[0].memory().x86_64().disp = 4; llinsn.src[0] = get_reg_op(X86_REG_EAX); goto stos_common;
+        case X86_INS_STOSQ: llinsn.dest[0].memory().x86_64().disp = 8; llinsn.src[0] = get_reg_op(X86_REG_RAX); goto stos_common;
+        stos_common:
+            llinsn.loadstore().op = llir::LoadStore::Op::STORE;
+            llinsn.src_cnt = 1;
+            llinsn.dest_cnt = 1;
+            llinsn.dest[0].memory().x86_64().base = get_reg(X86_REG_RDI);
+            llinsn.dest[0].memory().x86_64().segment = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory().x86_64().index = get_reg(X86_REG_INVALID);
+            llinsn.dest[0].memory().x86_64().scale = 1;
+            llinsn.dest[0].memory().x86_64().disp_sign_from_df = true;
+            llinsn.dest[0].memory().update = llir::MemOp::Update::POST;
+            llinsn.dest[0].width = llinsn.src[0].width;
             break;
 
         //
@@ -552,12 +569,11 @@ void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
             break;
         }
         case X86_OP_MEM:
-            out.memory().arch = Architecture::X86_64;
-            out.memory().x86_64.segment = get_reg(op.mem.segment);
-            out.memory().x86_64.base = get_reg(op.mem.base);
-            out.memory().x86_64.index = get_reg(op.mem.index);
-            out.memory().x86_64.scale = (uint8_t)op.mem.scale;
-            out.memory().x86_64.disp = op.mem.disp;
+            out.memory().x86_64().segment = get_reg(op.mem.segment);
+            out.memory().x86_64().base = get_reg(op.mem.base);
+            out.memory().x86_64().index = get_reg(op.mem.index);
+            out.memory().x86_64().scale = (uint8_t)op.mem.scale;
+            out.memory().x86_64().disp = op.mem.disp;
             out.memory().update = llir::MemOp::Update::NONE;
             break;
 
@@ -568,6 +584,30 @@ void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
             pr_error("Invalid operand type!\n");
             ASSERT_NOT_REACHED();
     }
+}
+
+llir::Operand llir_lifter_x86_64::get_reg_op(x86_reg reg) {
+    llir::Operand ret;
+
+    ret.reg() = get_reg(reg);
+    switch (ret.reg().mask) {
+        case llir::Register::Mask::Full64:
+            ret.width = llir::Operand::Width::_64BIT;
+            break;
+        case llir::Register::Mask::Low32:
+            ret.width = llir::Operand::Width::_32BIT;
+            break;
+        case llir::Register::Mask::LowLow16:
+            ret.width = llir::Operand::Width::_16BIT;
+            break;
+        case llir::Register::Mask::LowLowHigh8:
+        case llir::Register::Mask::LowLowLow8:
+            ret.width = llir::Operand::Width::_8BIT;
+            break;
+        default: ASSERT_NOT_REACHED();
+    }
+
+    return ret;
 }
 
 llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
