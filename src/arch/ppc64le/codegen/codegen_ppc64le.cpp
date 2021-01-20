@@ -2713,11 +2713,30 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
                      bool reg_zero_others, const llir::Insn &insn, llir::Extension extension) {
     auto mem = mem_op.memory();
     assert(mem.arch == Architecture::X86_64);
-    assert(mem.x86_64.segment.x86_64 == llir::X86_64Register::INVALID); // FIXME: Support fs/gs TLS
     auto update = mem.update;
     auto mem_width = mem_op.width;
     bool sign_ext = extension == llir::Extension::SIGN;
     assert(mem_width == mask_to_width(reg_mask));
+    uint64_t tls_base_off = 0;
+
+    // Partially handle segment for TLS
+    switch (mem.x86_64.segment.x86_64) {
+        case llir::X86_64Register::FS:
+            // Use the emulated CPU context's FS register as the TLS base
+            tls_base_off = offsetof(runtime_context_ppc64le, x86_64_ucontext)
+                             + offsetof(cpu_context_x86_64, segments[0]);
+            break;
+        case llir::X86_64Register::GS:
+            // Use the emulated CPU context's FS register as the TLS base
+            tls_base_off = offsetof(runtime_context_ppc64le, x86_64_ucontext)
+                             + offsetof(cpu_context_x86_64, segments[1]);
+            break;
+        case llir::X86_64Register::INVALID:
+            // No segment, treat normally
+            break;
+        default:
+            TODO();
+    }
 
     // Wrappers for load{displacement, indexed} with {zero, sign} extension, with emulation
     // for instructions that don't exist.
@@ -2893,14 +2912,27 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
             // For 64-bit loads/stores, the displacement must have the two least significant bits cleared
             disp_fits = assembler::fits_in_mask(disp, 0xFFFCU);
 
-
         if (disp_fits) {
-            // Fits in an immediate displacement field
-            loadstore_disp(reg, ra, (int16_t)disp);
+            if (tls_base_off) {
+                // A segment register was selected, grab it from the runtime context and add it to ra
+                assert(update == llir::MemOp::Update::NONE);
+                auto temp = ctx.reg_allocator().allocate_gpr();
+                ctx.assembler->ld(temp.gpr(), GPR_FIXED_RUNTIME_CTX, (int16_t)tls_base_off);
+                ctx.assembler->add(temp.gpr(), temp.gpr(), ra);
+                loadstore_disp(reg, temp.gpr(), (int16_t)disp);
+            } else {
+                // Fits in an immediate displacement field
+                loadstore_disp(reg, ra, (int16_t)disp);
+            }
         } else {
             // Need to load into a gpr before operation
             auto temp = ctx.reg_allocator().allocate_gpr();
             macro$load_imm(*ctx.assembler, temp.gpr(), disp, llir::Register::Mask::Full64, true);
+            if (tls_base_off) {
+                ctx.assembler->ld(temp.gpr(), GPR_FIXED_RUNTIME_CTX, (int16_t)tls_base_off);
+                ctx.assembler->add(temp.gpr(), temp.gpr(), ra);
+            }
+
             loadstore_indexed(reg, ra, temp.gpr());
         }
     };
