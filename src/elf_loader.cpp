@@ -180,7 +180,7 @@ status_code elf_loader::load_all() {
                                    "  max page size from the host system. This won't work.\n");
                     return status_code::BADELF;
                 } else if (res != status_code::SUCCESS) {
-                    pr_error("Failed to allocate region: %s\n", status_code_str(res));
+                    pr_error("Failed to allocate region at 0x%016lx: %s %m\n", aligned_start, status_code_str(res));
                     return status_code::BADELF;
                 }
 

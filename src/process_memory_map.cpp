@@ -46,6 +46,7 @@ status_code process_memory_map::init() {
         uint64_t end = std::stoull(end_str, 0, 16);
 
         map.emplace_back(start, end, Mapping::Type::SYSTEM);
+        pr_debug("added mapping: 0x%016lx-0x%016lx\n", start, end);
     }
 
     return status_code::SUCCESS;
