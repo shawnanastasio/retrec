@@ -369,6 +369,10 @@ constexpr size_t SYSCALL_MAX_ARG_COUNT = 6;
 
 // Syscall signatures for common (universally-available) syscalls.
 #define ENUMERATE_COMMON_SYSCALL_SIGNATURES(x) \
+    x(getegid, uid_t) \
+    x(geteuid, uid_t) \
+    x(getgid, uid_t) \
+    x(getuid, uid_t) \
     x(read, ssize_t, int, void *, size_t) \
     x(write, ssize_t, int, void *, size_t)
 

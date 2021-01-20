@@ -52,17 +52,19 @@ const char *syscall_rewriter_linux_ppc64le<TargetDetailsT>::syscall_name(int64_t
 
 template <typename TargetDetailsT, typename TargetSignatureT, typename HostSignatureT, size_t max, size_t n = 0>
 void translate_arguments(SyscallParameters &parameters) {
-    // Obtain the type for this parameter as expected by the target and the host
-    using TargetT = typename TargetSignatureT::template ArgumentTs<n>;
-    using HostT = typename HostSignatureT::template ArgumentTs<n>;
-    using AgnosticTargetT = typename TargetDetailsT::template agnostic_type_from_type<TargetT>;
-    using AgnosticHostT = typename SyscallDetailsLinuxPPC64LE::template agnostic_type_from_type<HostT>;
+    if constexpr (n < TargetSignatureT::arg_count) {
+        // Obtain the type for this parameter as expected by the target and the host
+        using TargetT = typename TargetSignatureT::template ArgumentTs<n>;
+        using HostT = typename HostSignatureT::template ArgumentTs<n>;
+        using AgnosticTargetT = typename TargetDetailsT::template agnostic_type_from_type<TargetT>;
+        using AgnosticHostT = typename SyscallDetailsLinuxPPC64LE::template agnostic_type_from_type<HostT>;
 
-    // For now, just make sure that they're the same
-    static_assert(std::is_same_v<AgnosticHostT, AgnosticTargetT>, "Unknown translation for syscall argument");
+        // For now, just make sure that they're the same
+        static_assert(std::is_same_v<AgnosticHostT, AgnosticTargetT>, "Unknown translation for syscall argument");
 
-    if constexpr (n < max - 1) {
-        return translate_arguments<TargetDetailsT, TargetSignatureT, HostSignatureT, max, n + 1>(parameters);
+        if constexpr (n < max - 1) {
+            return translate_arguments<TargetDetailsT, TargetSignatureT, HostSignatureT, max, n + 1>(parameters);
+        }
     }
 }
 
