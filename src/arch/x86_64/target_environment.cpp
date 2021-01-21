@@ -30,6 +30,40 @@
 using namespace retrec;
 using namespace retrec::x86_64;
 
+/* CPUID[01h].ECX values */
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_SSE3       = (1 << 0);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_PCLMULQDQ  = (1 << 1);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_DTES64     = (1 << 2);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_MONITOR    = (1 << 3);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_DS_CPL     = (1 << 4);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_VMX        = (1 << 5);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_SMX        = (1 << 6);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_EIST       = (1 << 7);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_TM2        = (1 << 8);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_SSSE3      = (1 << 9);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_CNXT_ID    = (1 << 10);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_SDBG       = (1 << 11);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_FMA        = (1 << 12);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_CMPXCHG16B = (1 << 13);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_XTPRUC     = (1 << 14);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_PDCM       = (1 << 15);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_PCID       = (1 << 17);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_DCA        = (1 << 18);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_SSE41      = (1 << 19);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_SSE42      = (1 << 20);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_X2APIC     = (1 << 21);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_MOVBE      = (1 << 22);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_POPCNT     = (1 << 23);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_TSCDEADLN  = (1 << 24);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_AESNI      = (1 << 25);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_XSAVE      = (1 << 26);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_OSXSAVE    = (1 << 27);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_AVX        = (1 << 28);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_F16C       = (1 << 29);
+[[maybe_unused]] constexpr uint32_t CPUID_FEATURE_ECX_RDRAND     = (1 << 30);
+
+constexpr uint32_t RETREC_CPUID_FEATURES_ECX = 0;
+
 /**
  * Build an ELF auxiliary vector on the target stack. Mimicks the vector that QEMU builds.
  */
@@ -62,7 +96,7 @@ static void build_elf_aux(uint64_t *&sp64, const elf_loader &loader,
     push_entry(AT_SECURE,   0 /* lol */);
     push_entry(AT_RANDOM,   (uint64_t)random_ptr);
     push_entry(AT_CLKTCK,   100); // Same value QEMU returns - not sure if we really need to calculate this.
-    push_entry(AT_HWCAP,    0x078BFBFD); // Seems to be the same as CPUID[01h].EDX
+    push_entry(AT_HWCAP,    RETREC_CPUID_FEATURES_ECX); // The same as CPUID[01h].EDX
     push_entry(AT_EGID,     getegid());
     push_entry(AT_GID,      getgid());
     push_entry(AT_EUID,     geteuid());
@@ -170,7 +204,7 @@ void x86_64::get_cpuid(uint32_t func, uint32_t subfunc, CpuidResult *res) {
         case 0x01:
             res->eax = 0x00800F11;
             res->ebx = 0x0F100800;
-            res->ecx = 0x7ED8320B;
+            res->ecx = RETREC_CPUID_FEATURES_ECX;
             res->edx = 0x178BFBFF;
             break;
 
