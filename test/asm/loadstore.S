@@ -28,6 +28,15 @@
     ALIAS3_FAIL_STR: .ascii "FAIL: Load to ailased register (ax) failed!\n"
     ALIAS3_FAIL_STR_LEN = . - ALIAS3_FAIL_STR
 
+    NEGATIVE_INDEX_STR: .ascii    "FAIL: NEGATIVE_INDEX loadstore worked!\n"
+    NEGATIVE_INDEX_STR_LEN = . - NEGATIVE_INDEX_STR
+    
+    NEGATIVE_INDEX32_STR: .ascii    "FAIL: NEGATIVE_INDEX32 loadstore worked!\n"
+    NEGATIVE_INDEX32_STR_LEN = . - NEGATIVE_INDEX32_STR
+    
+    ALIASED_BASE_STR: .ascii    "FAIL: ALIASED_BASE loadstore worked!\n"
+    ALIASED_BASE_STR_LEN = . - ALIASED_BASE_STR
+
     .lcomm buf, 1024
     zero_byte: .byte 0
     zero_word: .word 0
@@ -180,7 +189,40 @@ _start:
     mov edx, ALIAS3_FAIL_STR_LEN
     syscall
 
-10:
+10: # Negative index
+    mov rax, OFFSET NEGATIVE_INDEX_STR+4
+    mov rbx, -4
+    mov dword ptr [rax+rbx], 0x53534150 # 'PASS'
+
+    mov rax, 1 # SYS_write
+    mov rdi, 1
+    mov rsi, OFFSET NEGATIVE_INDEX_STR
+    mov edx, NEGATIVE_INDEX_STR_LEN
+    syscall
+
+10: # Negative 32-bit index
+    mov rax, OFFSET NEGATIVE_INDEX32_STR+4
+    mov rbx, 0x80000000fffffffc # -4 as an i32, garbage as an i64
+    mov dword ptr [eax+ebx], 0x53534150 # 'PASS'
+
+    mov rax, 1 # SYS_write
+    mov rdi, 1
+    mov rsi, OFFSET NEGATIVE_INDEX32_STR
+    mov edx, NEGATIVE_INDEX32_STR_LEN
+    syscall
+
+10: # Aliased base
+    mov rax, OFFSET ALIASED_BASE_STR
+    mov rbx, 0x8000000000000000
+    or rax, rbx
+    mov dword ptr [eax], 0x53534150 # 'PASS'
+
+    mov rax, 1 # SYS_write
+    mov rdi, 1
+    mov rsi, OFFSET ALIASED_BASE_STR
+    mov edx, ALIASED_BASE_STR_LEN
+    syscall
+
 99:
     mov rax, 60 # SYS_exit
     mov rdi, 0
