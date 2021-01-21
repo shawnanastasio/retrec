@@ -2733,6 +2733,7 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
                 assembler.mr(dest, src);
                 break;
 
+            case llir::Extension::SIGN:
             case llir::Extension::ZERO:
             {
                 // If we don't care about preserving others and will clear/extend the top bits, we can get away with an rldicl
@@ -2747,14 +2748,32 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
 
                 if (src_width < dest_width) {
                     // Clear extra bits on left
-                    assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), modify_cr);
+                    if (extension == llir::Extension::ZERO) {
+                        assembler.rldicl(dest, dest, 0, (uint8_t)(64-dest_width-dest_shift), modify_cr);
+                    } else {
+                        if (dest_shift)
+                            TODO();
+                        switch (src_mask) {
+                            case llir::Register::Mask::Full64:
+                                break;
+                            case llir::Register::Mask::Low32:
+                                assembler.extsw(dest, dest);
+                                break;
+                            case llir::Register::Mask::LowLow16:
+                                assembler.extsh(dest, dest);
+                                break;
+                            case llir::Register::Mask::LowLowHigh8:
+                            case llir::Register::Mask::LowLowLow8:
+                                assembler.extsb(dest, dest);
+                                break;
+                            default:
+                                TODO();
+                        }
+                    }
                 }
 
                 break;
             }
-
-            case llir::Extension::SIGN:
-                TODO();
         }
     } else {
         if (!src_shift) {
@@ -3041,25 +3060,9 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
         }
     };
 
-    auto scale_reg = [&](auto index, auto &memop) {
-        auto temp = ctx.reg_allocator().allocate_gpr();
-        switch (memop.x86_64().scale) {
-            case 2:
-                ctx.assembler->sldi(temp.gpr(), index.gpr(), 1);
-                return temp;
-            case 4:
-                ctx.assembler->sldi(temp.gpr(), index.gpr(), 2);
-                return temp;
-            case 8:
-                ctx.assembler->sldi(temp.gpr(), index.gpr(), 3);
-                return temp;
-        }
 
-        // No scale required
-        return index;
-    };
-
-    typename register_allocator<TargetTraitsX86_64>::AllocatedGprT base, index;
+    typename register_allocator<TargetTraitsX86_64>::AllocatedGprT *orig_base = nullptr;
+    typename register_allocator<TargetTraitsX86_64>::AllocatedGprT orig_base_storage, base, index;
 
     // Obtain GPRs for base and index if present
     if (x86_64.base.x86_64 != llir::X86_64Register::INVALID) {
@@ -3067,14 +3070,45 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
             // Special case: RIP-relative addressing
             // Load the next instruction's address into a temporary GPR and use that as base
             base = ctx.reg_allocator().allocate_gpr();
+            orig_base = &base;
             uint64_t next_rip = insn.address + insn.size;
             macro$load_imm(*ctx.assembler, base.gpr(), next_rip, llir::Register::Mask::Full64, true);
-        } else {
+        } else if (x86_64.base.mask == llir::Register::Mask::Full64) {
+            // Base is a 64-bit register that can be used directly
             base = ctx.reg_allocator().get_fixed_gpr(x86_64.base);
+            orig_base = &base;
+        } else {
+            // Base needs to be moved out of an aliased register into a temporary
+            orig_base_storage = ctx.reg_allocator().get_fixed_gpr(x86_64.base);
+            orig_base = &orig_base_storage;
+            base = ctx.reg_allocator().allocate_gpr();
+            macro$move_register_masked(*ctx.assembler, base.gpr(), orig_base_storage.gpr(), x86_64.base.mask,
+                                       llir::Register::Mask::Full64, true, false);
         }
     }
-    if (x86_64.index.x86_64 != llir::X86_64Register::INVALID)
+
+    if (x86_64.index.x86_64 != llir::X86_64Register::INVALID) {
         index = ctx.reg_allocator().get_fixed_gpr(x86_64.index);
+        // If register is <64-bits OR has a scale, allocate a temporary and use that.
+        if (x86_64.index.mask != llir::Register::Mask::Full64 || x86_64.scale != 1) {
+            auto temp = ctx.reg_allocator().allocate_gpr();
+            macro$move_register_masked(*ctx.assembler, temp.gpr(), index.gpr(), x86_64.index.mask,
+                                       llir::Register::Mask::Full64, true, false, llir::Extension::SIGN);
+            switch (x86_64.scale) {
+                case 2:
+                    ctx.assembler->sldi(temp.gpr(), index.gpr(), 1);
+                    break;
+                case 4:
+                    ctx.assembler->sldi(temp.gpr(), index.gpr(), 2);
+                    break;
+                case 8:
+                    ctx.assembler->sldi(temp.gpr(), index.gpr(), 3);
+                    break;
+            }
+
+            index = std::move(temp);
+        }
+    }
 
     // Sanity checks
     if (update != llir::MemOp::Update::NONE) {
@@ -3087,14 +3121,13 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
     // Perform operation depending on available operands
     if (base && index) {
         // Both base and index registers are present
-        auto scaled_index = scale_reg(std::move(index), mem);
         if (!x86_64.disp) {
             // Optimization: If no displacement is present, used an indexed load/store
-            loadstore_indexed(reg, base.gpr(), scaled_index.gpr());
+            loadstore_indexed(reg, base.gpr(), index.gpr());
         } else {
             // Store base+scaled_index in an intermediate reg and use a displacement load/store
             auto intermediate_reg = ctx.reg_allocator().allocate_gpr();
-            ctx.assembler->add(intermediate_reg.gpr(), base.gpr(), scaled_index.gpr());
+            ctx.assembler->add(intermediate_reg.gpr(), base.gpr(), index.gpr());
 
             loadstore_disp_auto(reg, intermediate_reg.gpr(), x86_64.disp);
         }
@@ -3103,11 +3136,19 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, gpr_
         loadstore_disp_auto(reg, base.gpr(), x86_64.disp);
     } else if (index) {
         // Only index is present - scale it and use a displacement load/store
-        auto scaled_index = scale_reg(std::move(index), mem);
-        loadstore_disp_auto(reg, scaled_index.gpr(), x86_64.disp);
+        loadstore_disp_auto(reg, index.gpr(), x86_64.disp);
     } else {
         // Neither register is present, do a displacement load/store off of the immediate
         loadstore_disp_auto(reg, 0, x86_64.disp);
+    }
+
+    // If an update mode is specified, make sure it is written to the actual base register
+    if (update != llir::MemOp::Update::NONE) {
+        if (orig_base == &base)
+            return; // Update already written
+
+        macro$move_register_masked(*ctx.assembler, orig_base->gpr(), base.gpr(), llir::Register::Mask::Full64,
+                                   x86_64.base.mask, x86_64.base.zero_others, false);
     }
 }
 
