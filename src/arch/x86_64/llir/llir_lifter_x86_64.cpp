@@ -499,10 +499,11 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_STOSD: llinsn.dest[0].memory().x86_64().disp = 4; llinsn.src[0] = get_reg_op(X86_REG_EAX); goto stos_common;
         case X86_INS_STOSQ: llinsn.dest[0].memory().x86_64().disp = 8; llinsn.src[0] = get_reg_op(X86_REG_RAX); goto stos_common;
         stos_common:
+            assert(detail->x86.operands[0].type = X86_OP_MEM);
             llinsn.loadstore().op = llir::LoadStore::Op::STORE;
             llinsn.src_cnt = 1;
             llinsn.dest_cnt = 1;
-            llinsn.dest[0].memory().x86_64().base = get_reg(X86_REG_RDI);
+            llinsn.dest[0].memory().x86_64().base = get_reg(detail->x86.operands[0].mem.base);
             llinsn.dest[0].memory().x86_64().segment = get_reg(X86_REG_INVALID);
             llinsn.dest[0].memory().x86_64().index = get_reg(X86_REG_INVALID);
             llinsn.dest[0].memory().x86_64().scale = 1;
