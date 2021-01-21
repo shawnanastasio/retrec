@@ -1,6 +1,9 @@
 .intel_syntax noprefix
 
 .data
+    STOSB_EDI_STR: .ascii    "STOSB_EDI:      should be '11': 00\n"
+    STOSB_EDI_STR_LEN = . - STOSB_EDI_STR
+
     STOSB_FORWARD_STR: .ascii    "STOSB_FORWARD:  should be '11': 00\n"
     STOSB_FORWARD_STR_LEN = . - STOSB_FORWARD_STR
     STOSB_BACKWARD_STR: .ascii    "STOSB_BACKWARD: should be '11': 00\n"
@@ -24,6 +27,22 @@
 
 .global _start
 _start:
+# STOSB, DF=0, edi
+    cld # clear direction flag
+
+    mov rdi, OFFSET STOSB_EDI_STR + STOSB_EDI_STR_LEN - 3
+    mov al, 0x31 # ASCII '1'
+    mov r9, 0x8000000000000000
+    or rdi, r9
+    stosb [edi]
+    stosb [edi]
+
+    mov rax, 1 # SYS_write
+    mov rdi, 1
+    mov rsi, OFFSET STOSB_EDI_STR
+    mov edx, STOSB_EDI_STR_LEN
+    syscall
+
 # STOSB, DF=0
     cld # clear direction flag
 
