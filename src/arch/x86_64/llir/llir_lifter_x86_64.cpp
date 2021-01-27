@@ -49,16 +49,40 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     llinsn.address = insn->address;
     llinsn.size = insn->size;
     llir::Extension extension = llir::Extension::NONE;
+    llir::Qualification::Repeat *repeat_qual = nullptr;
     using Flag = llir::Alu::Flag;
+
+    auto new_qualification = [&]() -> auto & {
+        assert(llinsn.qualification_count < llinsn.qualifications.size());
+        return llinsn.qualifications[llinsn.qualification_count++];
+    };
 
     // Decode instruction prefixes
     switch (insn->detail->x86.prefix[0]) {
         case X86_PREFIX_LOCK:
-            llinsn.atomic = true;
+            new_qualification().memory_attribute().atomic = true;
             break;
-        case X86_PREFIX_REPE:
+
+        case X86_PREFIX_REPE /* Also REP */:
         case X86_PREFIX_REPNE:
-            TODO();
+            // Add a Repeat qualification and populate the first exit condition with
+            // RegisterEmpty(RDX) (or ECX if the 67H prefix is present).
+            repeat_qual = &new_qualification().repeat();
+            llir::Register exit_register = get_reg(X86_REG_RCX);
+            if (insn->detail->x86.prefix[3] == X86_PREFIX_ADDRSIZE)
+                exit_register = get_reg(X86_REG_ECX);
+
+            auto register_exit_cond = llir::Qualification::Repeat::ExitCondition::RegisterEmpty { exit_register };
+            repeat_qual->exit_conditions[0] = {
+                llir::Qualification::Repeat::ExitCondition::EvaluationOrder::BEFORE,
+                std::move(register_exit_cond)
+            };
+
+            // On each iteration of the loop, decrement the exit register
+            repeat_qual->update = {{
+                llir::Qualification::Repeat::Update::RegisterDecrement { exit_register }
+            }};
+            break;
     }
 
     // Decode instruction from ID
@@ -399,22 +423,22 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         // LoadStore
         //
 
-        case X86_INS_CMOVA:  llinsn.condition = llir::Branch::Op::X86_ABOVE; goto mov_common;
-        case X86_INS_CMOVAE: llinsn.condition = llir::Branch::Op::NOT_CARRY; goto mov_common;
-        case X86_INS_CMOVB:  llinsn.condition = llir::Branch::Op::CARRY; goto mov_common;
-        case X86_INS_CMOVBE: llinsn.condition = llir::Branch::Op::X86_BELOW_EQ; goto mov_common;
-        case X86_INS_CMOVE:  llinsn.condition = llir::Branch::Op::EQ; goto mov_common;
-        case X86_INS_CMOVNE: llinsn.condition = llir::Branch::Op::NOT_EQ; goto mov_common;
-        case X86_INS_CMOVG:  llinsn.condition = llir::Branch::Op::X86_GREATER; goto mov_common;
-        case X86_INS_CMOVGE: llinsn.condition = llir::Branch::Op::X86_GREATER_EQ; goto mov_common;
-        case X86_INS_CMOVL:  llinsn.condition = llir::Branch::Op::X86_LESS; goto mov_common;
-        case X86_INS_CMOVLE: llinsn.condition = llir::Branch::Op::X86_LESS_EQ; goto mov_common;
+        case X86_INS_CMOVA:  new_qualification().predicate().condition = llir::Branch::Op::X86_ABOVE; goto mov_common;
+        case X86_INS_CMOVAE: new_qualification().predicate().condition = llir::Branch::Op::NOT_CARRY; goto mov_common;
+        case X86_INS_CMOVB:  new_qualification().predicate().condition = llir::Branch::Op::CARRY; goto mov_common;
+        case X86_INS_CMOVBE: new_qualification().predicate().condition = llir::Branch::Op::X86_BELOW_EQ; goto mov_common;
+        case X86_INS_CMOVE:  new_qualification().predicate().condition = llir::Branch::Op::EQ; goto mov_common;
+        case X86_INS_CMOVNE: new_qualification().predicate().condition = llir::Branch::Op::NOT_EQ; goto mov_common;
+        case X86_INS_CMOVG:  new_qualification().predicate().condition = llir::Branch::Op::X86_GREATER; goto mov_common;
+        case X86_INS_CMOVGE: new_qualification().predicate().condition = llir::Branch::Op::X86_GREATER_EQ; goto mov_common;
+        case X86_INS_CMOVL:  new_qualification().predicate().condition = llir::Branch::Op::X86_LESS; goto mov_common;
+        case X86_INS_CMOVLE: new_qualification().predicate().condition = llir::Branch::Op::X86_LESS_EQ; goto mov_common;
         case X86_INS_CMOVP:  TODO();
         case X86_INS_CMOVNP: TODO();
-        case X86_INS_CMOVS:  llinsn.condition = llir::Branch::Op::NEGATIVE; goto mov_common;
-        case X86_INS_CMOVNS: llinsn.condition = llir::Branch::Op::NOT_NEGATIVE; goto mov_common;
-        case X86_INS_CMOVO:  llinsn.condition = llir::Branch::Op::OVERFLOW; goto mov_common;
-        case X86_INS_CMOVNO: llinsn.condition = llir::Branch::Op::NOT_OVERFLOW; goto mov_common;
+        case X86_INS_CMOVS:  new_qualification().predicate().condition = llir::Branch::Op::NEGATIVE; goto mov_common;
+        case X86_INS_CMOVNS: new_qualification().predicate().condition = llir::Branch::Op::NOT_NEGATIVE; goto mov_common;
+        case X86_INS_CMOVO:  new_qualification().predicate().condition = llir::Branch::Op::OVERFLOW; goto mov_common;
+        case X86_INS_CMOVNO: new_qualification().predicate().condition = llir::Branch::Op::NOT_OVERFLOW; goto mov_common;
         case X86_INS_MOVZX:  extension = llir::Extension::ZERO; goto mov_common;
         case X86_INS_MOVSX:  extension = llir::Extension::SIGN; goto mov_common;
         case X86_INS_MOVSXD: extension = llir::Extension::SIGN; goto mov_common;

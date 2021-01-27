@@ -255,7 +255,65 @@ public:
     } width {};
 };
 
-struct Insn {
+// A qualification that can be specified with an Insn to change its behavior
+class Qualification {
+public:
+    // Repeat the instruction that this Qualification is attached to until at least
+    // one of the exit conditions is met.
+    struct Repeat {
+        // Condition that must be satisfied for loop to exit
+        struct ExitCondition {
+            // Exit if a flag is set/unset
+            struct Condition {
+                Branch::Op condition { Branch::Op::INVALID };
+            };
+
+            // Exit if a register is empty
+            struct RegisterEmpty { Register reg; };
+
+            enum class EvaluationOrder {
+                INVALID,
+                BEFORE, // Evaluate the condition before the instruction in the loop body (whlie)
+                AFTER   // Evaluate the condition after the instruction in the loop body (do while)
+            } evaluation_order { EvaluationOrder::INVALID };
+            std::optional<std::variant<Condition, RegisterEmpty>> cond;
+        };
+
+        // Executed at the end of each loop iteration
+        struct Update {
+            struct RegisterDecrement { Register reg; };
+
+            std::optional<std::variant<RegisterDecrement>> action;
+        };
+
+        std::array<ExitCondition, 2> exit_conditions {};
+        Update update;
+    };
+
+    // Only execute the instruction that this Qualification is attached to if the condition is met
+    struct Predicate {
+        Branch::Op condition { Branch::Op::INVALID };
+    };
+
+    // Flags that can affect how the instruction accesses memory
+    struct MemoryAttribute {
+        bool atomic { false };
+    };
+
+private:
+#   define LLIR_ENUMERATE_PREFIX_TYPES(x) \
+        /* Parameters are: type, accessor_name, enum_value */ \
+        x(Repeat, repeat, REPEAT) \
+        x(Predicate, predicate, PREDICATE) \
+        x(MemoryAttribute, memory_attribute, MEMORY_ATTRIBUTE)
+    MAGIC_VARIANT_DECLARE(LLIR_ENUMERATE_PREFIX_TYPES)
+public:
+    // Qualification operation enum
+    using Type = VariantEnumT;
+    Type type() const { return variant_enum_val; }
+};
+
+class Insn {
     /**
      * Declare a variant+enum pair with accessors for instruction classes.
      */
@@ -278,16 +336,16 @@ public:
     Class iclass() const { return variant_enum_val; }
 
     // Operands
-    uint8_t dest_cnt { 0 };
     std::array<Operand, 2> dest {};
-    uint8_t src_cnt { 0 };
     std::array<Operand, 2> src {};
 
-    // Atomic? On x86_64 this means the insn had a LOCK prefix
-    bool atomic { false };
+    // Optional instruction qualifications that can modify its behavior
+    std::array<Qualification, 2> qualifications;
 
-    // Condition - must be satisfied for insn to execute
-    Branch::Op condition { Branch::Op::UNCONDITIONAL };
+    // Array sizes
+    uint8_t dest_cnt { 0 };
+    uint8_t src_cnt { 0 };
+    uint8_t qualification_count { 0 };
 };
 
 //
@@ -494,6 +552,26 @@ inline std::string to_string(const decltype(Alu::flags_modified) &flags) {
 }
 
 template<>
+inline std::string to_string(const Qualification &qual) {
+    std::string ret;
+
+    // FIXME: make this more useful
+    switch (qual.type()) {
+        case Qualification::Type::REPEAT:
+            ret += "Repeat";
+            break;
+        case Qualification::Type::PREDICATE:
+            ret += "Predicate";
+            break;
+        case Qualification::Type::MEMORY_ATTRIBUTE:
+            ret += "MemoryAttribute";
+            break;
+    }
+
+    return ret;
+}
+
+template<>
 inline std::string to_string(const Insn &insn) {
     std::string ret = "(";
     ret += "Class=" + to_string(insn.iclass());
@@ -514,9 +592,11 @@ inline std::string to_string(const Insn &insn) {
             ret += " Op=" + to_string(insn.interrupt()); break;
     }
     for (size_t i=0; i<insn.dest_cnt; i++)
-        ret += " Destination(" + to_string(insn.dest[0]) + ")";
+        ret += " Destination(" + to_string(insn.dest[i]) + ")";
     for (size_t i=0; i<insn.src_cnt; i++)
         ret += " Source" + std::to_string(i) + "(" + to_string(insn.src[i]) + ")";
+    for (size_t i=0; i<insn.qualification_count; i++)
+        ret += "Qualification(" + to_string(insn.qualifications[i]) + ")";
     return ret + ")";
 }
 

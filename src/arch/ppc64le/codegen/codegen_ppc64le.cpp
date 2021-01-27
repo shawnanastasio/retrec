@@ -425,26 +425,113 @@ status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, u
 template <typename T>
 void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
     ctx.local_branch_targets.insert({ insn.address, ctx.stream->size() });
+    bool declare_end_label = false;
+    const llir::Qualification::Repeat *repeat_qual = nullptr;
 
-    // If instruction has a condition attached to it, guard the translation with a branch
-    switch (insn.condition) {
-        case llir::Branch::Op::UNCONDITIONAL:
-            break;
-        case llir::Branch::Op::INVALID:
-            ASSERT_NOT_REACHED();
-        default:
-        {
-            // Evaluate condition
-            uint8_t cr_field;
-            BO bo;
-            llir$branch$helper$evaluate_op(ctx, insn.condition, &cr_field, &bo);
+    // Helper to emit check for llir::Qualification::Repeat::ExitCondition
+    auto evaluate_exitconditions = [&](auto evaluation_order_filter, const auto &repeat_qual) {
+        for (size_t i = 0; i < repeat_qual.exit_conditions.size(); i++) {
+            if (!repeat_qual.exit_conditions[i].cond)
+                break;
+            auto &cur_cond = repeat_qual.exit_conditions[i];
 
-            // Branch end of this insn's translation if condition is not true
-            bo = llir$branch$helper$invert_bo(bo);
-            ctx.assembler->bc(bo, cr_field, 0); RELOC_FIXUP_LABEL("dispatch_condition_false", AFTER);
+            if (cur_cond.evaluation_order != evaluation_order_filter)
+                break;
+
+            using ExitCondition = llir::Qualification::Repeat::ExitCondition;
+            std::visit(Overloaded {
+                [&](const ExitCondition::Condition &cond) -> status_code {
+                    BO bo;
+                    uint8_t cr_field;
+
+                    // Evaluate condition and branch to end of dispatched instruction if it is set
+                    llir$branch$helper$evaluate_op(ctx, cond.condition, &cr_field, &bo);
+                    ctx.assembler->bc(bo, cr_field, 0); RELOC_FIXUP_LABEL("dispatch_insn_bottom", AFTER);
+                    return status_code::SUCCESS;
+                },
+
+                [&](const ExitCondition::RegisterEmpty &register_empty) -> status_code {
+                    llir::Register reg = register_empty.reg;
+                    auto reg_gpr = ctx.reg_allocator().get_fixed_gpr(reg);
+
+                    // Compare the register to 0 to determine if the register is empty
+                    switch (reg.mask) {
+                        case llir::Register::Mask::Full64:
+                            ctx.assembler->cmpldi(CR_SCRATCH, reg_gpr.gpr(), 0);
+                            break;
+                        case llir::Register::Mask::Low32:
+                            ctx.assembler->cmplwi(CR_SCRATCH, reg_gpr.gpr(), 0);
+                            break;
+                        case llir::Register::Mask::LowLow16:
+                        case llir::Register::Mask::LowLowHigh8:
+                        case llir::Register::Mask::LowLowLow8:
+                            TODO();
+                        default: ASSERT_NOT_REACHED();
+                    }
+
+                    // Branch on the calculated condition
+                    ctx.assembler->bc(BO::FIELD_SET, 4*CR_SCRATCH + assembler::CR_EQ, 0);
+                    RELOC_FIXUP_LABEL("dispatch_insn_bottom", AFTER);
+                    return status_code::SUCCESS;
+                },
+            }, *cur_cond.cond);
+        }
+    };
+
+    // Process any qualifications attached to this instruction
+    for (size_t i = 0; i < insn.qualification_count; i++) {
+        auto &qual = insn.qualifications[i];
+        switch (qual.type()) {
+            case llir::Qualification::Type::PREDICATE:
+            {
+                llir::Branch::Op condition = qual.predicate().condition;
+
+                // If instruction has a Predicate Qualification, guard the translation with a branch
+                declare_end_label = true;
+                switch (condition) {
+                    case llir::Branch::Op::UNCONDITIONAL:
+                        break;
+                    case llir::Branch::Op::INVALID:
+                        ASSERT_NOT_REACHED();
+                    default:
+                    {
+                        // Evaluate condition
+                        BO bo;
+                        uint8_t cr_field;
+                        llir$branch$helper$evaluate_op(ctx, condition, &cr_field, &bo);
+
+                        // Branch end of this insn's translation if condition is not true
+                        bo = llir$branch$helper$invert_bo(bo);
+                        ctx.assembler->bc(bo, cr_field, 0); RELOC_FIXUP_LABEL("dispatch_insn_bottom", AFTER);
+                    }
+                }
+                break;
+            }
+
+            case llir::Qualification::Type::REPEAT:
+            {
+                assert(!repeat_qual); // There can only be one Repeat Qualification per insn
+
+                // If instruction has a Repeat Qualification, emit a label and store the qual
+                // so that its conditions can be evaluated.
+                RELOC_DECLARE_LABEL_AFTER("dispatch_insn_top");
+                declare_end_label = true;
+                repeat_qual = &qual.repeat();
+
+                // Evaluate any exit conditions with EvaluationOrder::BEFORE
+                evaluate_exitconditions(
+                    llir::Qualification::Repeat::ExitCondition::EvaluationOrder::BEFORE,
+                    *repeat_qual
+                );
+                break;
+            }
+
+            case llir::Qualification::Type::MEMORY_ATTRIBUTE:
+                TODO();
         }
     }
 
+    // Dispatch the instruction for translation
     switch (insn.iclass()) {
         case llir::Insn::Class::ALU:
             switch (insn.alu().op) {
@@ -546,7 +633,45 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             TODO();
     }
 
-    RELOC_DECLARE_LABEL_AFTER("dispatch_condition_false");
+    if (repeat_qual) {
+        // Repeat Qualification is present, evaluate any AFTER ExitConditions and evaluate Update
+        evaluate_exitconditions(
+            llir::Qualification::Repeat::ExitCondition::EvaluationOrder::AFTER,
+            *repeat_qual
+        );
+
+        if (repeat_qual->update.action) {
+            using Update = llir::Qualification::Repeat::Update;
+            std::visit(Overloaded {
+                [&](const Update::RegisterDecrement &reg_dec) {
+                    auto reg_gpr = ctx.reg_allocator().get_fixed_gpr(reg_dec.reg);
+
+                    switch (reg_dec.reg.mask) {
+                        case llir::Register::Mask::Full64:
+                            ctx.assembler->addi(reg_gpr.gpr(), reg_gpr.gpr(), -1);
+                            break;
+                        case llir::Register::Mask::Low32:
+                            assert(reg_dec.reg.zero_others);
+                            ctx.assembler->addi(reg_gpr.gpr(), reg_gpr.gpr(), -1);
+                            // FIXME: Do we need to worry about overflows into bits 63:33 for 32-bit increments here?
+                            // ctx.assembler->rldicl(reg_gpr.gpr(), reg_gpr.gpr(), 0, 64-32, false);
+                            break;
+                        case llir::Register::Mask::LowLow16:
+                        case llir::Register::Mask::LowLowHigh8:
+                        case llir::Register::Mask::LowLowLow8:
+                            TODO();
+                        default: ASSERT_NOT_REACHED();
+                    }
+                }
+            }, *repeat_qual->update.action);
+        }
+
+        // All ExitConditions have been handled, jump back to top of loop
+        ctx.assembler->b(0); RELOC_FIXUP_LABEL("dispatch_insn_top", BEFORE);
+    }
+
+    if (declare_end_label)
+        RELOC_DECLARE_LABEL_AFTER("dispatch_insn_bottom");
 }
 
 template <typename T>
