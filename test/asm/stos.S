@@ -9,6 +9,9 @@
     STOSB_BACKWARD_STR: .ascii    "STOSB_BACKWARD: should be '11': 00\n"
     STOSB_BACKWARD_STR_LEN = . - STOSB_BACKWARD_STR
 
+    REP_STOSB_STR: .ascii    "REP_STOSB:      should be '1110': 0000\n"
+    REP_STOSB_STR_LEN = . - REP_STOSB_STR
+
     STOSW_FORWARD_STR: .ascii    "STOSW_FORWARD:  should be '1111': 0000\n"
     STOSW_FORWARD_STR_LEN = . - STOSW_FORWARD_STR
     STOSW_BACKWARD_STR: .ascii    "STOSW_BACKWARD: should be '1111': 0000\n"
@@ -69,6 +72,20 @@ _start:
     mov rdi, 1
     mov rsi, OFFSET STOSB_BACKWARD_STR
     mov edx, STOSB_BACKWARD_STR_LEN
+    syscall
+
+# REP STOSB, DF=0
+    cld # clear direction flag
+
+    mov rdi, OFFSET REP_STOSB_STR + REP_STOSB_STR_LEN - 5
+    mov al, 0x31 # ASCII '1'
+    mov ecx, 3
+    rep stosb [edi]
+
+    mov rax, 1 # SYS_write
+    mov rdi, 1
+    mov rsi, OFFSET REP_STOSB_STR
+    mov edx, REP_STOSB_STR_LEN
     syscall
 
 # STOSW, DF=0

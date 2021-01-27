@@ -1,6 +1,7 @@
 STOSB_EDI:      should be '11': 11
 STOSB_FORWARD:  should be '11': 11
 STOSB_BACKWARD: should be '11': 11
+REP_STOSB:      should be '1110': 1110
 STOSW_FORWARD:  should be '1111': 1111
 STOSW_BACKWARD: should be '1111': 1111
 STOSD_FORWARD:  should be '11111111': 11111111
