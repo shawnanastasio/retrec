@@ -492,10 +492,13 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_INS_MOVAPD:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov128_common;
         case X86_INS_MOVAPS:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov128_common;
         case X86_INS_MOVDQA:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov128_common;
+        case X86_INS_MOVUPD:   require_alignment = false; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov128_common;
+        case X86_INS_MOVUPS:   require_alignment = false; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov128_common;
+        case X86_INS_MOVDQU:   require_alignment = false; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov128_common;
         case X86_INS_MOVNTDQA: require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
-        case X86_INS_MOVNTPD:  op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; last_access_hint = true; goto mov128_common;
-        case X86_INS_MOVNTPS:  op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; last_access_hint = true; goto mov128_common;
-        case X86_INS_MOVNTDQ:  op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
+        case X86_INS_MOVNTPD:  require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; last_access_hint = true; goto mov128_common;
+        case X86_INS_MOVNTPS:  require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; last_access_hint = true; goto mov128_common;
+        case X86_INS_MOVNTDQ:  require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
         mov128_common:
             assert(detail->x86.op_count == 2);
             llinsn.dest_cnt = 1;
