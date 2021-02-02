@@ -182,6 +182,7 @@ class assembler {
     status_code b_form(uint8_t po, uint8_t bo, uint8_t bi, int16_t bd, uint8_t aa, uint8_t lk);
     status_code d_form(uint8_t po, uint8_t rt, uint8_t ra, int16_t i);
     status_code ds_form(uint8_t po, uint8_t rs, uint8_t ra, int16_t ds, uint8_t xo);
+    status_code dq_form(uint8_t po, uint8_t t, uint8_t ra, int16_t dq, uint8_t tx, uint8_t xo);
     status_code dx_form(uint8_t po, uint8_t rt, int16_t d, uint8_t xo);
     status_code i_form(uint8_t po, int32_t li, uint8_t aa, uint8_t lk);
     status_code m_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint8_t mb, uint8_t me, uint8_t rc);
@@ -1049,7 +1050,7 @@ public:
     void mtcr(uint8_t rs) { mtcrf(0xFF, rs); }
 
     void mfocrf(uint8_t rt, uint8_t fxm) {
-        ASM_LOG("Emitting mfocrf 0x%x, r%u,\n", rt, fxm);
+        ASM_LOG("Emitting mfocrf 0x%x, r%u\n", rt, fxm);
         EMIT_INSN(Operation::MFOCRF, [=] {
             return self->xfx_form(31, rt, (uint16_t)((1 << 9) | (fxm << 1)), 19);
         }, rt, fxm);
@@ -1067,6 +1068,46 @@ public:
         EMIT_INSN(Operation::SETB, [=] {
             return self->x_form(31, rt, (uint8_t)(bfa << 2), 0, 128, 0);
         }, rt, bfa);
+    }
+
+    // 7.6.3 VSX Instructions
+
+    void lxv(uint8_t xt, uint8_t ra, int16_t dq) {
+        ASM_LOG("Emitting lxv vsr%u, %d(r%u)\n", xt, dq, ra);
+        EMIT_INSN(Operation::LXV, [=] {
+            check_mask(dq, 0xFFF0U);
+            uint8_t tx = xt >= 32;
+            uint8_t t = tx ? xt + 32 : xt;
+            return self->dq_form(61, t, ra, dq, tx, 1);
+        }, xt, ra, dq);
+    }
+
+    void lxvx(uint8_t xt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lxvx vsr%u, r%u, r%u\n", xt, ra, rb);
+        EMIT_INSN(Operation::LXVX, [=] {
+            uint8_t tx = xt >= 32;
+            uint8_t t = tx ? xt + 32 : xt;
+            return self->x_form(31, t, ra, rb, (4 << 7) | 12, tx);
+        }, xt, ra, rb);
+    }
+
+    void stxv(uint8_t xs, uint8_t ra, int16_t dq) {
+        ASM_LOG("Emitting stxv vsr%u, %d(r%u)\n", xs, dq, ra);
+        EMIT_INSN(Operation::STXV, [=] {
+            check_mask(dq, 0xFFF0U);
+            uint8_t sx = xs >= 32;
+            uint8_t s = sx ? xs + 32 : xs;
+            return self->dq_form(61, s, ra, dq, sx, 5);
+        }, xs, ra, dq);
+    }
+
+    void stxvx(uint8_t xs, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting stxvx vsr%u, r%u, r%u\n", xs, ra, rb);
+        EMIT_INSN(Operation::LXVX, [=] {
+            uint8_t sx = xs >= 32;
+            uint8_t s = sx ? xs + 32 : xs;
+            return self->x_form(31, s, ra, rb, 396, sx);
+        }, xs, ra, rb);
     }
 
     //

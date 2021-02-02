@@ -25,6 +25,8 @@
 #endif
 
 enum class PPC64Register : uint8_t {
+    INVALID,
+
     R0, R1, R2, R3, R4, R5, R6, R7, R8, R9,
     R10, R11, R12, R13, R14, R15, R16, R17,
     R18, R19, R20, R21, R22, R23, R24, R25,
@@ -47,6 +49,11 @@ enum class PPC64Register : uint8_t {
     VR18, VR19, VR20, VR21, VR22, VR23, VR24, VR25,
     VR26, VR27, VR28, VR29, VR30, VR31,
 
+    VSR0, VSR1, VSR2, VSR3, VSR4, VSR5, VSR6, VSR7, VSR8,
+    VSR9, VSR10, VSR11, VSR12, VSR13, VSR14, VSR15, VSR16,
+    VSR17, VSR18, VSR19, VSR20, VSR21, VSR22, VSR23, VSR24,
+    VSR25, VSR26, VSR27, VSR28, VSR29, VSR30, VSR31,
+
     VSCR,
     VRSAVE,
 
@@ -54,11 +61,12 @@ enum class PPC64Register : uint8_t {
 };
 
 enum class PPC64RegisterType {
+    INVALID,
     GPR,
     SPECIAL,
     FPR,
     VR,
-    INVALID
+    VSR
 };
 
 static constexpr inline PPC64RegisterType PPC64RegisterGetType(PPC64Register reg) {
@@ -67,10 +75,12 @@ static constexpr inline PPC64RegisterType PPC64RegisterGetType(PPC64Register reg
         return PPC64RegisterType::GPR;
     else if (reg_int >= enum_cast(PPC64Register::LR) && reg_int <= enum_cast(PPC64Register::XER))
         return PPC64RegisterType::SPECIAL;
-    else if (reg_int >= enum_cast(PPC64Register::F0) && reg_int <= enum_cast(PPC64Register::FPSCR))
+    else if (reg_int >= enum_cast(PPC64Register::F0) && reg_int <= enum_cast(PPC64Register::F31))
         return PPC64RegisterType::FPR;
-    else if (reg_int >= enum_cast(PPC64Register::VR0) && reg_int <= enum_cast(PPC64Register::VRSAVE))
+    else if (reg_int >= enum_cast(PPC64Register::VR0) && reg_int <= enum_cast(PPC64Register::VR31))
         return PPC64RegisterType::VR;
+    else if (reg_int >= enum_cast(PPC64Register::VSR0) && reg_int <= enum_cast(PPC64Register::VSR31))
+        return PPC64RegisterType::VSR;
     else
         return PPC64RegisterType::INVALID;
 }
@@ -80,3 +90,12 @@ static constexpr inline std::underlying_type_t<PPC64Register> PPC64RegisterGPRIn
     return enum_cast(reg) - enum_cast(PPC64Register::R0);
 }
 
+static constexpr inline std::underlying_type_t<PPC64Register> PPC64RegisterVRIndex(PPC64Register reg) {
+    assert(PPC64RegisterGetType(reg) == PPC64RegisterType::VR);
+    return enum_cast(reg) - enum_cast(PPC64Register::VR0);
+}
+
+static constexpr inline std::underlying_type_t<PPC64Register> PPC64RegisterVSRIndex(PPC64Register reg) {
+    assert(PPC64RegisterGetType(reg) == PPC64RegisterType::VSR);
+    return enum_cast(reg) - enum_cast(PPC64Register::VSR0);
+}

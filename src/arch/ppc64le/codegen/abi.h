@@ -51,7 +51,7 @@ struct TargetTraitsX86_64 {
  */
 template <>
 struct TargetABIMapping<TargetTraitsX86_64> {
-    struct gpr_mapping {
+    struct reg_mapping {
         llir::X86_64Register target;
         llir::PPC64Register host;
     };
@@ -62,7 +62,7 @@ struct TargetABIMapping<TargetTraitsX86_64> {
      * calling conventions to reduce the save/restore penalty when performing native
      * function calls from translated code.
      */
-    static constexpr gpr_mapping fixed_regs[] = {
+    static constexpr reg_mapping fixed_regs[] = {
         // SysV volatile registers
         { llir::X86_64Register::RSP, llir::PPC64Register::R1 },
         { llir::X86_64Register::RDI, llir::PPC64Register::R3 },
@@ -82,6 +82,24 @@ struct TargetABIMapping<TargetTraitsX86_64> {
         { llir::X86_64Register::R15, llir::PPC64Register::R28 },
         { llir::X86_64Register::RBX, llir::PPC64Register::R29 },
         { llir::X86_64Register::RBP, llir::PPC64Register::R30 },
+
+        // SSE <-> VSX mapping
+        { llir::X86_64Register::XMM0,  llir::PPC64Register::VSR0 },
+        { llir::X86_64Register::XMM1,  llir::PPC64Register::VSR1 },
+        { llir::X86_64Register::XMM2,  llir::PPC64Register::VSR2 },
+        { llir::X86_64Register::XMM3,  llir::PPC64Register::VSR3 },
+        { llir::X86_64Register::XMM4,  llir::PPC64Register::VSR4 },
+        { llir::X86_64Register::XMM5,  llir::PPC64Register::VSR5 },
+        { llir::X86_64Register::XMM6,  llir::PPC64Register::VSR6 },
+        { llir::X86_64Register::XMM7,  llir::PPC64Register::VSR7 },
+        { llir::X86_64Register::XMM8,  llir::PPC64Register::VSR8 },
+        { llir::X86_64Register::XMM9,  llir::PPC64Register::VSR9 },
+        { llir::X86_64Register::XMM10, llir::PPC64Register::VSR10 },
+        { llir::X86_64Register::XMM11, llir::PPC64Register::VSR11 },
+        { llir::X86_64Register::XMM12, llir::PPC64Register::VSR12 },
+        { llir::X86_64Register::XMM13, llir::PPC64Register::VSR13 },
+        { llir::X86_64Register::XMM14, llir::PPC64Register::VSR14 },
+        { llir::X86_64Register::XMM15, llir::PPC64Register::VSR15 },
     };
 };
 
@@ -125,6 +143,24 @@ struct ABIRetrec<TargetTraitsX86_64> {
 
         // Special
         llir::PPC64Register::CR,
+
+        // VSX
+        llir::PPC64Register::VSR0,  /* Fixed */
+        llir::PPC64Register::VSR1,  /* Fixed */
+        llir::PPC64Register::VSR2,  /* Fixed */
+        llir::PPC64Register::VSR3,  /* Fixed */
+        llir::PPC64Register::VSR4,  /* Fixed */
+        llir::PPC64Register::VSR5,  /* Fixed */
+        llir::PPC64Register::VSR6,  /* Fixed */
+        llir::PPC64Register::VSR7,  /* Fixed */
+        llir::PPC64Register::VSR8,  /* Fixed */
+        llir::PPC64Register::VSR9,  /* Fixed */
+        llir::PPC64Register::VSR10, /* Fixed */
+        llir::PPC64Register::VSR11, /* Fixed */
+        llir::PPC64Register::VSR12, /* Fixed */
+        llir::PPC64Register::VSR13, /* Fixed */
+        llir::PPC64Register::VSR14, /* Fixed */
+        llir::PPC64Register::VSR15, /* Fixed */
     };
 
     // Registers used by retrec functions to store parameters for foreign function calls

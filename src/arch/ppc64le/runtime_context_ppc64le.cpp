@@ -35,8 +35,8 @@ using NativeTarget = runtime_context_ppc64le::NativeTarget;
 
 static status_code native_callback$syscall(runtime_context_ppc64le *ctx);
 
-template <typename TargetTraits>
-int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTraits::RegisterT reg) {
+template <typename TargetTraits, typename RetT>
+RetT *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTraits::RegisterT reg) {
     // For statically allocated registers, return the corresponding ppc64 register from the translated context
     for (auto &pair : TargetABIMapping<TargetTraits>::fixed_regs) {
         if (reg == pair.target && (llir::PPC64RegisterGetType(pair.host) == llir::PPC64RegisterType::GPR)) {
@@ -47,7 +47,7 @@ int64_t *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTr
     // Otherwise, return the register from the appropriate target context
     switch (ctx->arch) {
         case Architecture::X86_64:
-            return ctx->x86_64_ucontext.get_reg(reg);
+            return ctx->x86_64_ucontext.get_reg<RetT>(reg);
         default:
             TODO();
     }
@@ -62,7 +62,7 @@ status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry,
 
     switch (target_arch) {
         case Architecture::X86_64:
-            *runtime_context_get_reg<TargetTraitsX86_64>(this, llir::X86_64Register::RSP) = (uint64_t)stack;
+            *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RSP) = (uint64_t)stack;
             break;
 
         default:
@@ -131,14 +131,14 @@ static status_code native_callback$syscall(runtime_context_ppc64le *ctx) {
     switch (ctx->arch) {
         case Architecture::X86_64:
         {
-            int64_t syscall_number = *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RAX);
+            int64_t syscall_number = *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::RAX);
             SyscallParameters params {
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RDI),
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RSI),
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RDX),
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::R10),
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::R8),
-                *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::R9)
+                *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::RDI),
+                *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::RSI),
+                *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::RDX),
+                *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::R10),
+                *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::R8),
+                *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::R9)
             };
             auto syscall_ret_maybe = ctx->syscall_emu->emulate_syscall(syscall_number, params);
             if (auto *res = std::get_if<status_code>(&syscall_ret_maybe))
@@ -146,7 +146,7 @@ static status_code native_callback$syscall(runtime_context_ppc64le *ctx) {
             auto &syscall_ret = *std::get_if<SyscallRet>(&syscall_ret_maybe);
 
             // Fill response into context
-            *runtime_context_get_reg<TargetTraitsX86_64>(ctx, llir::X86_64Register::RAX) = syscall_ret.ret;
+            *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(ctx, llir::X86_64Register::RAX) = syscall_ret.ret;
             if (syscall_ret.should_halt) {
                 ctx->should_exit = true;
                 ctx->exit_code = (int)syscall_ret.ret;

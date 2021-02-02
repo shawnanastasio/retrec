@@ -31,7 +31,15 @@ struct cpu_context_x86_64 {
     int64_t segments[6]; // Acutally only 16-bit, but made 64-bit for get_reg
     int64_t rip;
 
-    int64_t *get_reg(llir::X86_64Register reg) {
+    // SSE registers
+    struct xmm_reg {
+        int64_t lo, hi;
+    };
+    xmm_reg xmm[16];
+    uint32_t mxcsr;
+
+    template <typename T>
+    T *get_reg(llir::X86_64Register reg) {
         switch (reg) {
             case llir::X86_64Register::RAX:
             case llir::X86_64Register::RBX:
@@ -49,10 +57,38 @@ struct cpu_context_x86_64 {
             case llir::X86_64Register::R13:
             case llir::X86_64Register::R14:
             case llir::X86_64Register::R15:
-                return &gprs[(size_t)reg - (size_t)llir::X86_64Register::RAX];
+                if constexpr (std::is_same_v<T, decltype(&gprs[0])>)
+                    return &gprs[(size_t)reg - (size_t)llir::X86_64Register::RAX];
+                goto fail;
+
+            case llir::X86_64Register::XMM0:
+            case llir::X86_64Register::XMM1:
+            case llir::X86_64Register::XMM2:
+            case llir::X86_64Register::XMM3:
+            case llir::X86_64Register::XMM4:
+            case llir::X86_64Register::XMM5:
+            case llir::X86_64Register::XMM6:
+            case llir::X86_64Register::XMM7:
+            case llir::X86_64Register::XMM8:
+            case llir::X86_64Register::XMM9:
+            case llir::X86_64Register::XMM10:
+            case llir::X86_64Register::XMM11:
+            case llir::X86_64Register::XMM12:
+            case llir::X86_64Register::XMM13:
+            case llir::X86_64Register::XMM14:
+            case llir::X86_64Register::XMM15:
+                if constexpr (std::is_same_v<T, decltype(&xmm[0])>)
+                    return &xmm[(size_t)reg - (size_t)llir::X86_64Register::XMM0];
+                goto fail;
+            case llir::X86_64Register::MXCSR:
+                if constexpr (std::is_same_v<T, decltype(&mxcsr)>)
+                    return &mxcsr;
+                goto fail;
 
             case llir::X86_64Register::RIP:
-                return &rip;
+                if constexpr (std::is_same_v<T, decltype(&rip)>)
+                    return &rip;
+                goto fail;
 
             case llir::X86_64Register::FS:
             case llir::X86_64Register::GS:
@@ -60,10 +96,13 @@ struct cpu_context_x86_64 {
             case llir::X86_64Register::SS:
             case llir::X86_64Register::DS:
             case llir::X86_64Register::ES:
-                return &segments[(size_t)reg - (size_t)llir::X86_64Register::FS];
+                if constexpr (std::is_same_v<T, decltype(&segments[0])>)
+                    return &segments[(size_t)reg - (size_t)llir::X86_64Register::FS];
+                goto fail;
 
+            fail:
             default:
-                TODO();
+                ASSERT_NOT_REACHED();
         }
     }
 };

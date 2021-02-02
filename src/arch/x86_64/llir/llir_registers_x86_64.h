@@ -23,19 +23,58 @@
 #error "Don't include this directly! Use llir.h"
 #endif
 
+#define LLIR_ENUMERATE_X86_64_REGISTERS(x) \
+    x(INVALID) \
+    /* GPRs */\
+    x(RAX) \
+    x(RBX) \
+    x(RCX) \
+    x(RDX) \
+    x(RSP) \
+    x(RBP) \
+    x(RSI) \
+    x(RDI) \
+    x(R8) \
+    x(R9) \
+    x(R10) \
+    x(R11) \
+    x(R12) \
+    x(R13) \
+    x(R14) \
+    x(R15) \
+    /* SSE regs */\
+    x(XMM0) \
+    x(XMM1) \
+    x(XMM2) \
+    x(XMM3) \
+    x(XMM4) \
+    x(XMM5) \
+    x(XMM6) \
+    x(XMM7) \
+    x(XMM8) \
+    x(XMM9) \
+    x(XMM10) \
+    x(XMM11) \
+    x(XMM12) \
+    x(XMM13) \
+    x(XMM14) \
+    x(XMM15) \
+    x(MXCSR) \
+    /* Instruction pointer */ \
+    x(RIP) \
+    /* Segments */ \
+    x(FS) \
+    x(GS) \
+    x(CS) \
+    x(SS) \
+    x(DS) \
+    x(ES) \
+    x(MAXIMUM)
+
+
 enum class X86_64Register {
-    // Used to indicate failure for functions that return an X86_64Register, OR to indicate
-    // that this field should be discarded.
-    INVALID,
-
-    RAX, RBX, RCX, RDX,
-    RSP, RBP, RSI, RDI,
-    R8, R9, R10, R11, R12, R13, R14, R15,
-
-    RIP,
-
-    FS, GS, CS, SS, DS, ES,
-
-    MAXIMUM,
+#define declare_enum(x) x,
+    LLIR_ENUMERATE_X86_64_REGISTERS(declare_enum)
+#undef declare_enum
 };
 

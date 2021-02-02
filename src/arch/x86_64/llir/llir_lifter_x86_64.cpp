@@ -48,9 +48,18 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     llir::Insn llinsn;
     llinsn.address = insn->address;
     llinsn.size = insn->size;
-    llir::Extension extension = llir::Extension::NONE;
     llir::Qualification::Repeat *repeat_qual = nullptr;
+
+    // Miscellaneous information used by *_common code paths to differentiate instructions
+    llir::Extension extension = llir::Extension::NONE;
+    llir::Register::Mask op_mask;
+    llir::Register::TypeHint op_type_hint;
+    bool last_access_hint { false };
+    bool require_alignment;
+
     using Flag = llir::Alu::Flag;
+    using Mask = llir::Register::Mask;
+    using TypeHint = llir::Register::TypeHint;
 
     auto new_qualification = [&]() -> auto & {
         assert(llinsn.qualification_count < llinsn.qualifications.size());
@@ -66,7 +75,7 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
         case X86_PREFIX_REPE /* Also REP */:
         case X86_PREFIX_REPNE:
             // Add a Repeat qualification and populate the first exit condition with
-            // RegisterEmpty(RDX) (or ECX if the 67H prefix is present).
+            // RegisterEmpty(RCX) (or ECX if the 67H prefix is present).
             repeat_qual = &new_qualification().repeat();
             llir::Register exit_register = get_reg(X86_REG_RCX);
             if (insn->detail->x86.prefix[3] == X86_PREFIX_ADDRSIZE)
@@ -480,6 +489,53 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             }
             break;
 
+        case X86_INS_MOVAPD:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov128_common;
+        case X86_INS_MOVAPS:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov128_common;
+        case X86_INS_MOVDQA:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov128_common;
+        case X86_INS_MOVNTDQA: require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
+        case X86_INS_MOVNTPD:  op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; last_access_hint = true; goto mov128_common;
+        case X86_INS_MOVNTPS:  op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; last_access_hint = true; goto mov128_common;
+        case X86_INS_MOVNTDQ:  op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
+        mov128_common:
+            assert(detail->x86.op_count == 2);
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt = 1;
+
+            if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[1].type == X86_OP_REG) {
+                // mov mem, xmmN - Store
+                llinsn.loadstore().op = llir::LoadStore::Op::VECTOR_STORE;
+                llinsn.loadstore().require_alignment = require_alignment;
+                llinsn.loadstore().last_access_hint = last_access_hint;
+                fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                fill_operand(detail->x86.operands[1], llinsn.src[0]);
+                llinsn.src[0].reg().type_hint = op_type_hint;
+                llinsn.src[0].reg().mask = op_mask;
+            } else if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_MEM) {
+                // mov xmmN, mem - Load
+                llinsn.loadstore().op = llir::LoadStore::Op::VECTOR_LOAD;
+                llinsn.loadstore().require_alignment = require_alignment;
+                llinsn.loadstore().last_access_hint = last_access_hint;
+                fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                llinsn.dest[0].reg().type_hint = op_type_hint;
+                llinsn.dest[0].reg().mask = op_mask;
+                fill_operand(detail->x86.operands[1], llinsn.src[0]);
+            } else if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_REG) {
+                // mov xmmN, xmmN, - Move Register
+                llinsn.alu().op = llir::Alu::Op::MOVE_VECTOR_REG;
+                fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+                llinsn.dest[0].reg().type_hint = op_type_hint;
+                llinsn.dest[0].reg().mask = op_mask;
+                fill_operand(detail->x86.operands[1], llinsn.src[0]);
+                llinsn.src[0].reg().type_hint = op_type_hint;
+                llinsn.src[0].reg().mask = op_mask;
+            } else {
+                pr_error("Unimplemented MOV128 type!\n");
+                return status_code::UNIMPL_INSN;
+            }
+
+            break;
+
+
         case X86_INS_PUSH:
             // Model PUSH as a STORE to RSP-8 + update
             llinsn.dest_cnt = 1;
@@ -569,6 +625,7 @@ llir::Operand::Width llir_lifter_x86_64::get_width(uint8_t width) {
         case 2: return llir::Operand::Width::_16BIT;
         case 4: return llir::Operand::Width::_32BIT;
         case 8: return llir::Operand::Width::_64BIT;
+        case 16: return llir::Operand::Width::_128BIT;
         default: TODO();
     }
 }
@@ -720,7 +777,25 @@ llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
         case X86_REG_R14B: ret.x86_64 = llir::X86_64Register::R14; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_R15B: ret.x86_64 = llir::X86_64Register::R15; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
 
-        // Segment Registers
+        // SSE registers
+        case X86_REG_XMM0:  ret.x86_64 = llir::X86_64Register::XMM0;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM1:  ret.x86_64 = llir::X86_64Register::XMM1;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM2:  ret.x86_64 = llir::X86_64Register::XMM2;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM3:  ret.x86_64 = llir::X86_64Register::XMM3;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM4:  ret.x86_64 = llir::X86_64Register::XMM4;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM5:  ret.x86_64 = llir::X86_64Register::XMM5;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM6:  ret.x86_64 = llir::X86_64Register::XMM6;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM7:  ret.x86_64 = llir::X86_64Register::XMM7;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM8:  ret.x86_64 = llir::X86_64Register::XMM8;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM9:  ret.x86_64 = llir::X86_64Register::XMM9;  ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM10: ret.x86_64 = llir::X86_64Register::XMM10; ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM11: ret.x86_64 = llir::X86_64Register::XMM11; ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM12: ret.x86_64 = llir::X86_64Register::XMM12; ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM13: ret.x86_64 = llir::X86_64Register::XMM13; ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM14: ret.x86_64 = llir::X86_64Register::XMM14; ret.mask = llir::Register::Mask::Vector128Full; break;
+        case X86_REG_XMM15: ret.x86_64 = llir::X86_64Register::XMM15; ret.mask = llir::Register::Mask::Vector128Full; break;
+
+        // Segment registers
         case X86_REG_FS: ret.x86_64 = llir::X86_64Register::FS; ret.mask = llir::Register::Mask::Special; break;
         case X86_REG_GS: ret.x86_64 = llir::X86_64Register::GS; ret.mask = llir::Register::Mask::Special; break;
         case X86_REG_CS: ret.x86_64 = llir::X86_64Register::CS; ret.mask = llir::Register::Mask::Special; break;

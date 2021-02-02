@@ -84,6 +84,8 @@
     x(LWZU, &assembler::lwzu) \
     x(LWZUX, &assembler::lwzux) \
     x(LWZX, &assembler::lwzx) \
+    x(LXV, &assembler::lxv) \
+    x(LXVX, &assembler::lxvx) \
     x(MCRF, &assembler::mcrf) \
     x(MCRXRX, &assembler::mcrxrx) \
     x(MFCR, &assembler::mfcr) \
@@ -133,6 +135,8 @@
     x(STWU, &assembler::stwu) \
     x(STWUX, &assembler::stwux) \
     x(STWX, &assembler::stwx) \
+    x(STXV, &assembler::stxv) \
+    x(STXVX, &assembler::stxvx) \
     x(SUB, &assembler::sub) \
     x(SUBC, &assembler::subc) \
     x(SUBE, &assembler::sube) \

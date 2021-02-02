@@ -47,20 +47,41 @@ struct Register {
     Architecture arch;
     union {
         X86_64Register x86_64;
+        PPC64Register ppc64;
     };
 
     enum class Mask {
+        // 64-bit GPR masks
         LowLowLow8,  // 7 downto 0
         LowLowHigh8, // 15 downto 8
         LowLow16,    // 15 downto 0
         Low32,       // 31 downto 0
         Full64,      // 63 downto 0
 
+        // 128-bit vector masks
+        Vector128Full,   // 127 downto 0
+        Vector128High64, // 127 downto 64
+        Vector128Low64,  // 63 downto 0
+        Vector128Low32,  // 31 downto 0
+
         Special
     } mask {};
 
     // Whether or not to zero bits not covered by mask on any write to this register
     bool zero_others { false };
+
+    // A hint for the type of data stored in this register. This may be useful for optimizing
+    // SIMD/vector loads/stores depending on whether integer or floating point calculations
+    // are being performed.
+    // See: https://stackoverflow.com/questions/6678073/difference-between-movdqa-and-movaps-x86-instructions
+    //
+    // These are specifically hints and MAY NOT modify functional behavior in any way.
+    enum class TypeHint {
+        NONE,
+        FLOAT,
+        DOUBLE,
+        INT,
+    } type_hint {};
 };
 
 // Architecture-specific operand definitions
@@ -98,13 +119,25 @@ enum class Extension {
 struct LoadStore {
     enum class Op {
         INVALID,
+
+        // GPR load/store/address instructions
         LOAD,
         STORE,
         LEA,
+
+        // Vector load/store instructions
+        VECTOR_LOAD,
+        VECTOR_STORE,
     } op {};
 
     // Whether to perform sign extension
     Extension extension {};
+
+    // Whether the destination/source operands must be aligned
+    bool require_alignment { false };
+
+    // Hint indicating whether this will be the last access to this address for a while.
+    bool last_access_hint { false };
 };
 
 //
@@ -131,6 +164,8 @@ struct Alu {
         x(NOP) \
         x(SETFLAG) /* setflag - set the single flag in flags_modified to '1' */ \
         x(CLRFLAG) /* clrflag - set the single flag in flags_modified to '0' */ \
+        /* Vector ALU operations */ \
+        x(MOVE_VECTOR_REG) \
         /* Special/architecture-specific ops */ \
         x(X86_CPUID)
         LLIR_ENUMERATE_ALU_OPS(X_LIST)
@@ -248,6 +283,7 @@ public:
 
     enum class Width {
         INVALID,
+        _128BIT,
         _64BIT,
         _32BIT,
         _16BIT,
@@ -375,6 +411,8 @@ inline std::string to_string(const LoadStore &loadstore) {
         case LoadStore::Op::LOAD: ret += "LOAD("; break;
         case LoadStore::Op::STORE: ret += "STORE("; break;
         case LoadStore::Op::LEA: ret += "LEA("; break;
+        case LoadStore::Op::VECTOR_LOAD: ret += "VECTOR_LOAD("; break;
+        case LoadStore::Op::VECTOR_STORE: ret += "VECTOR_STORE("; break;
         case LoadStore::Op::INVALID: ASSERT_NOT_REACHED();
     }
 
@@ -434,31 +472,9 @@ inline std::string to_string(const Interrupt &interrupt) {
 template<>
 inline std::string to_string(const X86_64Register &reg) {
     switch (reg) {
-        case llir::X86_64Register::INVALID: return "INVALID";
-        case llir::X86_64Register::RAX: return "RAX";
-        case llir::X86_64Register::RBX: return "RBX";
-        case llir::X86_64Register::RCX: return "RCX";
-        case llir::X86_64Register::RDX: return "RDX";
-        case llir::X86_64Register::RSP: return "RSP";
-        case llir::X86_64Register::RBP: return "RBP";
-        case llir::X86_64Register::RSI: return "RSI";
-        case llir::X86_64Register::RDI: return "RDI";
-        case llir::X86_64Register::R8: return "R8";
-        case llir::X86_64Register::R9: return "R9";
-        case llir::X86_64Register::R10: return "R10";
-        case llir::X86_64Register::R11: return "R11";
-        case llir::X86_64Register::R12: return "R12";
-        case llir::X86_64Register::R13: return "R13";
-        case llir::X86_64Register::R14: return "R14";
-        case llir::X86_64Register::R15: return "R15";
-        case llir::X86_64Register::RIP: return "RIP";
-        case llir::X86_64Register::FS: return "FS";
-        case llir::X86_64Register::GS: return "GS";
-        case llir::X86_64Register::CS: return "CS";
-        case llir::X86_64Register::SS: return "SS";
-        case llir::X86_64Register::DS: return "DS";
-        case llir::X86_64Register::ES: return "ES";
-        case llir::X86_64Register::MAXIMUM: return "INVALID";
+#define declare_case(x) case llir::X86_64Register::x: return #x;
+        LLIR_ENUMERATE_X86_64_REGISTERS(declare_case)
+#undef declare_case
     }
     ASSERT_NOT_REACHED();
 }
@@ -471,6 +487,10 @@ inline std::string to_string(const Register::Mask &mask) {
         case Register::Mask::LowLow16: return "LowLow16";
         case Register::Mask::LowLowHigh8: return "LowLowHigh8";
         case Register::Mask::LowLowLow8: return "LowLowLow8";
+        case Register::Mask::Vector128Full: return "Vector128Full";
+        case Register::Mask::Vector128High64: return "Vector128High64";
+        case Register::Mask::Vector128Low64: return "Vector128Low64";
+        case Register::Mask::Vector128Low32: return "Vector128Low32";
         case Register::Mask::Special: return "Special";
     }
     ASSERT_NOT_REACHED();
@@ -520,6 +540,7 @@ inline std::string to_string(const Operand &operand) {
     }
     ret += ",width=";
     switch (operand.width) {
+        case Operand::Width::_128BIT: ret += "128"; break;
         case Operand::Width::_64BIT: ret += "64"; break;
         case Operand::Width::_32BIT: ret += "32"; break;
         case Operand::Width::_16BIT: ret += "16"; break;
