@@ -563,6 +563,9 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                 case llir::Alu::Op::CLRFLAG:
                     llir$alu$setclrflag(ctx, insn);
                     break;
+                case llir::Alu::Op::MOVE_VECTOR_REG:
+                    llir$alu$move_vector_reg(ctx, insn);
+                    break;
                 case llir::Alu::Op::X86_CPUID:
                     llir$alu$x86_cpuid(ctx, insn);
                     break;
@@ -1480,6 +1483,20 @@ void codegen_ppc64le<T>::llir$alu$move_reg(gen_context &ctx, const llir::Insn &i
 
             break;
     }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$alu$move_vector_reg(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("alu$move_vector_reg\n");
+    assert(!insn.alu().modifies_flags);
+
+    auto src = insn.src[0].reg();
+    auto dest = insn.dest[0].reg();
+    auto src_reg = ctx.reg_allocator().get_fixed_reg(src);
+    auto dest_reg = ctx.reg_allocator().get_fixed_reg(dest);
+
+    assert(src.mask == dest.mask); // FIXME: Support differing masks
+    ctx.assembler->vsx_mr(dest_reg.vsr(), src_reg.vsr());
 }
 
 template <typename T>

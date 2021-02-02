@@ -302,3 +302,24 @@ status_code assembler::xs_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, u
                     | (rc & 1U);
     return write32(insn);
 }
+
+status_code assembler::xx3_form(uint8_t po, uint8_t t, uint8_t a, uint8_t b, uint16_t xo, bool ax, bool bx, bool tx) {
+    constexpr uint16_t XO_MASK = 0b11111111;
+    check_mask(po, PO_MASK);
+    check_mask(t, REG_MASK);
+    check_mask(a, REG_MASK);
+    check_mask(b, REG_MASK);
+    check_mask(xo, XO_MASK);
+    check_mask(ax, 1U);
+    check_mask(bx, 1U);
+    check_mask(tx, 1U);
+    uint32_t insn = (uint32_t)(po & PO_MASK) << (32-6U)
+                    | (t & REG_MASK) << (32-11U)
+                    | (a & REG_MASK) << (32-16U)
+                    | (b & REG_MASK) << (32-21U)
+                    | (xo & XO_MASK) << (32-29U)
+                    | (ax & 1U) << (32-30U)
+                    | (bx & 1U) << (32-31U)
+                    | (tx & 1U);
+    return write32(insn);
+}

@@ -233,6 +233,7 @@ class codegen_ppc64le final : public codegen {
     void llir$alu$load_imm(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$2src_common(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$move_reg(gen_context &ctx, const llir::Insn &insn);
+    void llir$alu$move_vector_reg(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$setcc(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$setclrflag(gen_context &ctx, const llir::Insn &insn);
     void llir$alu$x86_cpuid(gen_context &ctx, const llir::Insn &insn);

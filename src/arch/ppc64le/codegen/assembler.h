@@ -194,6 +194,7 @@ class assembler {
     status_code xl_form(uint8_t po, uint8_t bt, uint8_t ba, uint8_t bb, uint16_t xo, uint8_t lk);
     status_code xo_form(uint8_t po, uint8_t rt, uint8_t ra, uint8_t rb, uint8_t oe, uint16_t xo, uint8_t rc);
     status_code xs_form(uint8_t po, uint8_t rs, uint8_t ra, uint8_t sh, uint16_t xo, uint8_t rc);
+    status_code xx3_form(uint8_t po, uint8_t t, uint8_t a, uint8_t b, uint16_t xo, bool ax, bool bx, bool tx);
 
 public:
     // Helper for checking if values fit within a provided mask
@@ -1071,44 +1072,57 @@ public:
     }
 
     // 7.6.3 VSX Instructions
+#define NORMALIZE_VSX_REGISTERS(...) FOR_EACH(NORMALIZE_VSX_REGISTER, ##__VA_ARGS__)
+#define NORMALIZE_VSX_REGISTER(reg) \
+    bool reg ## _is_upper = ((reg) >= 32); decltype((reg)) reg ## _n = ((reg) >= 32) ? ((reg) - 32) : (reg);
 
     void lxv(uint8_t xt, uint8_t ra, int16_t dq) {
-        ASM_LOG("Emitting lxv vsr%u, %d(r%u)\n", xt, dq, ra);
+        ASM_LOG("Emitting lxv vs%u, %d(r%u)\n", xt, dq, ra);
         EMIT_INSN(Operation::LXV, [=] {
             check_mask(dq, 0xFFF0U);
-            uint8_t tx = xt >= 32;
-            uint8_t t = tx ? xt + 32 : xt;
-            return self->dq_form(61, t, ra, dq, tx, 1);
+            NORMALIZE_VSX_REGISTERS(xt);
+            return self->dq_form(61, xt_n, ra, dq, xt_is_upper, 1);
         }, xt, ra, dq);
     }
 
     void lxvx(uint8_t xt, uint8_t ra, uint8_t rb) {
-        ASM_LOG("Emitting lxvx vsr%u, r%u, r%u\n", xt, ra, rb);
+        ASM_LOG("Emitting lxvx vs%u, r%u, r%u\n", xt, ra, rb);
         EMIT_INSN(Operation::LXVX, [=] {
-            uint8_t tx = xt >= 32;
-            uint8_t t = tx ? xt + 32 : xt;
-            return self->x_form(31, t, ra, rb, (4 << 7) | 12, tx);
+            NORMALIZE_VSX_REGISTERS(xt);
+            return self->x_form(31, xt_n, ra, rb, (4 << 7) | 12, xt_is_upper);
         }, xt, ra, rb);
     }
 
     void stxv(uint8_t xs, uint8_t ra, int16_t dq) {
-        ASM_LOG("Emitting stxv vsr%u, %d(r%u)\n", xs, dq, ra);
+        ASM_LOG("Emitting stxv vs%u, %d(r%u)\n", xs, dq, ra);
         EMIT_INSN(Operation::STXV, [=] {
             check_mask(dq, 0xFFF0U);
-            uint8_t sx = xs >= 32;
-            uint8_t s = sx ? xs + 32 : xs;
-            return self->dq_form(61, s, ra, dq, sx, 5);
+            NORMALIZE_VSX_REGISTERS(xs);
+            return self->dq_form(61, xs_n, ra, dq, xs_is_upper, 5);
         }, xs, ra, dq);
     }
 
     void stxvx(uint8_t xs, uint8_t ra, uint8_t rb) {
-        ASM_LOG("Emitting stxvx vsr%u, r%u, r%u\n", xs, ra, rb);
+        ASM_LOG("Emitting stxvx vs%u, r%u, r%u\n", xs, ra, rb);
         EMIT_INSN(Operation::LXVX, [=] {
-            uint8_t sx = xs >= 32;
-            uint8_t s = sx ? xs + 32 : xs;
-            return self->x_form(31, s, ra, rb, 396, sx);
+            NORMALIZE_VSX_REGISTER(xs);
+            return self->x_form(31, xs_n, ra, rb, 396, xs_is_upper);
         }, xs, ra, rb);
     }
+
+    // VSX Logical
+
+    void xxlor(uint8_t xt, uint8_t xa, uint8_t xb) {
+        ASM_LOG("Emitting xxlor vs%u, vs%u, vs%u\n", xt, xa, xb);
+        EMIT_INSN(Operation::XXLOR, [=] {
+            NORMALIZE_VSX_REGISTERS(xt, xa, xb);
+            return self->xx3_form(60, xt_n, xa_n, xb_n, 146, xt_is_upper, xa_is_upper, xb_is_upper);
+        }, xt, xa, xb);
+    }
+    void vsx_mr(uint8_t xt, uint8_t xa) { return xxlor(xt, xa, xa); }
+
+#undef NORMALIZE_VSX_REGISTERS
+#undef NORMALIZE_VSX_REGISTER
 
     //
     // Book III

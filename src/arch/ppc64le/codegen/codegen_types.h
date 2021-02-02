@@ -141,6 +141,7 @@
     x(SUBC, &assembler::subc) \
     x(SUBE, &assembler::sube) \
     x(XOR, &assembler::_xor) \
+    x(XXLOR, &assembler::xxlor) \
     x(INVALID, &assembler::invalid) \
     x(U32, &assembler::u32)
 
