@@ -1089,7 +1089,7 @@ public:
         ASM_LOG("Emitting lxvx vs%u, r%u, r%u\n", xt, ra, rb);
         EMIT_INSN(Operation::LXVX, [=] {
             NORMALIZE_VSX_REGISTERS(xt);
-            return self->x_form(31, xt_n, ra, rb, (4 << 7) | 12, xt_is_upper);
+            return self->x_form(31, xt_n, ra, rb, (4 << 6) | 12, xt_is_upper);
         }, xt, ra, rb);
     }
 
