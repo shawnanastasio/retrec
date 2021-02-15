@@ -3067,6 +3067,18 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
     auto lbax  = [&](auto a, auto b, auto c) { ctx.assembler->lbzx(a, b, c); ctx.assembler->extsb(a, a); };
     auto lbaux = [&](auto a, auto b, auto c) { ctx.assembler->lbzux(a, b, c); ctx.assembler->extsb(a, a); };
 
+    auto vsx_loadx_lowlow32 = [&](auto a, auto b, auto c) {
+        auto tmp = ctx.reg_allocator().allocate_gpr();
+        ctx.assembler->lwzx(tmp.gpr(), b, c);
+        ctx.assembler->mtvsrdd(a, 0, tmp.gpr());
+    };
+
+    auto vsx_storex_lowlow32 = [&](auto a, auto b, auto c) {
+        auto tmp = ctx.reg_allocator().allocate_gpr();
+        ctx.assembler->mfvsrld(tmp.gpr(), a);
+        ctx.assembler->stwx(tmp.gpr(), b, c);
+    };
+
 // Helpers to call the appropriate loadstore op depending on whether `update` is set or not
 #define LOAD_DISP(op, ...) ((update == llir::MemOp::Update::PRE) ? op ## u(__VA_ARGS__) : op(__VA_ARGS__))
 #define LOAD_INDEXED(op, ...) ((update == llir::MemOp::Update::PRE) ? op ## ux(__VA_ARGS__) : op ## x(__VA_ARGS__))
@@ -3156,15 +3168,18 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
 
             case llir::LoadStore::Op::VECTOR_LOAD:
             {
+                // We don't need to worry about source memory alignment since the kernel will automatically
+                // correct unaligned accesses for us. This is probably slower than manually emitting an unaligned
+                // load ourselves, but it's easier so it works for now.
                 assert(extension == llir::Extension::NONE);
                 assert(update == llir::MemOp::Update::NONE);
+                assert(reg.zero_others);
                 switch (reg.mask) {
                     case llir::Register::Mask::Vector128Full: ctx.assembler->lxv(r.vsr(), ra, disp); break;
                     case llir::Register::Mask::Vector128High64:
                     case llir::Register::Mask::Vector128Low64:
-                    case llir::Register::Mask::Vector128Low32:
-                        TODO();
-
+                    case llir::Register::Mask::Vector128LowLow32:
+                        // Non-128-bit loads don't have displacement forms
                     default:
                         ASSERT_NOT_REACHED();
                 }
@@ -3180,9 +3195,8 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
                     case llir::Register::Mask::Vector128Full: ctx.assembler->stxv(r.vsr(), ra, disp); break;
                     case llir::Register::Mask::Vector128High64:
                     case llir::Register::Mask::Vector128Low64:
-                    case llir::Register::Mask::Vector128Low32:
-                        TODO();
-
+                    case llir::Register::Mask::Vector128LowLow32:
+                        // Non-128-bit stores don't have displacement forms
                     default:
                         ASSERT_NOT_REACHED();
                 }
@@ -3250,6 +3264,7 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
                         ASSERT_NOT_REACHED();
                 }
 
+                assert(!reg.zero_others);
                 break;
             }
 
@@ -3259,9 +3274,35 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
                 break;
 
             case llir::LoadStore::Op::VECTOR_LOAD:
-                TODO();
+                assert(extension == llir::Extension::NONE);
+                assert(update == llir::MemOp::Update::NONE);
+                assert(reg.zero_others);
+                switch (reg.mask) {
+                    case llir::Register::Mask::Vector128Full: ctx.assembler->lxvx(r.vsr(), ra, rb); break;
+                    case llir::Register::Mask::Vector128High64: TODO(); break;
+                    case llir::Register::Mask::Vector128Low64: TODO(); break;
+                    case llir::Register::Mask::Vector128LowLow32: vsx_loadx_lowlow32(r.vsr(), ra, rb); break;
+
+                    default:
+                        ASSERT_NOT_REACHED();
+                }
+
+                break;
+
             case llir::LoadStore::Op::VECTOR_STORE:
-                TODO();
+                assert(extension == llir::Extension::NONE);
+                assert(update == llir::MemOp::Update::NONE);
+                switch (reg.mask) {
+                    case llir::Register::Mask::Vector128Full: ctx.assembler->stxvx(r.vsr(), ra, rb); break;
+                    case llir::Register::Mask::Vector128High64: TODO();
+                    case llir::Register::Mask::Vector128Low64: TODO();
+                    case llir::Register::Mask::Vector128LowLow32: vsx_storex_lowlow32(r.vsr(), ra, rb); break;
+
+                    default:
+                        ASSERT_NOT_REACHED();
+                }
+
+                break;
 
             default:
                 ASSERT_NOT_REACHED();
@@ -3314,7 +3355,15 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
 
             case llir::LoadStore::Op::VECTOR_LOAD:
             case llir::LoadStore::Op::VECTOR_STORE:
-                disp_fits = assembler::fits_in_mask(disp, 0xFFF0U);
+                // Only certain VSX Loads/Stores support immediate displacements
+                switch (reg.mask) {
+                    case llir::Register::Mask::Vector128Full:
+                        disp_fits = assembler::fits_in_mask(disp, 0xFFF0U);
+                        break;
+
+                    default:
+                        disp_fits = false;
+                }
                 break;
 
             default:

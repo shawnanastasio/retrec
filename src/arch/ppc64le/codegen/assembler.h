@@ -1010,6 +1010,35 @@ public:
         }, ra, rs, rb, modify_cr);
     }
 
+    // 3.3.16 Move To/From Vector-Scalar Register Instructions
+#define NORMALIZE_VSX_REGISTERS(...) FOR_EACH(NORMALIZE_VSX_REGISTER, ##__VA_ARGS__)
+#define NORMALIZE_VSX_REGISTER(reg) \
+    bool reg ## _is_upper = ((reg) >= 32); decltype((reg)) reg ## _n = ((reg) >= 32) ? ((reg) - 32) : (reg);
+
+    void mfvsrd(uint8_t xs, uint8_t ra) {
+        ASM_LOG("Emitting mfvsrd r%u, vs%u\n", ra, xs);
+        EMIT_INSN(Operation::MFVSRD, [=] {
+            NORMALIZE_VSX_REGISTERS(xs);
+            return self->x_form(31, xs_n, ra, 0, 51, xs_is_upper);
+        }, ra, xs);
+    }
+
+    void mfvsrld(uint8_t xs, uint8_t ra) {
+        ASM_LOG("Emitting mfvsrld r%u, vs%u\n", ra, xs);
+        EMIT_INSN(Operation::MFVSRLD, [=] {
+            NORMALIZE_VSX_REGISTERS(xs);
+            return self->x_form(31, xs_n, ra, 0, 307, xs_is_upper);
+        }, ra, xs);
+    }
+
+    void mtvsrdd(uint8_t xt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting mtvsrdd vs%u, r%u, r%u\n", xt, ra, rb);
+        EMIT_INSN(Operation::MTVSRDD, [=] {
+            NORMALIZE_VSX_REGISTERS(xt);
+            return self->x_form(31, xt_n, ra, rb, 435, xt_is_upper);
+        }, xt, ra, rb);
+    }
+
     // 3.3.17 Move To/From System Register Instructions
     void mtspr(SPR spr, uint8_t rs) {
         ASM_LOG("Emitting mtspr r%u, %u\n", rs, (uint16_t)spr);
@@ -1072,9 +1101,15 @@ public:
     }
 
     // 7.6.3 VSX Instructions
-#define NORMALIZE_VSX_REGISTERS(...) FOR_EACH(NORMALIZE_VSX_REGISTER, ##__VA_ARGS__)
-#define NORMALIZE_VSX_REGISTER(reg) \
-    bool reg ## _is_upper = ((reg) >= 32); decltype((reg)) reg ## _n = ((reg) >= 32) ? ((reg) - 32) : (reg);
+
+    // VSX Load/Store
+    void lxsiwzx(uint8_t xt, uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting lxsiwzx vs%u, r%u, r%u\n", xt, ra, rb);
+        EMIT_INSN(Operation::LXSIWZX, [=] {
+            NORMALIZE_VSX_REGISTERS(xt);
+            return self->x_form(31, xt_n, ra, rb, 12, xt_is_upper);
+        }, xt, ra, rb);
+    }
 
     void lxv(uint8_t xt, uint8_t ra, int16_t dq) {
         ASM_LOG("Emitting lxv vs%u, %d(r%u)\n", xt, dq, ra);

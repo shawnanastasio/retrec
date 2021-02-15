@@ -84,6 +84,7 @@
     x(LWZU, &assembler::lwzu) \
     x(LWZUX, &assembler::lwzux) \
     x(LWZX, &assembler::lwzx) \
+    x(LXSIWZX, &assembler::lxsiwzx) \
     x(LXV, &assembler::lxv) \
     x(LXVX, &assembler::lxvx) \
     x(MCRF, &assembler::mcrf) \
@@ -91,9 +92,12 @@
     x(MFCR, &assembler::mfcr) \
     x(MFOCRF, &assembler::mfocrf) \
     x(MFSPR, &assembler::mfspr) \
+    x(MFVSRD, &assembler::mfvsrd) \
+    x(MFVSRLD, &assembler::mfvsrld) \
     x(MTCRF, &assembler::mtcrf) \
     x(MTOCRF, &assembler::mtocrf) \
     x(MTSPR, &assembler::mtspr) \
+    x(MTVSRDD, &assembler::mtvsrdd) \
     x(MULHD, &assembler::mulhd) \
     x(MULHDU, &assembler::mulhdu) \
     x(MULHW, &assembler::mulhw) \

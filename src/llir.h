@@ -59,10 +59,10 @@ struct Register {
         Full64,      // 63 downto 0
 
         // 128-bit vector masks
-        Vector128Full,   // 127 downto 0
-        Vector128High64, // 127 downto 64
-        Vector128Low64,  // 63 downto 0
-        Vector128Low32,  // 31 downto 0
+        Vector128Full,      // 127 downto 0
+        Vector128High64,    // 127 downto 64
+        Vector128Low64,     // 63 downto 0
+        Vector128LowLow32,  // 31 downto 0
 
         Special
     } mask {};
@@ -490,7 +490,7 @@ inline std::string to_string(const Register::Mask &mask) {
         case Register::Mask::Vector128Full: return "Vector128Full";
         case Register::Mask::Vector128High64: return "Vector128High64";
         case Register::Mask::Vector128Low64: return "Vector128Low64";
-        case Register::Mask::Vector128Low32: return "Vector128Low32";
+        case Register::Mask::Vector128LowLow32: return "Vector128LowLow32";
         case Register::Mask::Special: return "Special";
     }
     ASSERT_NOT_REACHED();

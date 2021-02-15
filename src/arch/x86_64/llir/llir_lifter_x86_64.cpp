@@ -54,6 +54,13 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
     llir::Extension extension = llir::Extension::NONE;
     llir::Register::Mask op_mask;
     llir::Register::TypeHint op_type_hint;
+    enum class ZeroOthersMode {
+        DONT_TOUCH,
+        TRUE,
+        FALSE
+    };
+    ZeroOthersMode zero_others_move_reg {};
+    ZeroOthersMode zero_others_load {};
     bool last_access_hint { false };
     bool require_alignment;
 
@@ -489,17 +496,27 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             }
             break;
 
-        case X86_INS_MOVAPD:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov128_common;
-        case X86_INS_MOVAPS:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov128_common;
-        case X86_INS_MOVDQA:   require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov128_common;
-        case X86_INS_MOVUPD:   require_alignment = false; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov128_common;
-        case X86_INS_MOVUPS:   require_alignment = false; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov128_common;
-        case X86_INS_MOVDQU:   require_alignment = false; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov128_common;
-        case X86_INS_MOVNTDQA: require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
-        case X86_INS_MOVNTPD:  require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; last_access_hint = true; goto mov128_common;
-        case X86_INS_MOVNTPS:  require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; last_access_hint = true; goto mov128_common;
-        case X86_INS_MOVNTDQ:  require_alignment = true; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov128_common;
-        mov128_common:
+        // <128-bit Legacy SSE MOVs
+        case X86_INS_MOVD:
+            require_alignment = 0;
+            zero_others_move_reg = ZeroOthersMode::TRUE;
+            zero_others_load = ZeroOthersMode::TRUE;
+            op_mask = Mask::Vector128LowLow32;
+            op_type_hint = TypeHint::INT;
+            goto mov_legacy_sse_common;
+
+        // 128-bit Legacy SSE MOVs
+        case X86_INS_MOVAPD:   require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov_legacy_sse_common;
+        case X86_INS_MOVAPS:   require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov_legacy_sse_common;
+        case X86_INS_MOVDQA:   require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov_legacy_sse_common;
+        case X86_INS_MOVDQU:   require_alignment = 0; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; goto mov_legacy_sse_common;
+        case X86_INS_MOVNTDQ:  require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov_legacy_sse_common;
+        case X86_INS_MOVNTDQA: require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::INT; last_access_hint = true; goto mov_legacy_sse_common;
+        case X86_INS_MOVNTPD:  require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; last_access_hint = true; goto mov_legacy_sse_common;
+        case X86_INS_MOVNTPS:  require_alignment = 1; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; last_access_hint = true; goto mov_legacy_sse_common;
+        case X86_INS_MOVUPD:   require_alignment = 0; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::DOUBLE; goto mov_legacy_sse_common;
+        case X86_INS_MOVUPS:   require_alignment = 0; op_mask = Mask::Vector128Full; op_type_hint = TypeHint::FLOAT; goto mov_legacy_sse_common;
+        mov_legacy_sse_common:
             assert(detail->x86.op_count == 2);
             llinsn.dest_cnt = 1;
             llinsn.src_cnt = 1;
@@ -521,6 +538,8 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 llinsn.dest[0].reg().type_hint = op_type_hint;
                 llinsn.dest[0].reg().mask = op_mask;
+                if (zero_others_load != ZeroOthersMode::DONT_TOUCH)
+                    llinsn.dest[0].reg().zero_others = zero_others_load == ZeroOthersMode::TRUE;
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
             } else if (detail->x86.operands[0].type == X86_OP_REG && detail->x86.operands[1].type == X86_OP_REG) {
                 // mov xmmN, xmmN, - Move Register
@@ -528,6 +547,8 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
                 fill_operand(detail->x86.operands[0], llinsn.dest[0]);
                 llinsn.dest[0].reg().type_hint = op_type_hint;
                 llinsn.dest[0].reg().mask = op_mask;
+                if (zero_others_move_reg != ZeroOthersMode::DONT_TOUCH)
+                    llinsn.dest[0].reg().zero_others = zero_others_move_reg == ZeroOthersMode::TRUE;
                 fill_operand(detail->x86.operands[1], llinsn.src[0]);
                 llinsn.src[0].reg().type_hint = op_type_hint;
                 llinsn.src[0].reg().mask = op_mask;
