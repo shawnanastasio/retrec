@@ -629,6 +629,11 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
                     llir$loadstore(ctx, insn);
                     break;
 
+                case llir::LoadStore::Op::FLOAT_LOAD:
+                case llir::LoadStore::Op::FLOAT_STORE:
+                    llir$loadstore_float(ctx, insn);
+                    break;
+
                 default:
                     TODO();
             }
@@ -1002,6 +1007,7 @@ void codegen_ppc64le<T>::llir$alu$helper$load_operand_into_gpr(gen_context &ctx,
                     }
                     break;
 
+                case llir::Extension::FLOAT:
                 case llir::Extension::NONE:
                     ASSERT_NOT_REACHED();
             }
@@ -1449,6 +1455,7 @@ void codegen_ppc64le<T>::llir$alu$move_reg(gen_context &ctx, const llir::Insn &i
                                        insn.dest[0].reg().mask, insn.dest[0].reg().zero_others, false);
             break;
         case llir::Extension::SIGN:
+        {
             typename register_allocator<T>::AllocatedRegT ext_dest_reg;
             if (dest.mask == llir::Register::Mask::Full64)
                 // Store result directly into dest reg
@@ -1482,6 +1489,10 @@ void codegen_ppc64le<T>::llir$alu$move_reg(gen_context &ctx, const llir::Insn &i
                                            false, llir::Extension::NONE);
 
             break;
+        }
+
+        case llir::Extension::FLOAT:
+            ASSERT_NOT_REACHED();
     }
 }
 
@@ -1907,18 +1918,31 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     assert(insn.dest_cnt == 1);
     assert(insn.src_cnt == 1);
 
-    // We only support zero/sign extension for load reg, X
-    assert(insn.loadstore().extension == llir::Extension::NONE
-           || ((insn.loadstore().op == llir::LoadStore::Op::LOAD)
-               && (insn.dest[0].type() == llir::Operand::Type::REG)));
+    const llir::Operand *memory_operand = nullptr;
+    const llir::Operand *reg_operand = nullptr;
 
-    // Extract memory and register operands
-    auto &memory_operand = (insn.loadstore().op == llir::LoadStore::Op::STORE
-                            || insn.loadstore().op == llir::LoadStore::Op::VECTOR_STORE) ? insn.dest[0] : insn.src[0];
-    assert(memory_operand.type() == llir::Operand::Type::MEM);
+    // Determine mem/reg operands by instruction type
+    switch (insn.loadstore().op) {
+        case llir::LoadStore::Op::LOAD:
+        case llir::LoadStore::Op::LEA:
+        case llir::LoadStore::Op::FLOAT_LOAD:
+        case llir::LoadStore::Op::VECTOR_LOAD:
+            memory_operand = &insn.src[0];
+            reg_operand = &insn.dest[0];
+            break;
 
-    auto &reg_operand = (insn.loadstore().op == llir::LoadStore::Op::STORE
-                         || insn.loadstore().op == llir::LoadStore::Op::VECTOR_STORE) ? insn.src[0] : insn.dest[0];
+        case llir::LoadStore::Op::STORE:
+        case llir::LoadStore::Op::FLOAT_STORE:
+        case llir::LoadStore::Op::VECTOR_STORE:
+            memory_operand = &insn.dest[0];
+            reg_operand = &insn.src[0];
+            break;
+
+        case llir::LoadStore::Op::INVALID:
+            ASSERT_NOT_REACHED();
+    }
+    assert(memory_operand->type() == llir::Operand::Type::MEM);
+
     typename register_allocator<T>::AllocatedRegT reg;
     llir::Register::Mask reg_mask;
     bool zero_others = true;
@@ -1929,22 +1953,26 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     // Switch on the reg operand, which is the
     //  DESTINATION for a LOAD, and the
     //  SOURCE for a STORE.
-    switch (reg_operand.type()) {
+    switch (reg_operand->type()) {
         case llir::Operand::Type::REG:
+            // We only support zero/sign extension for load reg, X
+            assert(insn.loadstore().extension == llir::Extension::NONE ||
+                    insn.loadstore().op == llir::LoadStore::Op::LOAD);
+
             // Special case: zero/sign extension for load to register
             if (insn.loadstore().op == llir::LoadStore::Op::LOAD &&
                     insn.loadstore().extension != llir::Extension::NONE) {
                 extension = insn.loadstore().extension;
-                reg_mask = llir$alu$helper$mask_from_width(memory_operand.width);
+                reg_mask = llir$alu$helper$mask_from_width(memory_operand->width);
 
                 // Perform the load to a temporary register with the memory operand's width
                 // for aliased registers (!zero_others) OR for sign-extended move to non-64bit register.
                 //
                 // Zero-extended movs to non-64bit registers with zero-others set will get the correct
                 // behavior by default, so we don't need the intermediate register there
-                if (reg_operand.reg().zero_others && (extension == llir::Extension::ZERO
-                        || reg_operand.reg().mask == llir::Register::Mask::Full64)) {
-                    reg = ctx.reg_allocator().get_fixed_reg(reg_operand.reg());
+                if (reg_operand->reg().zero_others && (extension == llir::Extension::ZERO
+                        || reg_operand->reg().mask == llir::Register::Mask::Full64)) {
+                    reg = ctx.reg_allocator().get_fixed_reg(reg_operand->reg());
                 } else {
                     reg = ctx.reg_allocator().allocate_gpr();
                     zero_others = true;
@@ -1953,27 +1981,37 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
                 break;
             }
 
-            reg = ctx.reg_allocator().get_fixed_reg(reg_operand.reg());
-            reg_mask = reg_operand.reg().mask;
-            zero_others = reg_operand.reg().zero_others;
-            type_hint = reg_operand.reg().type_hint;
+            reg = ctx.reg_allocator().get_fixed_reg(reg_operand->reg());
+            reg_mask = reg_operand->reg().mask;
+            zero_others = reg_operand->reg().zero_others;
+            type_hint = reg_operand->reg().type_hint;
             break;
 
         case llir::Operand::Type::IMM:
             assert(insn.loadstore().op == llir::LoadStore::Op::STORE);
+            assert(insn.loadstore().extension == llir::Extension::NONE);
             // Stores may also be performed from an immediate rather than a register.
             // Allocate a temporary register and load the immediate to it.
             reg = ctx.reg_allocator().allocate_gpr();
-            reg_mask = llir$alu$helper$mask_from_width(reg_operand.width);
-            macro$load_imm(*ctx.assembler, reg.gpr(), reg_operand.imm(), llir::Register::Mask::Full64, true);
+            reg_mask = llir$alu$helper$mask_from_width(reg_operand->width);
+            macro$load_imm(*ctx.assembler, reg.gpr(), reg_operand->imm(), llir::Register::Mask::Full64, true);
             break;
 
         case llir::Operand::Type::MEM:
-            assert(insn.loadstore().op == llir::LoadStore::Op::STORE);
-            // To support push [mem] we also have to support memory operands for stores
-            reg = ctx.reg_allocator().allocate_gpr();
-            reg_mask = llir$alu$helper$mask_from_width(reg_operand.width);
-            macro$loadstore_gpr(ctx, reg.gpr(), reg_operand, llir::LoadStore::Op::LOAD, reg_mask, true, insn);
+            assert(insn.loadstore().extension == llir::Extension::NONE);
+
+            switch (insn.loadstore().op) {
+                case llir::LoadStore::Op::STORE:
+                    // To support push [mem] we also have to support memory operands for stores
+                    reg = ctx.reg_allocator().allocate_gpr();
+                    reg_mask = llir$alu$helper$mask_from_width(reg_operand->width);
+                    macro$loadstore_gpr(ctx, reg.gpr(), *reg_operand, llir::LoadStore::Op::LOAD, reg_mask, true, insn);
+                    break;
+
+                default:
+                    // ???
+                    ASSERT_NOT_REACHED();
+            }
             break;
 
         default:
@@ -2005,23 +2043,121 @@ void codegen_ppc64le<T>::llir$loadstore(gen_context &ctx, const llir::Insn &insn
     // Create llir::LoadStore as copy of insn's but with updated extension
     llir::LoadStore loadstore = insn.loadstore();
     loadstore.extension = extension;
-    macro$loadstore(ctx, dest_reg, memory_operand, insn, loadstore);
+    macro$loadstore(ctx, dest_reg, *memory_operand, insn, loadstore);
 
     if (need_extension_cleanup) {
         // If extension was used and !zero_others, we need to move the result out of the
         // temporary register into the destination.
-        auto dest = ctx.reg_allocator().get_fixed_reg(reg_operand.reg());
+        auto dest = ctx.reg_allocator().get_fixed_reg(reg_operand->reg());
         switch (insn.loadstore().extension) {
             case llir::Extension::SIGN:
             case llir::Extension::ZERO:
                 // Treat temporary register as target width since macro$loadstore will automatically extend
-                macro$move_register_masked(*ctx.assembler, dest.gpr(), reg.gpr(), reg_operand.reg().mask,
-                                           reg_operand.reg().mask, reg_operand.reg().zero_others, false);
+                macro$move_register_masked(*ctx.assembler, dest.gpr(), reg.gpr(), reg_operand->reg().mask,
+                                           reg_operand->reg().mask, reg_operand->reg().zero_others, false);
                 break;
 
-            case llir::Extension::NONE:
+            default:
                 ASSERT_NOT_REACHED();
         }
+    }
+}
+
+template <typename T>
+void codegen_ppc64le<T>::llir$loadstore_float(gen_context &, const llir::Insn &) {
+    static_assert(!std::is_same_v<T, T>, "Missing macro$loadstore_float specialization for target arch!");
+}
+
+// Because of how strange the x87 FPU is, float-specific loads/stores need to be handled entirely separately.
+template <>
+void codegen_ppc64le<TargetTraitsX86_64>::llir$loadstore_float(gen_context &ctx, const llir::Insn &insn) {
+    pr_debug("$loadstore_float\n");
+    assert(insn.src_cnt == 1 && insn.dest_cnt == 1);
+
+    const llir::Operand &st_op = (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD)
+                                    ? insn.dest[0] : insn.src[0];
+    const llir::Operand &mem_op = (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD)
+                                    ? insn.src[0] : insn.dest[0];
+    bool mem_op_is_x87 = mem_op.memory().x86_64().base.x86_64 == llir::X86_64Register::ST_TOP;
+
+    // FLD
+    //   OP  - FLOAT_LOAD
+    //   DST - r11.x86_64.st_top
+    //   SRC - mem/st(x)
+    //
+    // FSTP
+    //   OP  - FLOAT_STORE
+    //   DST - mem/st(x)
+    //   SRC - r11.x86_64.st_top
+
+    // Allocate a register for storing the X87 stack TOP offseta
+    assert(st_op.memory().x86_64().base.x86_64 == llir::X86_64Register::ST_TOP);
+    auto st_top_offset_reg = ctx.reg_allocator().allocate_gpr();
+    ctx.assembler->lhz(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
+
+    // Decrement the stack pointer if requested
+    switch (st_op.memory().update) {
+        case llir::MemOp::Update::PRE:
+            assert(insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD);
+            assert(st_op.memory().x86_64().disp == -80);
+            // Decrement the stack pointer and reset it to the top on underflow
+            ctx.assembler->addi(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), -(int16_t)sizeof(cpu_context_x86_64::x87_reg));
+            // TODO handle underflow
+
+            // Write the new offset back
+            ctx.assembler->sth(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
+            break;
+
+        case llir::MemOp::Update::POST:
+            assert(insn.loadstore().op == llir::LoadStore::Op::FLOAT_STORE);
+            TODO();
+
+        case llir::MemOp::Update::NONE:
+            break;
+    }
+
+    auto increment_mem_op = [](const llir::Operand &mem_op, int64_t amount) {
+        auto copy = mem_op;
+        // Will this work in all scenarios?
+        copy.memory().x86_64().disp += amount;
+        return copy;
+    };
+
+    // Add GPR_FIXED_RUNTIME_CTX to the offset reg to st_top_offset_reg. This way
+    // the actual x87 reg can be accessed from an immediate displacement from the register
+    ctx.assembler->add(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
+    int16_t x87_base_off = offsetof(runtime_context_ppc64le, x86_64_ucontext.x87);
+
+    // Perform load/store operation
+    auto tmp = ctx.reg_allocator().allocate_gpr();
+    if (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD) {
+        switch (mem_op.width) {
+            case llir::Operand::Width::_80BIT:
+                if (mem_op_is_x87) {
+                    TODO(); // Move to another ST(x) register
+                } else {
+                    // Copy the first 8 bytes of the fpu reg and store it
+                    macro$loadstore_gpr(ctx, tmp.gpr(), mem_op, llir::LoadStore::Op::LOAD,
+                                        llir::Register::Mask::Full64, true, insn);
+                    ctx.assembler->std(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 0);
+
+                    // Increment the memop by 8 bytes and copy the last 2 bytes
+                    auto new_mem_op = increment_mem_op(mem_op, 8);
+                    macro$loadstore_gpr(ctx, tmp.gpr(), new_mem_op, llir::LoadStore::Op::LOAD,
+                                        llir::Register::Mask::LowLow16, true, insn);
+                    ctx.assembler->sth(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 8);
+                }
+                break;
+
+            case llir::Operand::Width::_64BIT:
+            case llir::Operand::Width::_32BIT:
+                TODO(); // Load from m32fp/m64fp
+
+            default:
+                ASSERT_NOT_REACHED();
+        }
+    } else {
+        TODO();
     }
 }
 
@@ -2948,6 +3084,9 @@ void codegen_ppc64le<T>::macro$move_register_masked(assembler &assembler, gpr_t 
 
                 break;
             }
+
+            case llir::Extension::FLOAT:
+                ASSERT_NOT_REACHED();
         }
     } else {
         if (!src_shift) {

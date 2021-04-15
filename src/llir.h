@@ -108,9 +108,10 @@ public:
 #undef LLIR_ALLOW_INTERNAL_INCLUDE
 
 enum class Extension {
-    NONE, // Do not perform extension
-    SIGN, // Perform sign extension
-    ZERO, // Perofmr zero extension
+    NONE,  // Do not perform extension
+    SIGN,  // Perform sign extension
+    ZERO,  // Perform zero extension
+    FLOAT, // Extend from a lesser precision float
 };
 
 //
@@ -125,7 +126,11 @@ struct LoadStore {
         STORE,
         LEA,
 
-        // Vector load/store instructions
+        // Float load/store
+        FLOAT_LOAD,
+        FLOAT_STORE,
+
+        // Vector load/store
         VECTOR_LOAD,
         VECTOR_STORE,
     } op {};
@@ -284,6 +289,7 @@ public:
     enum class Width {
         INVALID,
         _128BIT,
+        _80BIT,
         _64BIT,
         _32BIT,
         _16BIT,
@@ -411,6 +417,8 @@ inline std::string to_string(const LoadStore &loadstore) {
         case LoadStore::Op::LOAD: ret += "LOAD("; break;
         case LoadStore::Op::STORE: ret += "STORE("; break;
         case LoadStore::Op::LEA: ret += "LEA("; break;
+        case LoadStore::Op::FLOAT_LOAD: ret += "FLOAT_LOAD("; break;
+        case LoadStore::Op::FLOAT_STORE: ret += "FLOAT_STORE("; break;
         case LoadStore::Op::VECTOR_LOAD: ret += "VECTOR_LOAD("; break;
         case LoadStore::Op::VECTOR_STORE: ret += "VECTOR_STORE("; break;
         case LoadStore::Op::INVALID: ASSERT_NOT_REACHED();
@@ -421,6 +429,7 @@ inline std::string to_string(const LoadStore &loadstore) {
         case Extension::NONE: ret += "NONE"; break;
         case Extension::ZERO: ret += "ZERO"; break;
         case Extension::SIGN: ret += "SIGN"; break;
+        case Extension::FLOAT: ret += "FLOAT"; break;
     }
     ret += ")";
     return ret;
@@ -541,6 +550,7 @@ inline std::string to_string(const Operand &operand) {
     ret += ",width=";
     switch (operand.width) {
         case Operand::Width::_128BIT: ret += "128"; break;
+        case Operand::Width::_80BIT: ret += "80"; break;
         case Operand::Width::_64BIT: ret += "64"; break;
         case Operand::Width::_32BIT: ret += "32"; break;
         case Operand::Width::_16BIT: ret += "16"; break;

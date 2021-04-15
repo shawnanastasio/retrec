@@ -42,6 +42,17 @@
     x(R13) \
     x(R14) \
     x(R15) \
+    /* X87 regs */\
+    x(ST_TOP) /* pseudo-register for representing ptr to top of x87 stack */\
+    /* MMX regs */\
+    x(MM0) \
+    x(MM1) \
+    x(MM2) \
+    x(MM3) \
+    x(MM4) \
+    x(MM5) \
+    x(MM6) \
+    x(MM7) \
     /* SSE regs */\
     x(XMM0) \
     x(XMM1) \

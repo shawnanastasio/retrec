@@ -27,16 +27,34 @@
 namespace retrec {
 
 struct cpu_context_x86_64 {
-    int64_t gprs[16];
-    int64_t segments[6]; // Acutally only 16-bit, but made 64-bit for get_reg
-    int64_t rip;
+    int64_t gprs[16] { 0 };
+    int64_t segments[6] { 0 }; // Acutally only 16-bit, but made 64-bit for get_reg
+    int64_t rip { 0 };
+
+    // x86/MMX registers
+    struct x87_reg {
+        int64_t lo { 0 }; // Low 64 bits of x87 register, aliased to MMX MM0-7
+        int16_t hi { 0 };
+        int16_t pad[3] { 0 };
+    };
+    x87_reg x87[8];
+    uint16_t x87_control { 0 };
+    uint16_t x87_status { 0 };
+    uint16_t x87_tag { 0 };
+    uint64_t x87_last_ip { 0 };
+    uint64_t x87_last_data_ptr { 0 };
+    uint16_t x87_opcode { 0 };
+
+    // Pseudo-register for storing the offset from x87[0] where the stack TOP is, in bytes.
+    uint16_t st_top_offset { 7 * sizeof(x87_reg) };
 
     // SSE registers
     struct xmm_reg {
-        int64_t lo, hi;
+        int64_t lo { 0 };
+        int64_t hi { 0 };
     };
     xmm_reg xmm[16];
-    uint32_t mxcsr;
+    uint32_t mxcsr { 0 };
 
     template <typename T>
     T *get_reg(llir::X86_64Register reg) {

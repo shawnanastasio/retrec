@@ -55,13 +55,13 @@ RetT *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTrait
 
 status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam_,
                                           syscall_emulator *syscall_emu_) {
-    memset(this, 0, sizeof(runtime_context_ppc64le));
     arch = target_arch;
     leave_translated_code_ptr = arch_leave_translated_code;
     syscall_emu = syscall_emu_;
 
     switch (target_arch) {
         case Architecture::X86_64:
+            new(&x86_64_ucontext) cpu_context_x86_64();
             *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RSP) = (uint64_t)stack;
             break;
 

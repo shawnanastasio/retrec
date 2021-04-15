@@ -496,6 +496,34 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             }
             break;
 
+        // x87 Load/Store
+        case X86_INS_FLD:
+            assert(detail->x86.op_count == 1);
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt = 1;
+            llinsn.loadstore().op = llir::LoadStore::Op::FLOAT_LOAD;
+            llinsn.loadstore().extension = (detail->x86.operands[0].type == X86_OP_REG) ?
+                                                llir::Extension::NONE : llir::Extension::FLOAT;
+            fill_operand(detail->x86.operands[0], llinsn.src[0]);
+
+            // For x87 operations, we represent the destination in a unique way:
+            // The top of the x87 register stack is represented by a pseudo-register (ST_TOP) and
+            // it is treated as a memory operand.
+            //
+            // This allows us to re-use the llir::MemOp representation for pre/post pointer incrementing
+            // which cleanly fits the x87 stack-based access model.
+            //
+            // Specifically for FLD, the destination is represented as a memory operand with
+            //   x86_64.base=ST_TOP,
+            //   x86_64.disp=-80
+            //   update=PRE
+            llinsn.dest[0].memory().x86_64().base = get_reg(X86_REG_ST0);
+            llinsn.dest[0].memory().x86_64().disp = -80;
+            llinsn.dest[0].memory().update = llir::MemOp::Update::PRE;
+            llinsn.dest[0].width = llir::Operand::Width::_80BIT;
+
+            break;
+
         // <128-bit Legacy SSE MOVs
         case X86_INS_MOVD:
             require_alignment = 0;
@@ -649,6 +677,7 @@ llir::Operand::Width llir_lifter_x86_64::get_width(uint8_t width) {
         case 2: return llir::Operand::Width::_16BIT;
         case 4: return llir::Operand::Width::_32BIT;
         case 8: return llir::Operand::Width::_64BIT;
+        case 10: return llir::Operand::Width::_80BIT;
         case 16: return llir::Operand::Width::_128BIT;
         default: TODO();
     }
@@ -800,6 +829,9 @@ llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
         case X86_REG_R13B: ret.x86_64 = llir::X86_64Register::R13; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_R14B: ret.x86_64 = llir::X86_64Register::R14; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
         case X86_REG_R15B: ret.x86_64 = llir::X86_64Register::R15; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
+
+        // X87 registers
+        case X86_REG_ST0: ret.x86_64 = llir::X86_64Register::ST_TOP; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
 
         // SSE registers
         case X86_REG_XMM0:  ret.x86_64 = llir::X86_64Register::XMM0;  ret.mask = llir::Register::Mask::Vector128Full; break;

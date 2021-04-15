@@ -250,6 +250,7 @@ class codegen_ppc64le final : public codegen {
 
     /* Load/Store */
     void llir$loadstore(gen_context &ctx, const llir::Insn &insn);
+    void llir$loadstore_float(gen_context &ctx, const llir::Insn &insn);
 
     // Dispatch to the appropriate code generation function
     void dispatch(gen_context &ctx, const llir::Insn &insn);
