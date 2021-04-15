@@ -3264,7 +3264,6 @@ void codegen_ppc64le<TargetTraitsX86_64>::macro$loadstore(gen_context &ctx, cons
                         ASSERT_NOT_REACHED();
                 }
 
-                assert(!reg.zero_others);
                 break;
             }
 
