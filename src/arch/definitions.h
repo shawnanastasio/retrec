@@ -1,5 +1,5 @@
 /**
- * Copyright 2020-2021 Shawn Anastasio.
+ * Copyright 2021 Shawn Anastasio.
  *
  * This file is part of retrec.
  *
@@ -17,27 +17,28 @@
  * along with retrec.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/**
+ * This file contains common definitions for architecture-specific code
+ */
+
 #pragma once
 
-#include <llir.h>
-#include <arch/definitions.h>
+#include <stdint.h>
 
-#include <cstdint>
-#include <cstddef>
+// Entry/exit function pointers emitted by arch-specific code
+extern void (*arch_enter_translated_code_ptr)(void *runtime_context);
+extern void (*arch_leave_translated_code_ptr)();
 
-namespace retrec {
+// 128 bit register type
+struct reg128 {
+    union {
+        struct {
+            int64_t lo, hi;
+        } le;
 
-struct cpu_context_ppc64le {
-    int64_t gprs[32] { 0 };
-    int64_t lr { 0 };
-    int64_t cr { 0 };
-    int64_t nip { 0 };
-
-    int64_t _pad0;
-    reg128 vsr[64] { { .le = { 0, 0 } } };
-    int32_t vrsave { 0 };
+        struct {
+            int64_t hi, lo;
+        } be;
+    };
 };
 
-static_assert(offsetof(cpu_context_ppc64le, vsr) % 16 == 0, "vsr registers not quadword aligned!\n");
-
-}

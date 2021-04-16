@@ -147,6 +147,8 @@ class codegen_ppc64le final : public codegen {
      * Addresses of functions emitted to fixed function table
      */
     struct fixed_function_addresses {
+        uint32_t enter_translated_code;
+        uint32_t leave_translated_code;
         uint32_t call;
         uint32_t call_direct;
         uint32_t call_direct_rel;
@@ -261,6 +263,8 @@ class codegen_ppc64le final : public codegen {
     //
     // Fixed helper functions - Emitted once per process in the function table
     //
+    void fixed_helper$enter_translated_code$emit(gen_context &ctx);
+    void fixed_helper$leave_translated_code$emit(gen_context &ctx);
     void fixed_helper$call$emit(gen_context &ctx);
     void fixed_helper$call_direct$emit(gen_context &ctx, bool rel);
     void fixed_helper$indirect_jmp$emit(gen_context &ctx);

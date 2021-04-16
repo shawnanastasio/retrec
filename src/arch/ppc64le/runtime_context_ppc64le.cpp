@@ -24,10 +24,18 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <type_traits>
 
 using namespace retrec;
 using namespace ppc64le;
 using NativeTarget = runtime_context_ppc64le::NativeTarget;
+
+void (*arch_enter_translated_code_ptr)(void *runtime_context) = nullptr;
+void (*arch_leave_translated_code_ptr)() = nullptr;
+
+void arch_enter_translated_code(void *runtime_context) {
+    arch_enter_translated_code_ptr(runtime_context);
+}
 
 //
 // runtime_context_ppc64le
@@ -56,7 +64,7 @@ RetT *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTrait
 status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam_,
                                           syscall_emulator *syscall_emu_) {
     arch = target_arch;
-    leave_translated_code_ptr = arch_leave_translated_code;
+    leave_translated_code_ptr = arch_leave_translated_code_ptr;
     syscall_emu = syscall_emu_;
 
     switch (target_arch) {
@@ -85,8 +93,9 @@ status_code runtime_context_ppc64le::init(Architecture target_arch, void *entry,
 
 status_code runtime_context_ppc64le::execute() {
     for (;;) {
-        pr_info("Entering translated code at 0x%lx\n", host_translated_context.nip);
-        arch_enter_translated_code(nullptr, this);
+        pr_info("Entering translated code at 0x%lx, arch_enter_translated_code=%p\n", host_translated_context.nip,
+                arch_enter_translated_code);
+        arch_enter_translated_code(this);
         pr_info("Left translated code\n");
 
         // If the translated code wanted to call a native function, do so and resume

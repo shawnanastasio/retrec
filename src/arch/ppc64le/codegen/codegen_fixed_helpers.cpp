@@ -32,6 +32,235 @@
 using namespace retrec;
 using namespace retrec::ppc64le;
 
+template <typename T>
+static void loadstore_context_reg(assembler &a, gpr_t runtime_ctx_reg, llir::PPC64Register reg, bool load_or_store, bool native_or_translated) {
+#define get_context_offset(member) \
+    (uint16_t)(native_or_translated ? (offsetof(runtime_context_ppc64le, host_native_context.member)) : \
+        (offsetof(runtime_context_ppc64le, host_translated_context.member)))
+
+    uint8_t reg_idx;
+    switch (llir::PPC64RegisterGetType(reg)) {
+        case llir::PPC64RegisterType::GPR:
+            reg_idx = llir::PPC64RegisterGPRIndex(reg);
+            if (load_or_store)
+                a.ld(reg_idx, runtime_ctx_reg, (int16_t)(get_context_offset(gprs) + sizeof(cpu_context_ppc64le::gprs[0]) * reg_idx));
+            else
+                a.std(reg_idx, runtime_ctx_reg, (int16_t)(get_context_offset(gprs) + sizeof(cpu_context_ppc64le::gprs[0]) * reg_idx));
+            break;
+
+        case llir::PPC64RegisterType::FPR:
+            reg_idx = llir::PPC64RegisterFPRIndex(reg);
+            if (load_or_store)
+                a.lfd(reg_idx, runtime_ctx_reg, (int16_t)(get_context_offset(vsr[0]) + (sizeof(cpu_context_ppc64le::vsr[0]) * reg_idx) +
+                                                offsetof(reg128, le.lo)));
+            else
+                a.stfd(reg_idx, runtime_ctx_reg, (int16_t)(get_context_offset(vsr[0]) + (sizeof(cpu_context_ppc64le::vsr[0]) * reg_idx) +
+                                                 offsetof(reg128, le.lo)));
+            break;
+
+        case llir::PPC64RegisterType::VR:  reg_idx = 32 + llir::PPC64RegisterVRIndex(reg); goto vsr_common;
+        case llir::PPC64RegisterType::VSR: reg_idx = llir::PPC64RegisterVSRIndex(reg); goto vsr_common;
+        vsr_common:
+            if (load_or_store)
+                a.lxv(reg_idx, runtime_ctx_reg, (int16_t)(get_context_offset(vsr[0]) + sizeof(cpu_context_ppc64le::vsr[0]) * reg_idx));
+            else
+                a.stxv(reg_idx, runtime_ctx_reg, (int16_t)(get_context_offset(vsr[0]) + sizeof(cpu_context_ppc64le::vsr[0]) * reg_idx));
+            break;
+
+        default:
+            TODO();
+    }
+
+#undef get_context_offset
+}
+
+/**
+ * Emit the fixed helper for entering translated code from native ELFv2 code.
+ *
+ * Routine description:
+ * Called from native ELFv2 code to switch contexts into translated code. Accepts a
+ * single parameter - a runtime_context_ppc64le pointer in r3.
+ *
+ * This is the only fixed helper routine that is meant to be called from native ELFv2
+ * code rather than translated code.
+ *
+ * Calling convention:
+ *   (runtime_context_ppc64le *) [r3] - Runtime context struct to enter.
+ *
+ * Note: Only non-volatle registers designated by ABIRetrec will be restored. Any
+ * registers marked as volatile by ABIRetrec will not be restored.
+ *
+ * All registers marked as non-volatile by the ELFv2 ABI will be saved.
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$enter_translated_code$emit(gen_context &ctx) {
+    auto &a = *ctx.assembler;
+    constexpr gpr_t RUNTIME_CTX = 3;
+
+    // Save all ELFv2 non-volatile non-special registers to the host native context
+    for (auto reg : ABIElfV2::non_volatile_regs) {
+        switch (llir::PPC64RegisterGetType(reg)) {
+            case llir::PPC64RegisterType::GPR:
+            case llir::PPC64RegisterType::FPR:
+            case llir::PPC64RegisterType::VSR:
+            case llir::PPC64RegisterType::VR:
+                loadstore_context_reg<T>(a, RUNTIME_CTX, reg, false, true);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // Save LR, CR
+    constexpr gpr_t SCRATCH = 4;
+    a.mfspr(SCRATCH, SPR::LR);
+    a.std(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_native_context.lr));
+    a.mfcr(SCRATCH);
+    a.std(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_native_context.cr));
+
+    // Restore all ABIRetrec non-special non-volatile registers from the host translated context
+    for (auto reg : ABIRetrec<T>::non_volatile_regs) {
+        switch (llir::PPC64RegisterGetType(reg)) {
+            case llir::PPC64RegisterType::GPR:
+            {
+                // Don't restore the SCRATCH or RUNTIME_CTX just yet
+                auto idx = llir::PPC64RegisterGPRIndex(reg);
+                if (idx == SCRATCH || idx == RUNTIME_CTX)
+                    continue;
+
+                [[fallthrough]];
+            }
+            case llir::PPC64RegisterType::FPR:
+            case llir::PPC64RegisterType::VSR:
+            case llir::PPC64RegisterType::VR:
+                loadstore_context_reg<T>(a, RUNTIME_CTX, reg, true, false);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // Restore LR
+    a.ld(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.lr));
+    a.mtspr(SPR::LR, SCRATCH);
+
+    // Invalidate icache if flush_icache flag is set
+    a.lbz(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, flush_icache));
+    a.cmplwi(0, SCRATCH, 0);
+
+    // Load entrypoint (NIP) into scratch and move to CTR
+    a.ld(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.nip));
+    a.mtspr(SPR::CTR, SCRATCH);
+
+    // Skip icache invalidation if not requested
+    a.bc(BO::FIELD_SET, 0*4 + assembler::CR_EQ, 0); RELOC_FIXUP_LABEL("skip_icache", AFTER);
+
+    // Sequence from page 824 of ISA 3.0B
+    // This works on the address in scratch which is still the entrypoint
+    a.dcbst(0, SCRATCH);
+    a.sync(0);
+    a.icbi(0, SCRATCH);
+    a.isync();
+
+    // Unset flush icache_flag
+    a.li(SCRATCH, 0);
+    a.std(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, flush_icache));
+
+    // Restore CR
+    RELOC_DECLARE_LABEL_AFTER("skip_icache");
+    a.ld(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.cr));
+    a.mtcr(SCRATCH);
+
+    // Restore r3/rScratch and jump to code
+    a.ld(SCRATCH, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.gprs[SCRATCH]));
+    a.ld(RUNTIME_CTX, RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.gprs[RUNTIME_CTX]));
+    a.bctr();
+}
+PPC64LE_INSTANTIATE_CODEGEN_MEMBER(void, fixed_helper$enter_translated_code$emit, gen_context &)
+
+/**
+ * Emit the fixed helper for exiting translated code into native ELFv2 code.
+ *
+ * Routine description:
+ * This is the opposite of enter_translated_code - it is used by translated code to re-enter
+ * native ELFv2 code.
+ *
+ * Calling convention:
+ *   (runtime_context_ppc64le *) [GPR_FIXED_RUNTIME_CTX] - Runtime context struct to exit.
+ *
+ * Note: Only non-volatle registers designated by ELFv2 will be restored. Any
+ * registers marked as volatile by ELFv2 will not be restored.
+ *
+ * All registers marked as non-volatile by the ABIRetrec will be saved.
+ */
+template <typename T>
+void codegen_ppc64le<T>::fixed_helper$leave_translated_code$emit(gen_context &ctx) {
+    auto &a = *ctx.assembler;
+
+    // Save all ABIRetrec non-special non-volatile registers
+    for (auto reg : ABIRetrec<T>::non_volatile_regs) {
+        switch (llir::PPC64RegisterGetType(reg)) {
+            case llir::PPC64RegisterType::GPR:
+            case llir::PPC64RegisterType::FPR:
+            case llir::PPC64RegisterType::VSR:
+            case llir::PPC64RegisterType::VR:
+                loadstore_context_reg<T>(a, GPR_FIXED_RUNTIME_CTX, reg, false, false);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // Save LR as NIP for re-entry later
+    constexpr gpr_t SCRATCH = 3;
+    a.mfspr(SCRATCH, SPR::LR);
+    a.std(SCRATCH, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.nip));
+
+    // Save CR
+    a.mfcr(SCRATCH);
+    a.std(SCRATCH, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_translated_context.cr));
+
+    // Restore all ELFv2 non-special non-volatile registers
+    for (auto reg : ABIRetrec<T>::non_volatile_regs) {
+        switch (llir::PPC64RegisterGetType(reg)) {
+            case llir::PPC64RegisterType::GPR:
+            {
+                // Don't restore the scratch register or GPR_FIXED_RUNTIME_CTX
+                auto idx = llir::PPC64RegisterGPRIndex(reg);
+                if (idx == SCRATCH || idx == GPR_FIXED_RUNTIME_CTX)
+                    continue;
+
+                [[fallthrough]];
+            }
+            case llir::PPC64RegisterType::FPR:
+            case llir::PPC64RegisterType::VSR:
+            case llir::PPC64RegisterType::VR:
+                loadstore_context_reg<T>(a, GPR_FIXED_RUNTIME_CTX, reg, true, true);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // Restore LR, CR
+    a.ld(SCRATCH, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_native_context.lr));
+    a.mtspr(SPR::LR, SCRATCH);
+    a.ld(SCRATCH, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_native_context.cr));
+    a.mtcr(SCRATCH);
+
+    // Restore GPR_FIXED_RUNTIME_CTX and SCRATCH
+    a.ld(SCRATCH, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_native_context.gprs[SCRATCH]));
+    a.ld(GPR_FIXED_RUNTIME_CTX, GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, host_native_context.gprs[GPR_FIXED_RUNTIME_CTX]));
+
+    // Return
+    a.blr();
+}
+PPC64LE_INSTANTIATE_CODEGEN_MEMBER(void, fixed_helper$leave_translated_code$emit, gen_context &)
+
 /**
  * fixed_helper$call$emit - Emit the fixed helper for emulating CALL
  *

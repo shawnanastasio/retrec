@@ -90,6 +90,11 @@ static constexpr inline std::underlying_type_t<PPC64Register> PPC64RegisterGPRIn
     return enum_cast(reg) - enum_cast(PPC64Register::R0);
 }
 
+static constexpr inline std::underlying_type_t<PPC64Register> PPC64RegisterFPRIndex(PPC64Register reg) {
+    assert(PPC64RegisterGetType(reg) == PPC64RegisterType::FPR);
+    return enum_cast(reg) - enum_cast(PPC64Register::F0);
+}
+
 static constexpr inline std::underlying_type_t<PPC64Register> PPC64RegisterVRIndex(PPC64Register reg) {
     assert(PPC64RegisterGetType(reg) == PPC64RegisterType::VR);
     return enum_cast(reg) - enum_cast(PPC64Register::VR0);

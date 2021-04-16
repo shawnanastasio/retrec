@@ -120,6 +120,16 @@ status_code codegen_ppc64le<T>::init() {
             ctx.assembler->invalid();
     };
 
+    /* enter_translated_code */
+    uint32_t enter_translated_code_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$enter_translated_code$emit(ctx);
+    alignment_padding();
+
+    /* leave_translated_code */
+    uint32_t leave_translated_code_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
+    fixed_helper$leave_translated_code$emit(ctx);
+    alignment_padding();
+
     /* call */
     uint32_t call_offset = (uint32_t)(ctx.stream->size() * INSN_SIZE);
     fixed_helper$call$emit(ctx);
@@ -202,6 +212,8 @@ status_code codegen_ppc64le<T>::init() {
     }
 
     // Fill in function addresses
+    ff_addresses.enter_translated_code = (uint32_t)(uintptr_t)function_table + enter_translated_code_offset;
+    ff_addresses.leave_translated_code = (uint32_t)(uintptr_t)function_table + leave_translated_code_offset;
     ff_addresses.call = (uint32_t)(uintptr_t)function_table + call_offset;
     ff_addresses.call_direct = (uint32_t)(uintptr_t)function_table + call_direct_offset;
     ff_addresses.call_direct_rel = (uint32_t)(uintptr_t)function_table + call_direct_rel_offset;
@@ -215,6 +227,10 @@ status_code codegen_ppc64le<T>::init() {
     ff_addresses.shift_overflow = (uint32_t)(uintptr_t)function_table + shift_overflow_offset;
     ff_addresses.cpuid = (uint32_t)(uintptr_t)function_table + cpuid_offset;
     ff_addresses.mul_overflow = (uint32_t)(uintptr_t)function_table + mul_overflow_offset;
+
+    // Fill in global arch_{enter,leave}_translated_code pointers
+    arch_enter_translated_code_ptr = (decltype(arch_enter_translated_code_ptr))((uintptr_t)function_table + enter_translated_code_offset);
+    arch_leave_translated_code_ptr = (decltype(arch_leave_translated_code_ptr))((uintptr_t)function_table + leave_translated_code_offset);
 
     pr_debug("Emitted function table to %p\n", function_table);
     return status_code::SUCCESS;

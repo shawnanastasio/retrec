@@ -29,8 +29,8 @@
 //
 // Common definitions
 //
-extern "C" void arch_enter_translated_code(void *code, void *runtime_context);
-extern "C" void arch_leave_translated_code();
+extern void (*arch_enter_translated_code_ptr)(void *runtime_context);
+extern void (*arch_leave_translated_code_ptr)();
 
 //
 // Arch detection and dependant inclusion

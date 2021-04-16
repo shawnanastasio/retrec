@@ -21,7 +21,6 @@ add_executable(retrec
     arch/ppc64le/codegen/codegen_types.h
     arch/ppc64le/codegen/register_allocator.cpp
     arch/ppc64le/codegen/register_allocator.h
-    arch/ppc64le/codegen/thunks.cpp
     arch/ppc64le/cpu_context_ppc64le.h
     arch/ppc64le/llir/llir_registers_ppc64le.h
     arch/ppc64le/runtime_context_ppc64le.cpp
