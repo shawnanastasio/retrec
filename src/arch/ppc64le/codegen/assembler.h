@@ -1100,6 +1100,22 @@ public:
         }, rt, bfa);
     }
 
+    // 4.6 Floating Point Instructions
+
+    void lfd(uint8_t frt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting lfd f%u, %d(r%u)\n", frt, d, ra);
+        EMIT_INSN(Operation::LFD, [=] {
+            return self->d_form(50, frt, ra, d);
+        }, frt, ra, d);
+    }
+
+    void stfd(uint8_t frt, uint8_t ra, int16_t d) {
+        ASM_LOG("Emitting stfd f%u, %d(r%u)\n", frt, d, ra);
+        EMIT_INSN(Operation::STFD, [=] {
+            return self->d_form(54, frt, ra, d);
+        }, frt, ra, d);
+    }
+
     // 7.6.3 VSX Instructions
 
     // VSX Load/Store
@@ -1158,6 +1174,46 @@ public:
 
 #undef NORMALIZE_VSX_REGISTERS
 #undef NORMALIZE_VSX_REGISTER
+
+    //
+    // Book II
+    //
+
+    // 4.3.1 Instruction Cache Instructions
+
+    void icbi(uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting icbi r%u, r%u\n", ra, rb);
+        EMIT_INSN(Operation::ICBI, [=] {
+            return self->x_form(31, 0, ra, rb, 982, 0);
+        }, ra, rb);
+    }
+
+    // 4.3.2 Data Cache Instructions
+
+    void dcbst(uint8_t ra, uint8_t rb) {
+        ASM_LOG("Emitting dcbst r%u, r%u\n", ra, rb);
+        EMIT_INSN(Operation::DCBST, [=] {
+            return self->x_form(31, 0, ra, rb, 54, 0);
+        }, ra, rb);
+    }
+
+    // 4.6.1 Instruction Synchronize Instruction
+    void isync() {
+        ASM_LOG("Emitting isync\n");
+        EMIT_INSN(Operation::ISYNC, [=] {
+            return self->xl_form(19, 0, 0, 0, 150, 0);
+        });
+    }
+
+    // 4.6.3 Memory Barrier Instructions
+
+    void sync(uint8_t l) {
+        ASM_LOG("Emitting sync %u\n", l);
+        EMIT_INSN(Operation::SYNC, [=] {
+            check_mask(l, 0b11U);
+            return self->x_form(31, l, 0, 0, 598, 0);
+        }, l);
+    }
 
     //
     // Book III

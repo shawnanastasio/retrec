@@ -56,11 +56,14 @@
     x(CROR, &assembler::cror) \
     x(CRORC, &assembler::crorc) \
     x(CRXOR, &assembler::crxor) \
+    x(DCBST, &assembler::dcbst) \
     x(EQV, &assembler::creqv) \
     x(EXTSB, &assembler::extsb) \
     x(EXTSH, &assembler::extsh) \
     x(EXTSW, &assembler::extsw) \
+    x(ICBI, &assembler::icbi) \
     x(ISEL, &assembler::isel) \
+    x(ISYNC, &assembler::isync) \
     x(LBZ, &assembler::lbz) \
     x(LBZU, &assembler::lbzu) \
     x(LBZUX, &assembler::lbzux) \
@@ -69,6 +72,7 @@
     x(LDU, &assembler::ldu) \
     x(LDUX, &assembler::ldux) \
     x(LDX, &assembler::ldx) \
+    x(LFD, &assembler::lfd) \
     x(LHA, &assembler::lha) \
     x(LHAU, &assembler::lhau) \
     x(LHAUX, &assembler::lhaux) \
@@ -131,6 +135,7 @@
     x(STDU, &assembler::stdu) \
     x(STDUX, &assembler::stdux) \
     x(STDX, &assembler::stdx) \
+    x(STFD, &assembler::stfd) \
     x(STH, &assembler::sth) \
     x(STHU, &assembler::sthu) \
     x(STHUX, &assembler::sthux) \
@@ -144,6 +149,7 @@
     x(SUB, &assembler::sub) \
     x(SUBC, &assembler::subc) \
     x(SUBE, &assembler::sube) \
+    x(SYNC, &assembler::sync) \
     x(XOR, &assembler::_xor) \
     x(XXLOR, &assembler::xxlor) \
     x(INVALID, &assembler::invalid) \
