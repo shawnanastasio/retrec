@@ -27,7 +27,7 @@
 
 namespace retrec {
 
-struct cpu_context_ppc64le {
+struct alignas(16) cpu_context_ppc64le {
     int64_t gprs[32] { 0 };
     int64_t lr { 0 };
     int64_t cr { 0 };

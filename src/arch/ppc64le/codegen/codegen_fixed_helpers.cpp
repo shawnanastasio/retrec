@@ -806,13 +806,13 @@ void codegen_ppc64le<T>::macro$call_native_function(gen_context &ctx, Args... ar
         // Store the register on the stack using the correct instruction for its type
         switch (llir::PPC64RegisterGetType(reg)) {
             case llir::PPC64RegisterType::GPR:
-                a.stdu(llir::PPC64RegisterGPRIndex(reg), GPR_SP, -8);
+                a.stdu(llir::PPC64RegisterGPRIndex(reg), GPR_SP, -16);
                 break;
 
             case llir::PPC64RegisterType::SPECIAL:
                 if (reg == llir::PPC64Register::CR) {
                     a.mfcr(scratch1_gpr);
-                    a.stdu(scratch1_gpr, GPR_SP, -8);
+                    a.stdu(scratch1_gpr, GPR_SP, -16);
                 } else { TODO(); }
 
                 break;
@@ -861,36 +861,34 @@ void codegen_ppc64le<T>::macro$call_native_function(gen_context &ctx, Args... ar
 
     // Restore SP and preserved registers
     a.mr(GPR_SP, scratch2_gpr);
-    int16_t stack_offset = -8;
+    int16_t stack_offset = -16;
     for (auto reg : difference) {
         // Store the register on the stack using the correct instruction for its type
         switch (llir::PPC64RegisterGetType(reg)) {
             case llir::PPC64RegisterType::GPR:
                 a.ld(llir::PPC64RegisterGPRIndex(reg), GPR_SP, stack_offset);
-                stack_offset += -8;
                 break;
 
             case llir::PPC64RegisterType::SPECIAL:
                 if (reg == llir::PPC64Register::CR) {
                     a.ld(scratch1_gpr, GPR_SP, stack_offset);
                     a.mtcr(scratch1_gpr);
-                    stack_offset += -8;
                 } else { TODO(); }
 
                 break;
 
             case llir::PPC64RegisterType::VSR:
                 a.lxv(llir::PPC64RegisterVSRIndex(reg), GPR_SP, stack_offset);
-                stack_offset += -16;
                 break;
 
             case llir::PPC64RegisterType::VR:
                 a.lxv(32 + llir::PPC64RegisterVRIndex(reg), GPR_SP, stack_offset);
-                stack_offset += -16;
                 break;
 
             default:
                 TODO();
         }
+
+        stack_offset += -16;
     }
 }

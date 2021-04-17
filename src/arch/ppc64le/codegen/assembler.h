@@ -205,10 +205,14 @@ public:
         if constexpr (std::is_unsigned_v<ValT>) {
             return (val & mask) == val;
         } else {
+            // Turn mask's most significant 1 to a 0 to account for lost sign bit and check
+            auto leading_zeros = clz(mask);
+            mask &= ~(1U << ((sizeof(mask) * 8) - leading_zeros - 1));
+
             if (val < 0) {
-                return (-val & (mask >> 1)) == static_cast<MaskT>(-val);
+                return (-val & mask) == static_cast<MaskT>(-val);
             } else {
-                return (val & (mask >> 1)) == static_cast<MaskT>(val);
+                return (val & mask) == static_cast<MaskT>(val);
             }
         }
     }

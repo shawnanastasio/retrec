@@ -120,6 +120,18 @@ constexpr std::underlying_type_t<EnumT> enum_cast(EnumT val) {
     classname(const classname &&other) = delete; \
     classname& operator=(classname &&other) = delete;
 
+template <typename T>
+uint32_t clz(T) {
+    static_assert(!std::is_same_v<T, T>, "Unimplemented clz for this type");
+    return 0;
+}
+template <>
+inline uint32_t clz<unsigned short>(unsigned short val) { return __builtin_clz(val) - 16; }
+template <>
+inline uint32_t clz<unsigned int>(unsigned int val) { return __builtin_clz(val); }
+template <>
+inline uint32_t clz<unsigned long>(unsigned long val) { return __builtin_clzl(val); }
+
 //
 // Logging
 //
