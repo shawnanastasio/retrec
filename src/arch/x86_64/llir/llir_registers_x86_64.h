@@ -42,7 +42,16 @@
     x(R13) \
     x(R14) \
     x(R15) \
-    /* X87 regs */\
+    /* x87 regs (absolute address) */\
+    x(FR0) \
+    x(FR1) \
+    x(FR2) \
+    x(FR3) \
+    x(FR4) \
+    x(FR5) \
+    x(FR6) \
+    x(FR7) \
+    /* X87 regs (relative to TOP)*/\
     x(ST0) \
     x(ST1) \
     x(ST2) \

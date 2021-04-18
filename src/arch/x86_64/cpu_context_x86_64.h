@@ -47,7 +47,7 @@ struct cpu_context_x86_64 {
     uint16_t x87_opcode { 0 };
 
     // Pseudo-register for storing the offset from x87[0] where the stack TOP is, in bytes.
-    uint16_t st_top_offset { 7 * sizeof(x87_reg) };
+    uint16_t st_top_offset { 0 };
 
     // SSE registers
     reg128 xmm[16];
@@ -76,16 +76,16 @@ struct cpu_context_x86_64 {
                     return &gprs[(size_t)reg - (size_t)llir::X86_64Register::RAX];
                 break;
 
-            case llir::X86_64Register::ST0:
-            case llir::X86_64Register::ST1:
-            case llir::X86_64Register::ST2:
-            case llir::X86_64Register::ST3:
-            case llir::X86_64Register::ST4:
-            case llir::X86_64Register::ST5:
-            case llir::X86_64Register::ST6:
-            case llir::X86_64Register::ST7:
+            case llir::X86_64Register::FR0:
+            case llir::X86_64Register::FR1:
+            case llir::X86_64Register::FR2:
+            case llir::X86_64Register::FR3:
+            case llir::X86_64Register::FR4:
+            case llir::X86_64Register::FR5:
+            case llir::X86_64Register::FR6:
+            case llir::X86_64Register::FR7:
                 if constexpr (types_are_same_v<T*, decltype(&x87[0])>)
-                    return &x87[(size_t)reg - (size_t)llir::X86_64Register::ST0];
+                    return &x87[(size_t)reg - (size_t)llir::X86_64Register::FR0];
                 break;
 
             case llir::X86_64Register::XMM0:

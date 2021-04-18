@@ -219,14 +219,14 @@ void runtime_context_ppc64le::dump_emulated_machine_state() {
     auto get_st_lo = [&](llir::X86_64Register reg) {
         return runtime_context_get_reg<TargetTraitsX86_64, cpu_context_x86_64::x87_reg>(this, reg)->lo;
     };
-    fmt(0, 2,  " st0=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST0), get_st_lo(llir::X86_64Register::ST0));
-    fmt(1, 2,  " st1=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST1), get_st_lo(llir::X86_64Register::ST1));
-    fmt(2, 2,  " st2=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST2), get_st_lo(llir::X86_64Register::ST2));
-    fmt(3, 2,  " st3=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST3), get_st_lo(llir::X86_64Register::ST3));
-    fmt(4, 2,  " st4=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST4), get_st_lo(llir::X86_64Register::ST4));
-    fmt(5, 2,  " st5=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST5), get_st_lo(llir::X86_64Register::ST5));
-    fmt(6, 2,  " st6=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST6), get_st_lo(llir::X86_64Register::ST6));
-    fmt(7, 2,  " st7=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST7), get_st_lo(llir::X86_64Register::ST7));
+    fmt(0, 2,  " fr0=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR0), get_st_lo(llir::X86_64Register::FR0));
+    fmt(1, 2,  " fr1=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR1), get_st_lo(llir::X86_64Register::FR1));
+    fmt(2, 2,  " fr2=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR2), get_st_lo(llir::X86_64Register::FR2));
+    fmt(3, 2,  " fr3=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR3), get_st_lo(llir::X86_64Register::FR3));
+    fmt(4, 2,  " fr4=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR4), get_st_lo(llir::X86_64Register::FR4));
+    fmt(5, 2,  " fr5=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR5), get_st_lo(llir::X86_64Register::FR5));
+    fmt(6, 2,  " fr6=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR6), get_st_lo(llir::X86_64Register::FR6));
+    fmt(7, 2,  " fr7=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR7), get_st_lo(llir::X86_64Register::FR7));
 
 #undef fmt
 
