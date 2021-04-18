@@ -168,7 +168,7 @@ void append_fmt_line(std::vector<std::string> &strs, size_t col_sizes[N], size_t
 
 void runtime_context_ppc64le::dump_emulated_machine_state() {
     std::vector<std::string> s;
-    size_t col_sizes[2] = {25, 42};
+    size_t col_sizes[2] = {25, 43};
 
 #define fmt(...) \
     append_fmt_line<ARRAY_SIZE(col_sizes)>(s, col_sizes, __VA_ARGS__)
@@ -190,43 +190,40 @@ void runtime_context_ppc64le::dump_emulated_machine_state() {
     fmt(14, 0, "r14=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R14));
     fmt(15, 0, "r15=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R15));
 
-    auto get_xmm_hi = [&](llir::X86_64Register reg) {
-        return runtime_context_get_reg<TargetTraitsX86_64, reg128>(this, reg)->le.hi;
+    auto fmt_xmm = [&](size_t line, size_t col, llir::X86_64Register reg) {
+        auto& val = *runtime_context_get_reg<TargetTraitsX86_64, reg128>(this, reg);
+        fmt(line,  col, "%sxmm%d=0x%016lx%016lx", ((int)reg < (int)llir::X86_64Register::XMM10) ? " " : "",
+                (int)reg - (int)llir::X86_64Register::XMM0, val.le.hi, val.le.lo);
     };
-    auto get_xmm_lo = [&](llir::X86_64Register reg) {
-        return runtime_context_get_reg<TargetTraitsX86_64, reg128>(this, reg)->le.lo;
-    };
-    fmt(0,  1, " xmm0=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM0), get_xmm_lo(llir::X86_64Register::XMM0));
-    fmt(1,  1, " xmm1=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM1), get_xmm_lo(llir::X86_64Register::XMM1));
-    fmt(2,  1, " xmm2=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM2), get_xmm_lo(llir::X86_64Register::XMM2));
-    fmt(3,  1, " xmm3=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM3), get_xmm_lo(llir::X86_64Register::XMM3));
-    fmt(4,  1, " xmm4=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM4), get_xmm_lo(llir::X86_64Register::XMM4));
-    fmt(5,  1, " xmm5=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM5), get_xmm_lo(llir::X86_64Register::XMM5));
-    fmt(6,  1, " xmm6=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM6), get_xmm_lo(llir::X86_64Register::XMM6));
-    fmt(7,  1, " xmm7=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM7), get_xmm_lo(llir::X86_64Register::XMM7));
-    fmt(8,  1, " xmm8=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM8), get_xmm_lo(llir::X86_64Register::XMM8));
-    fmt(9,  1, " xmm9=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM9), get_xmm_lo(llir::X86_64Register::XMM9));
-    fmt(10, 1, "xmm10=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM10), get_xmm_lo(llir::X86_64Register::XMM10));
-    fmt(11, 1, "xmm11=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM11), get_xmm_lo(llir::X86_64Register::XMM11));
-    fmt(12, 1, "xmm12=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM12), get_xmm_lo(llir::X86_64Register::XMM12));
-    fmt(13, 1, "xmm13=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM13), get_xmm_lo(llir::X86_64Register::XMM13));
-    fmt(14, 1, "xmm14=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM14), get_xmm_lo(llir::X86_64Register::XMM14));
-    fmt(15, 1, "xmm15=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM15), get_xmm_lo(llir::X86_64Register::XMM15));
+    fmt_xmm(0, 1,  llir::X86_64Register::XMM0);
+    fmt_xmm(1, 1,  llir::X86_64Register::XMM1);
+    fmt_xmm(2, 1,  llir::X86_64Register::XMM2);
+    fmt_xmm(3, 1,  llir::X86_64Register::XMM3);
+    fmt_xmm(4, 1,  llir::X86_64Register::XMM4);
+    fmt_xmm(5, 1,  llir::X86_64Register::XMM5);
+    fmt_xmm(6, 1,  llir::X86_64Register::XMM6);
+    fmt_xmm(7, 1,  llir::X86_64Register::XMM7);
+    fmt_xmm(8, 1,  llir::X86_64Register::XMM8);
+    fmt_xmm(9, 1,  llir::X86_64Register::XMM9);
+    fmt_xmm(10, 1, llir::X86_64Register::XMM10);
+    fmt_xmm(11, 1, llir::X86_64Register::XMM11);
+    fmt_xmm(12, 1, llir::X86_64Register::XMM12);
+    fmt_xmm(13, 1, llir::X86_64Register::XMM13);
+    fmt_xmm(14, 1, llir::X86_64Register::XMM14);
+    fmt_xmm(15, 1, llir::X86_64Register::XMM15);
 
-    auto get_st_hi = [&](llir::X86_64Register reg) {
-        return runtime_context_get_reg<TargetTraitsX86_64, cpu_context_x86_64::x87_reg>(this, reg)->hi;
+    auto fmt_fr = [&](size_t line, size_t col, llir::X86_64Register reg) {
+        auto &val = *runtime_context_get_reg<TargetTraitsX86_64, cpu_context_x86_64::x87_reg>(this, reg);
+        fmt(line, col, "fr%d=0x%04x%016lx", (int)reg - (int)llir::X86_64Register::FR0, val.hi, val.lo);
     };
-    auto get_st_lo = [&](llir::X86_64Register reg) {
-        return runtime_context_get_reg<TargetTraitsX86_64, cpu_context_x86_64::x87_reg>(this, reg)->lo;
-    };
-    fmt(0, 2,  " fr0=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR0), get_st_lo(llir::X86_64Register::FR0));
-    fmt(1, 2,  " fr1=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR1), get_st_lo(llir::X86_64Register::FR1));
-    fmt(2, 2,  " fr2=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR2), get_st_lo(llir::X86_64Register::FR2));
-    fmt(3, 2,  " fr3=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR3), get_st_lo(llir::X86_64Register::FR3));
-    fmt(4, 2,  " fr4=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR4), get_st_lo(llir::X86_64Register::FR4));
-    fmt(5, 2,  " fr5=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR5), get_st_lo(llir::X86_64Register::FR5));
-    fmt(6, 2,  " fr6=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR6), get_st_lo(llir::X86_64Register::FR6));
-    fmt(7, 2,  " fr7=0x%04x%016lx", get_st_hi(llir::X86_64Register::FR7), get_st_lo(llir::X86_64Register::FR7));
+    fmt_fr(0, 2,  llir::X86_64Register::FR0);
+    fmt_fr(1, 2,  llir::X86_64Register::FR1);
+    fmt_fr(2, 2,  llir::X86_64Register::FR2);
+    fmt_fr(3, 2,  llir::X86_64Register::FR3);
+    fmt_fr(4, 2,  llir::X86_64Register::FR4);
+    fmt_fr(5, 2,  llir::X86_64Register::FR5);
+    fmt_fr(6, 2,  llir::X86_64Register::FR6);
+    fmt_fr(7, 2,  llir::X86_64Register::FR7);
 
 #undef fmt
 
