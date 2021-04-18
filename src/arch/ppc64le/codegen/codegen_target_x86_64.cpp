@@ -68,33 +68,22 @@ void codegen_ppc64le<TargetTraitsX86_64>::llir$loadstore_float(gen_context &ctx,
     assert(st_op.memory().x86_64().base.x86_64 == llir::X86_64Register::ST0);
     auto st_top_offset_reg = ctx.reg_allocator().allocate_gpr();
     ctx.assembler->lhz(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
+    auto tmp = ctx.reg_allocator().allocate_gpr();
 
     // Decrement the stack pointer if requested
-    switch (st_op.memory().update) {
-        case llir::MemOp::Update::PRE:
-        {
-            assert(insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD);
-            assert(st_op.memory().x86_64().disp == -80);
+    if (st_op.memory().update == llir::MemOp::Update::PRE) {
+        assert(insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD);
+        assert(st_op.memory().x86_64().disp == -80);
 
-            // Decrement the stack pointer
-            ctx.assembler->addi(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), -(int16_t)sizeof(cpu_context_x86_64::x87_reg));
+        // Decrement the stack pointer
+        ctx.assembler->addi(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), -(int16_t)sizeof(cpu_context_x86_64::x87_reg));
 
-            // Apply offset mask to account for underflow
-            auto tmp = ctx.reg_allocator().allocate_gpr();
-            ctx.assembler->li(tmp.gpr(), cpu_context_x86_64::st_offset_mask);
-            ctx.assembler->_and(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), tmp.gpr());
+        // Apply offset mask to account for underflow
+        ctx.assembler->li(tmp.gpr(), cpu_context_x86_64::st_offset_mask);
+        ctx.assembler->_and(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), tmp.gpr());
 
-            // Write the new offset back
-            ctx.assembler->sth(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
-            break;
-        }
-
-        case llir::MemOp::Update::POST:
-            assert(insn.loadstore().op == llir::LoadStore::Op::FLOAT_STORE);
-            TODO();
-
-        case llir::MemOp::Update::NONE:
-            break;
+        // Write the new offset back
+        ctx.assembler->sth(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
     }
 
     auto increment_mem_op = [](const llir::Operand &mem_op, int64_t amount) {
@@ -107,38 +96,39 @@ void codegen_ppc64le<TargetTraitsX86_64>::llir$loadstore_float(gen_context &ctx,
     constexpr int16_t x87_base_off = offsetof(runtime_context_ppc64le, x86_64_ucontext.x87);
 
     // Perform load/store operation
-    auto tmp = ctx.reg_allocator().allocate_gpr();
-    if (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD) {
-        switch (mem_op.width) {
-            case llir::Operand::Width::_80BIT:
-                if (mem_op_is_x87) {
-                    int16_t offset = 16 * ((int16_t)mem_op.memory().x86_64().base.x86_64 - (int16_t)llir::X86_64Register::ST0);
-                    if (st_op.memory().update == llir::MemOp::Update::PRE)
-                        offset += 16;
+    switch (mem_op.width) {
+        case llir::Operand::Width::_80BIT:
+            if (mem_op_is_x87) {
+                int16_t offset = 16 * ((int16_t)mem_op.memory().x86_64().base.x86_64 - (int16_t)llir::X86_64Register::ST0);
+                if (st_op.memory().update == llir::MemOp::Update::PRE)
+                    offset += 16;
 
-                    // Add the offset a src register and mask for overflow
-                    auto src_st_reg = ctx.reg_allocator().allocate_gpr();
-                    ctx.assembler->addi(src_st_reg.gpr(), st_top_offset_reg.gpr(), offset);
-                    ctx.assembler->li(tmp.gpr(), cpu_context_x86_64::st_offset_mask);
-                    ctx.assembler->_and(src_st_reg.gpr(), src_st_reg.gpr(), tmp.gpr());
+                // Add the offset a src register and mask for overflow
+                auto src_st_reg = ctx.reg_allocator().allocate_gpr();
+                ctx.assembler->addi(src_st_reg.gpr(), st_top_offset_reg.gpr(), offset);
+                ctx.assembler->li(tmp.gpr(), cpu_context_x86_64::st_offset_mask);
+                ctx.assembler->_and(src_st_reg.gpr(), src_st_reg.gpr(), tmp.gpr());
 
-                    // Add GPR_FIXED_RUNTIME_CTX to src and dst pointer registers
-                    ctx.assembler->add(src_st_reg.gpr(), src_st_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
-                    ctx.assembler->add(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
+                // Add GPR_FIXED_RUNTIME_CTX to src and dst pointer registers
+                ctx.assembler->add(src_st_reg.gpr(), src_st_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
+                ctx.assembler->add(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
 
-                    // Load src.lo into tmp and store into dest.lo
-                    ctx.assembler->ld(tmp.gpr(), src_st_reg.gpr(), x87_base_off + 0);
-                    ctx.assembler->std(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 0);
+                // Load src.lo into tmp and store into dest.lo
+                auto &src = (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD) ? src_st_reg : st_top_offset_reg;
+                auto &dst = (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD) ? st_top_offset_reg : src_st_reg;
+                ctx.assembler->ld(tmp.gpr(), src.gpr(), x87_base_off + 0);
+                ctx.assembler->std(tmp.gpr(), dst.gpr(), x87_base_off + 0);
 
-                    // Load src.hi into tmp and store into dest.hi
-                    ctx.assembler->lhz(tmp.gpr(), src_st_reg.gpr(), x87_base_off + 8);
-                    ctx.assembler->sth(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 8);
-                } else {
-                    // Add GPR_FIXED_RUNTIME_CTX to the offset reg to st_top_offset_reg. This way
-                    // the actual x87 reg can be accessed from an immediate displacement from the register
-                    ctx.assembler->add(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
+                // Load src.hi into tmp and store into dest.hi
+                ctx.assembler->lhz(tmp.gpr(), src.gpr(), x87_base_off + 8);
+                ctx.assembler->sth(tmp.gpr(), dst.gpr(), x87_base_off + 8);
+            } else {
+                // Add GPR_FIXED_RUNTIME_CTX to the offset reg to st_top_offset_reg. This way
+                // the actual x87 reg can be accessed from an immediate displacement from the register
+                ctx.assembler->add(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX);
 
-                    // Copy the first 8 bytes of the fpu reg and store it
+                if (insn.loadstore().op == llir::LoadStore::Op::FLOAT_LOAD) {
+                    // Copy the first 8 bytes of the memory location and store it in the fpu reg
                     macro$loadstore_gpr(ctx, tmp.gpr(), mem_op, llir::LoadStore::Op::LOAD,
                                         llir::Register::Mask::Full64, true, insn);
                     ctx.assembler->std(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 0);
@@ -148,18 +138,45 @@ void codegen_ppc64le<TargetTraitsX86_64>::llir$loadstore_float(gen_context &ctx,
                     macro$loadstore_gpr(ctx, tmp.gpr(), new_mem_op, llir::LoadStore::Op::LOAD,
                                         llir::Register::Mask::LowLow16, true, insn);
                     ctx.assembler->sth(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 8);
+                } else {
+                    // Load the first 8 bytes from the fpu reg and store it to the memop
+                    ctx.assembler->ld(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 0);
+                    macro$loadstore_gpr(ctx, tmp.gpr(), mem_op, llir::LoadStore::Op::STORE,
+                                        llir::Register::Mask::Full64, true, insn);
+
+                    // Load the next 2 bytes and store it to memop+8
+                    auto new_mem_op = increment_mem_op(mem_op, 8);
+                    ctx.assembler->lhz(tmp.gpr(), st_top_offset_reg.gpr(), x87_base_off + 8);
+                    macro$loadstore_gpr(ctx, tmp.gpr(), new_mem_op, llir::LoadStore::Op::STORE,
+                                        llir::Register::Mask::LowLow16, true, insn);
                 }
-                break;
+            }
+            break;
 
-            case llir::Operand::Width::_64BIT:
-            case llir::Operand::Width::_32BIT:
-                TODO(); // Load from m32fp/m64fp
+        case llir::Operand::Width::_64BIT:
+        case llir::Operand::Width::_32BIT:
+            TODO(); // Load from m32fp/m64fp
 
-            default:
-                ASSERT_NOT_REACHED();
-        }
-    } else {
-        TODO();
+        default:
+            ASSERT_NOT_REACHED();
+    }
+
+
+    // Increment the stack pointer if requested
+    if (st_op.memory().update == llir::MemOp::Update::POST) {
+        assert(insn.loadstore().op == llir::LoadStore::Op::FLOAT_STORE);
+        assert(st_op.memory().x86_64().disp == 80);
+
+        // Increment the stack pointer
+        ctx.assembler->lhz(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
+        ctx.assembler->addi(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), (int16_t)sizeof(cpu_context_x86_64::x87_reg));
+
+        // Apply offset mask to account for underflow
+        ctx.assembler->li(tmp.gpr(), cpu_context_x86_64::st_offset_mask);
+        ctx.assembler->_and(st_top_offset_reg.gpr(), st_top_offset_reg.gpr(), tmp.gpr());
+
+        // Write the new offset back
+        ctx.assembler->sth(st_top_offset_reg.gpr(), GPR_FIXED_RUNTIME_CTX, offsetof(runtime_context_ppc64le, x86_64_ucontext.st_top_offset));
     }
 }
 

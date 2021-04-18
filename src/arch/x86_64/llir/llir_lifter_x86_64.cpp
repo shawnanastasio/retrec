@@ -524,6 +524,26 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
 
             break;
 
+        case X86_INS_FSTP:
+        case X86_INS_FST:
+        {
+            bool pop = insn->id == X86_INS_FSTP;
+            assert(detail->x86.op_count == 1);
+            llinsn.dest_cnt = 1;
+            llinsn.src_cnt = 1;
+            llinsn.loadstore().op = llir::LoadStore::Op::FLOAT_STORE;
+            fill_operand(detail->x86.operands[0], llinsn.dest[0]);
+
+            llinsn.src[0].memory().x86_64().base = get_reg(X86_REG_ST0);
+            llinsn.src[0].width = llir::Operand::Width::_80BIT;
+            if (pop) {
+                llinsn.src[0].memory().x86_64().disp = 80;
+                llinsn.src[0].memory().update = llir::MemOp::Update::POST;
+            }
+
+            break;
+        }
+
         // <128-bit Legacy SSE MOVs
         case X86_INS_MOVD:
             require_alignment = 0;
