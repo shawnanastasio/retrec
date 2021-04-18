@@ -1257,6 +1257,8 @@ public:
 #undef UNPACK_ARGS
 };
 
+#ifdef PPC64LE_ASSEMBLER_GENERATE_TYPE_LOOKUP
+
 /**
  * Define a lookup table that allows us to map constexpr Operation values to their
  * corresponding assembler:: method type. This can be used in conjunction with the
@@ -1277,6 +1279,8 @@ template <size_t i, Operation op>
 auto &insn_arg(instruction_stream_entry &insn) {
     return insn.parameter<i, operations_look_up_type<op>>(nullptr);
 }
+
+#endif
 
 } // namespace ppc64le
 

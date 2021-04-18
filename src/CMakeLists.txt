@@ -18,6 +18,7 @@ add_executable(retrec
     arch/ppc64le/codegen/codegen_ppc64le.cpp
     arch/ppc64le/codegen/codegen_ppc64le.h
     arch/ppc64le/codegen/codegen_ppc64le_internal.h
+    arch/ppc64le/codegen/codegen_target_x86_64.cpp
     arch/ppc64le/codegen/codegen_types.cpp
     arch/ppc64le/codegen/codegen_types.h
     arch/ppc64le/codegen/register_allocator.cpp
