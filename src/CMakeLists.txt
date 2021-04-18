@@ -10,6 +10,7 @@ add_executable(retrec
     allocators.cpp
     allocators.h
     arch/arch.h
+    arch/definitions.h
     arch/ppc64le/codegen/abi.h
     arch/ppc64le/codegen/assembler.cpp
     arch/ppc64le/codegen/assembler.h

@@ -47,8 +47,15 @@ template <typename TargetTraits, typename RetT>
 RetT *runtime_context_get_reg(runtime_context_ppc64le *ctx, typename TargetTraits::RegisterT reg) {
     // For statically allocated registers, return the corresponding ppc64 register from the translated context
     for (auto &pair : TargetABIMapping<TargetTraits>::fixed_regs) {
-        if (reg == pair.target && (llir::PPC64RegisterGetType(pair.host) == llir::PPC64RegisterType::GPR)) {
-            return &ctx->host_translated_context.gprs[llir::PPC64RegisterGPRIndex(pair.host)];
+        if (reg != pair.target)
+            continue;
+
+        if (llir::PPC64RegisterGetType(pair.host) == llir::PPC64RegisterType::GPR) {
+            if constexpr (types_are_same_v<RetT, decltype(ctx->host_translated_context.gprs[0])>)
+                return &ctx->host_translated_context.gprs[llir::PPC64RegisterGPRIndex(pair.host)];
+        } else if (llir::PPC64RegisterGetType(pair.host) == llir::PPC64RegisterType::VSR) {
+            if constexpr (types_are_same_v<RetT, decltype(ctx->host_translated_context.vsr[0])>)
+                return &ctx->host_translated_context.vsr[llir::PPC64RegisterVSRIndex(pair.host)];
         }
     }
 
@@ -125,12 +132,110 @@ status_code runtime_context_ppc64le::execute() {
         if (should_exit) {
             pr_info("Emulation halted after native function call.\n");
             pr_info("Exit code: %d\n", exit_code);
+            if constexpr (RETREC_DEBUG_BUILD)
+                dump_emulated_machine_state();
             break;
         }
     }
 
     return status_code::HALT;
 }
+
+#ifdef RETREC_DEBUG_BUILD
+template <size_t N, typename... Args>
+void append_fmt_line(std::vector<std::string> &strs, size_t col_sizes[N], size_t idx, size_t col, const char *fmt, Args... args) {
+    auto cumulative_col_size = [&] {
+        size_t total = 0;
+        for (size_t i = 0; i < col && i < N; i++)
+            total += col_sizes[i];
+
+        return total;
+    };
+
+    char buf[128];
+    snprintf(buf, sizeof(buf), fmt, args...);
+    if (col == 0) {
+        strs.insert(strs.begin() + idx, buf);
+    } else {
+        assert(idx < strs.size());
+        auto &cur = strs[idx];
+        size_t cumulative_size = cumulative_col_size();
+        for (size_t i = cur.size(); i < cumulative_size; i++)
+            cur += " ";
+        cur += buf;
+    }
+}
+
+void runtime_context_ppc64le::dump_emulated_machine_state() {
+    std::vector<std::string> s;
+    size_t col_sizes[2] = {25, 42};
+
+#define fmt(...) \
+    append_fmt_line<ARRAY_SIZE(col_sizes)>(s, col_sizes, __VA_ARGS__)
+
+    fmt(0,  0, "rax=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RAX));
+    fmt(1,  0, "rbx=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RBX));
+    fmt(2,  0, "rcx=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RCX));
+    fmt(3,  0, "rdx=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RDX));
+    fmt(4,  0, "rsp=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RSP));
+    fmt(5,  0, "rbp=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RBP));
+    fmt(6,  0, "rsi=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RSI));
+    fmt(7,  0, "rdi=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::RDI));
+    fmt(8,  0, " r8=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R8));
+    fmt(9,  0, " r9=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R9));
+    fmt(10, 0, "r10=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R10));
+    fmt(11, 0, "r11=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R11));
+    fmt(12, 0, "r12=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R12));
+    fmt(13, 0, "r13=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R13));
+    fmt(14, 0, "r14=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R14));
+    fmt(15, 0, "r15=0x%016lx", *runtime_context_get_reg<TargetTraitsX86_64, int64_t>(this, llir::X86_64Register::R15));
+
+    auto get_xmm_hi = [&](llir::X86_64Register reg) {
+        return runtime_context_get_reg<TargetTraitsX86_64, reg128>(this, reg)->le.hi;
+    };
+    auto get_xmm_lo = [&](llir::X86_64Register reg) {
+        return runtime_context_get_reg<TargetTraitsX86_64, reg128>(this, reg)->le.lo;
+    };
+    fmt(0,  1, " xmm0=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM0), get_xmm_lo(llir::X86_64Register::XMM0));
+    fmt(1,  1, " xmm1=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM1), get_xmm_lo(llir::X86_64Register::XMM1));
+    fmt(2,  1, " xmm2=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM2), get_xmm_lo(llir::X86_64Register::XMM2));
+    fmt(3,  1, " xmm3=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM3), get_xmm_lo(llir::X86_64Register::XMM3));
+    fmt(4,  1, " xmm4=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM4), get_xmm_lo(llir::X86_64Register::XMM4));
+    fmt(5,  1, " xmm5=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM5), get_xmm_lo(llir::X86_64Register::XMM5));
+    fmt(6,  1, " xmm6=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM6), get_xmm_lo(llir::X86_64Register::XMM6));
+    fmt(7,  1, " xmm7=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM7), get_xmm_lo(llir::X86_64Register::XMM7));
+    fmt(8,  1, " xmm8=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM8), get_xmm_lo(llir::X86_64Register::XMM8));
+    fmt(9,  1, " xmm9=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM9), get_xmm_lo(llir::X86_64Register::XMM9));
+    fmt(10, 1, "xmm10=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM10), get_xmm_lo(llir::X86_64Register::XMM10));
+    fmt(11, 1, "xmm11=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM11), get_xmm_lo(llir::X86_64Register::XMM11));
+    fmt(12, 1, "xmm12=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM12), get_xmm_lo(llir::X86_64Register::XMM12));
+    fmt(13, 1, "xmm13=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM13), get_xmm_lo(llir::X86_64Register::XMM13));
+    fmt(14, 1, "xmm14=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM14), get_xmm_lo(llir::X86_64Register::XMM14));
+    fmt(15, 1, "xmm15=0x%016lx%016lx", get_xmm_hi(llir::X86_64Register::XMM15), get_xmm_lo(llir::X86_64Register::XMM15));
+
+    auto get_st_hi = [&](llir::X86_64Register reg) {
+        return runtime_context_get_reg<TargetTraitsX86_64, cpu_context_x86_64::x87_reg>(this, reg)->hi;
+    };
+    auto get_st_lo = [&](llir::X86_64Register reg) {
+        return runtime_context_get_reg<TargetTraitsX86_64, cpu_context_x86_64::x87_reg>(this, reg)->lo;
+    };
+    fmt(0, 2,  " st0=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST0), get_st_lo(llir::X86_64Register::ST0));
+    fmt(1, 2,  " st1=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST1), get_st_lo(llir::X86_64Register::ST1));
+    fmt(2, 2,  " st2=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST2), get_st_lo(llir::X86_64Register::ST2));
+    fmt(3, 2,  " st3=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST3), get_st_lo(llir::X86_64Register::ST3));
+    fmt(4, 2,  " st4=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST4), get_st_lo(llir::X86_64Register::ST4));
+    fmt(5, 2,  " st5=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST5), get_st_lo(llir::X86_64Register::ST5));
+    fmt(6, 2,  " st6=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST6), get_st_lo(llir::X86_64Register::ST6));
+    fmt(7, 2,  " st7=0x%04x%016lx", get_st_hi(llir::X86_64Register::ST7), get_st_lo(llir::X86_64Register::ST7));
+
+#undef fmt
+
+    pr_debug("------ Emulated Machine State Dump ------\n");
+    for (auto &str : s)
+        pr_debug("%s\n", str.c_str());
+    pr_debug("-----------------------------------------\n");
+}
+#endif
 
 //
 // Native callbacks

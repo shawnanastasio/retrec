@@ -27,12 +27,6 @@
 #define HOST_ARCH_X86_64 0
 
 //
-// Common definitions
-//
-extern void (*arch_enter_translated_code_ptr)(void *runtime_context);
-extern void (*arch_leave_translated_code_ptr)();
-
-//
 // Arch detection and dependant inclusion
 //
 #if defined(__powerpc64__) && defined(__LITTLE_ENDIAN__) && defined(_CALL_ELF) && (_CALL_ELF == 2)

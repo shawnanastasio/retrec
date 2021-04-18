@@ -120,6 +120,25 @@ constexpr std::underlying_type_t<EnumT> enum_cast(EnumT val) {
     classname(const classname &&other) = delete; \
     classname& operator=(classname &&other) = delete;
 
+template <typename A, typename B>
+constexpr bool types_are_same() {
+    return std::is_same_v<
+        std::remove_reference_t<
+            std::remove_cv_t<
+                A
+            >
+        >,
+        std::remove_reference_t<
+            std::remove_cv_t<
+                B
+            >
+        >
+    >;
+}
+
+template <typename A, typename B>
+constexpr bool types_are_same_v = types_are_same<A, B>();
+
 template <typename T>
 uint32_t clz(T) {
     static_assert(!std::is_same_v<T, T>, "Unimplemented clz for this type");

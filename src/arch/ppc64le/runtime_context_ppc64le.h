@@ -81,6 +81,7 @@ struct runtime_context_ppc64le {
     status_code init(Architecture target_arch, void *entry, void *stack, virtual_address_mapper *vam_,
                      syscall_emulator *syscall_emu_);
     status_code execute();
+    void dump_emulated_machine_state();
 };
 static_assert(std::is_standard_layout<runtime_context_ppc64le>::value, "Runtime context must have standard layout, since we access it manually from emitted ASM.");
 static_assert(sizeof(runtime_context_ppc64le) <= 32768, "Runtime context must be accessible with signed 16-bit displacements!");
