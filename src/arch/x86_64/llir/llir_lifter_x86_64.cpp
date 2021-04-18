@@ -507,14 +507,14 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             fill_operand(detail->x86.operands[0], llinsn.src[0]);
 
             // For x87 operations, we represent the destination in a unique way:
-            // The top of the x87 register stack is represented by a pseudo-register (ST_TOP) and
+            // The top of the x87 register stack is represented by a pseudo-register (ST0) and
             // it is treated as a memory operand.
             //
             // This allows us to re-use the llir::MemOp representation for pre/post pointer incrementing
             // which cleanly fits the x87 stack-based access model.
             //
             // Specifically for FLD, the destination is represented as a memory operand with
-            //   x86_64.base=ST_TOP,
+            //   x86_64.base=ST0,
             //   x86_64.disp=-80
             //   update=PRE
             llinsn.dest[0].memory().x86_64().base = get_reg(X86_REG_ST0);
@@ -713,7 +713,12 @@ void llir_lifter_x86_64::fill_operand(cs_x86_op &op, llir::Operand &out) {
             break;
 
         case X86_OP_REG:
-            out.reg() = get_reg(op.reg);
+            // Special case: x87 registers are treated as mem
+            if (op.reg >= X86_REG_ST0 && op.reg <= X86_REG_ST7) {
+                out.memory().x86_64().base = get_reg(op.reg);
+            } else {
+                out.reg() = get_reg(op.reg);
+            }
             break;
         default:
             pr_error("Invalid operand type!\n");
@@ -831,7 +836,14 @@ llir::Register llir_lifter_x86_64::get_reg(x86_reg reg) {
         case X86_REG_R15B: ret.x86_64 = llir::X86_64Register::R15; ret.mask = llir::Register::Mask::LowLowLow8;  ret.zero_others = false; break;
 
         // X87 registers
-        case X86_REG_ST0: ret.x86_64 = llir::X86_64Register::ST_TOP; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST0: ret.x86_64 = llir::X86_64Register::ST0; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST1: ret.x86_64 = llir::X86_64Register::ST1; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST2: ret.x86_64 = llir::X86_64Register::ST2; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST3: ret.x86_64 = llir::X86_64Register::ST3; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST4: ret.x86_64 = llir::X86_64Register::ST4; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST5: ret.x86_64 = llir::X86_64Register::ST5; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST6: ret.x86_64 = llir::X86_64Register::ST6; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
+        case X86_REG_ST7: ret.x86_64 = llir::X86_64Register::ST7; ret.mask = llir::Register::Mask::Special; ret.zero_others = false; break;
 
         // SSE registers
         case X86_REG_XMM0:  ret.x86_64 = llir::X86_64Register::XMM0;  ret.mask = llir::Register::Mask::Vector128Full; break;

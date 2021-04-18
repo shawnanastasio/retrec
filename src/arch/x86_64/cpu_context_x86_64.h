@@ -48,6 +48,7 @@ struct cpu_context_x86_64 {
 
     // Pseudo-register for storing the offset from x87[0] where the stack TOP is, in bytes.
     uint16_t st_top_offset { 0 };
+    static constexpr uint16_t st_offset_mask = 0b1110000;
 
     // SSE registers
     reg128 xmm[16];

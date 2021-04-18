@@ -60,7 +60,6 @@
     x(ST5) \
     x(ST6) \
     x(ST7) \
-    x(ST_TOP) /* pseudo-register for representing ptr to top of x87 stack */\
     /* MMX regs */\
     x(MM0) \
     x(MM1) \
