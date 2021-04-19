@@ -182,6 +182,57 @@ LoadTestCase = namedtuple("LoadTestCase", ["width", "insn_str",
                                            "res_str", "f_genstrs", "f_gentest"],
                                           defaults=(None,None,None,None,None,None,None,load_test_case_genstrs,load_test_case_gentest))
 
+def x87_loadstore_mov_test_case_genstrs(test, n, f):
+    f.write("    TEST_{}_STR_PASS: .ascii \"PASS: (x87/mmx mov 0x{:x} (ST{}))\\n\"\n".format(n, test.value80, test.st_pos))
+    f.write("    TEST_{}_STR_PASS_LEN = . - TEST_{}_STR_PASS\n".format(n, n))
+    f.write("    TEST_{}_STR_FAIL: .ascii \"FAIL: (x87/mmx mov 0x{:x} (ST{}))\\n\"\n".format(n, test.value80, test.st_pos))
+    f.write("    TEST_{}_STR_FAIL_LEN = . - TEST_{}_STR_FAIL\n".format(n, n))
+
+    x = test.value80
+    f.write("    TEST_{}_VAL_STORAGE: .byte 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}\n".format(n,
+            x & 0xFF, (x >> 8) & 0xFF, (x >> 16) & 0xFF, (x >> 24) & 0xFF, (x >> 32) & 0xFF, (x >> 40) & 0xFF, (x >> 48) & 0xFF,
+            (x >> 56) & 0xFF, (x >> 64) & 0xFF, (x >> 72) & 0xFF))
+    f.write("    .lcomm TEST_{}_SCRATCH, 10\n".format(n))
+
+def x87_loadstore_mov_test_case_gentest(test, n, f):
+    f.write("{}: # Test {}\n".format(n * 10, n))
+
+    # First, load the value into the x87 reg and write it back to storage
+    f.write("    fld tbyte ptr [TEST_{}_VAL_STORAGE]\n".format(n))
+    f.write("    fstp tbyte ptr [TEST_{}_SCRATCH]\n".format(n))
+
+    # Compare the value using integer instructions
+    f.write("    mov rax, qword ptr [TEST_{}_VAL_STORAGE]\n".format(n))
+    f.write("    cmp qword ptr [TEST_{}_SCRATCH], rax\n".format(n))
+    f.write("    jne 1f\n") # Fail
+    f.write("    mov ax, word ptr [TEST_{}_VAL_STORAGE+8]\n".format(n))
+    f.write("    cmp word ptr [TEST_{}_SCRATCH+8], ax\n".format(n))
+    f.write("    jne 1f") # Fail
+
+    # Success
+    f.write("# Test {} PASS\n".format(n))
+    f.write("    print TEST_{}_STR_PASS, TEST_{}_STR_PASS_LEN\n".format(n, n))
+    f.write("    jmp 2f\n")
+
+    # Fail
+    f.write("1: # Test {} FAIL\n".format(n))
+    f.write("    print TEST_{}_STR_FAIL, TEST_{}_STR_FAIL_LEN\n".format(n, n))
+    f.write("2:\n\n")
+
+X87LoadStoreMovTestCase = namedtuple("X87LoadStoreMovTestCase", ["value80", "st_pos", "f_genstrs", "f_gentest"],
+                               defaults=[None, None, x87_loadstore_mov_test_case_genstrs, x87_loadstore_mov_test_case_gentest])
+
+X87_LOADSTORE_TESTS = [
+    X87LoadStoreMovTestCase(0xDEADBEEFCAFEBABAB002, 7),
+    X87LoadStoreMovTestCase(0x2BADC0DECAFEBABEF00D, 6),
+    X87LoadStoreMovTestCase(0x2BADB0021F00DF12EAAA, 5),
+    X87LoadStoreMovTestCase(0xAABBCCDDEEFF00112233, 4),
+    X87LoadStoreMovTestCase(0xEE112233445566778899, 3),
+    X87LoadStoreMovTestCase(0xFFEEDDCCBBAA99887766, 2),
+    X87LoadStoreMovTestCase(0xAAAABBBBCCCCDDDDEEEE, 1),
+    X87LoadStoreMovTestCase(0xFFFFFFFFFFFFFFFFFFFF, 0),
+]
+
 SETCC_TESTS = [
     # SETE
     FlagTestCase(64, "rax", "", "1", "1", "cmp rax, 1; sete al; cmp al, 1#", "je", "jne"),
@@ -1053,6 +1104,7 @@ SUITES = {
     "ALU" : ALU_TESTS,
     "LOAD" : LOAD_TESTS,
     "SETCC" : SETCC_TESTS,
+    "X87LOADSTORE": X87_LOADSTORE_TESTS,
 }
 
 def width_to_cast(width):
