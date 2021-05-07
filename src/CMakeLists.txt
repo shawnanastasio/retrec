@@ -4,30 +4,22 @@ string(LENGTH "${CMAKE_SOURCE_DIR}/" SOURCE_PATH_SIZE)
 add_definitions("-DSOURCE_PATH_SIZE=${SOURCE_PATH_SIZE}")
 
 #
-# Target
+# Common source files
 #
-add_executable(retrec
+set(RETREC_SOURCES
     allocators.cpp
     allocators.h
     arch/arch.h
     arch/definitions.h
     arch/ppc64le/codegen/abi.h
-    arch/ppc64le/codegen/assembler.cpp
     arch/ppc64le/codegen/assembler.h
-    arch/ppc64le/codegen/codegen_fixed_helpers.cpp
-    arch/ppc64le/codegen/codegen_ppc64le.cpp
     arch/ppc64le/codegen/codegen_ppc64le.h
     arch/ppc64le/codegen/codegen_ppc64le_internal.h
-    arch/ppc64le/codegen/codegen_target_x86_64.cpp
-    arch/ppc64le/codegen/codegen_types.cpp
     arch/ppc64le/codegen/codegen_types.h
-    arch/ppc64le/codegen/register_allocator.cpp
     arch/ppc64le/codegen/register_allocator.h
     arch/ppc64le/cpu_context_ppc64le.h
     arch/ppc64le/llir/llir_registers_ppc64le.h
-    arch/ppc64le/runtime_context_ppc64le.cpp
     arch/ppc64le/runtime_context_ppc64le.h
-    arch/ppc64le/syscalls.cpp
     arch/ppc64le/syscalls.h
     arch/target_environment.h
     arch/x86_64/cpu_context_x86_64.h
@@ -66,6 +58,24 @@ add_executable(retrec
     virtual_address_mapper.cpp
     virtual_address_mapper.h
 )
+
+#
+# Architecture-dependant source files
+#
+if(HOST_ARCH MATCHES "ppc64")
+    set(RETREC_SOURCES ${RETREC_SOURCES}
+        arch/ppc64le/codegen/assembler.cpp
+        arch/ppc64le/codegen/codegen_fixed_helpers.cpp
+        arch/ppc64le/codegen/codegen_ppc64le.cpp
+        arch/ppc64le/codegen/codegen_target_x86_64.cpp
+        arch/ppc64le/codegen/codegen_types.cpp
+        arch/ppc64le/codegen/register_allocator.cpp
+        arch/ppc64le/runtime_context_ppc64le.cpp
+        arch/ppc64le/syscalls.cpp
+    )
+endif()
+
+add_executable(retrec ${RETREC_SOURCES})
 
 target_link_libraries(retrec PUBLIC ${LIBELF_LIBRARIES} ${CapstoneGit_LIBS})
 target_include_directories(retrec PUBLIC ${LIBELF_INCLUDE_DIRS} ${CapstoneGit_INCLUDE})
