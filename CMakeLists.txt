@@ -66,10 +66,25 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wconversion -Wno-sign-conversion")
 endif()
 
+set(CODEGEN_PPC64LE 0)
+set(CODEGEN_GENERIC 1)
+set(CODEGEN_BACKENDS "generic")
+
 # Architecture-specific flags
-if(${HOST_ARCH} STREQUAL "ppc64le")
-    # ppc64le specific options
+if(${HOST_ARCH} MATCHES "ppc64")
+    set(CODEGEN_PPC64LE 1)
+    set(CODEGEN_BACKENDS "${CODEGEN_BACKENDS}, ppc64le")
+else()
+    message(STATUS "No codegen implemented for your architecture - falling back to generic interpreter!")
 endif()
+
+message(STATUS "Codegen backends enabled: ${CODEGEN_BACKENDS}")
+
+# Define detected architecture/codegen flags
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+-DRETREC_CODEGEN_GENERIC=${CODEGEN_GENERIC} \
+-DRETREC_CODEGEN_PPC64LE=${CODEGEN_PPC64LE}"
+)
 
 #
 # Dependencies
@@ -79,4 +94,3 @@ pkg_check_modules(LIBELF REQUIRED IMPORTED_TARGET libelf)
 
 # Main source directory
 add_subdirectory(src)
-
