@@ -23,8 +23,9 @@
 
 #pragma once
 
+#define HOST_ARCH_AARCH64 0
 #define HOST_ARCH_PPC64LE 0
-#define HOST_ARCH_X86_64 0
+#define HOST_ARCH_X86_64  0
 
 //
 // Arch detection and dependant inclusion
@@ -41,8 +42,11 @@
 #undef HOST_ARCH_X86_64
 #define HOST_ARCH_X86_64 1
 
+#elif defined(__aarch64__)
+
+#undef HOST_ARCH_AARCH64
+#define HOST_ARCH_AARCH64 1
+
 #else
 #error "Unsupported host architecture!"
 #endif
-
-
