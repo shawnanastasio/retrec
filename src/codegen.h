@@ -23,8 +23,9 @@
 #include <llir.h>
 #include <disassembler.h>
 
-#include <vector>
+#include <memory>
 #include <optional>
+#include <vector>
 
 namespace retrec {
 
@@ -63,6 +64,18 @@ public:
     size_t size() const { return code_buffer_size; }
 };
 
+enum class CodegenBackend {
+    Generic,
+    PowerPC64LE,
+};
+
+constexpr CodegenBackend default_codegen_backend = []{
+    if constexpr (RETREC_CODEGEN_PPC64LE)
+        return CodegenBackend::PowerPC64LE;
+    else if constexpr (RETREC_CODEGEN_GENERIC)
+        return CodegenBackend::Generic;
+}();
+
 class codegen {
 public:
     virtual status_code init() = 0;
@@ -71,5 +84,8 @@ public:
     virtual status_code patch_translated_access(void *rctx, uint64_t resolved_haddr) = 0;
     virtual ~codegen() {}
 };
+
+std::unique_ptr<codegen> make_codegen(CodegenBackend backend, Architecture target_arch, execution_context &econtext,
+                                      virtual_address_mapper *vam);
 
 }

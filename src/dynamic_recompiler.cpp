@@ -40,13 +40,7 @@ status_code dynamic_recompiler::init() {
 
     // We have to wait until here to initialize the codegen with
     // the correct architecture detected by the elf loader.
-    switch (host) {
-        case Architecture::ppc64le:
-            gen = make_codegen_ppc64le(loader.target_arch(), econtext, &vam);
-            break;
-        default:
-            TODO();
-    }
+    gen = make_codegen(backend, loader.target_arch(), econtext, &vam);
 
     ret = gen->init();
     if (ret != status_code::SUCCESS)
@@ -238,7 +232,7 @@ status_code dynamic_recompiler::translate_referenced_address(uint64_t address, u
  * the access.
  */
 status_code dynamic_recompiler::runtime_handle_untranslated_access() {
-    void *rctx = (void *)&econtext.runtime_ctx();
+    void *rctx = econtext.runtime_ctx();
     uint64_t referenced_vaddr = gen->get_last_untranslated_access(rctx);
 
     pr_info("Translating access to virtual address 0x%lx\n", referenced_vaddr);

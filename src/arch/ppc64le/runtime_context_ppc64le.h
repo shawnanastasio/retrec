@@ -88,11 +88,4 @@ static_assert(sizeof(runtime_context_ppc64le) <= 32768, "Runtime context must be
 
 class translated_code_region;
 
-#if HOST_ARCH_PPC64LE
-
-// If the host architecture is ppc64le, set global runtime context definitions
-struct runtime_context : public runtime_context_ppc64le {};
-
-#endif
-
 }

@@ -19,15 +19,14 @@
 
 #pragma once
 
-#include <util/util.h>
-#include <elf_loader.h>
-#include <mapped_file.h>
-#include <disassembler.h>
-#include <execution_context.h>
 #include <codegen.h>
-#include <virtual_address_mapper.h>
-#include <arch/ppc64le/codegen/codegen_ppc64le.h>
+#include <disassembler.h>
+#include <elf_loader.h>
+#include <execution_context.h>
+#include <mapped_file.h>
 #include <platform/syscall_emulator.h>
+#include <virtual_address_mapper.h>
+#include <util/util.h>
 
 #include <list>
 #include <memory>
@@ -38,11 +37,11 @@
 namespace retrec {
 
 class dynamic_recompiler {
-    Architecture host;
     target_environment target_env;
     execution_context econtext;
     elf_loader loader;
     disassembler disasm;
+    CodegenBackend backend = default_codegen_backend;
 
     std::unique_ptr<codegen> gen;
     std::list<translated_code_region> translated_regions;
@@ -58,8 +57,7 @@ class dynamic_recompiler {
     status_code runtime_handle_untranslated_access();
 
 public:
-    dynamic_recompiler(Architecture host_, target_environment target_env_) :
-        host(host_),
+    dynamic_recompiler(target_environment target_env_) :
         target_env(std::move(target_env_)),
         econtext(target_env, loader),
         loader(econtext, target_env_.binary),
