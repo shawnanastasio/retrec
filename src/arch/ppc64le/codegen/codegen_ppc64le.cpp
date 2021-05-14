@@ -289,7 +289,9 @@ void codegen_ppc64le<T>::emit_epilogue(gen_context &ctx, const lifted_llir_block
 }
 
 template <typename T>
-uint64_t codegen_ppc64le<T>::get_last_untranslated_access(runtime_context &rctx) {
+uint64_t codegen_ppc64le<T>::get_last_untranslated_access(void *rctx_) {
+    runtime_context_ppc64le &rctx = *(runtime_context_ppc64le *)rctx_;
+
     switch (rctx.native_function_call_target) {
         case runtime_context_ppc64le::NativeTarget::JUMP:
         case runtime_context_ppc64le::NativeTarget::CALL:
@@ -338,7 +340,8 @@ auto codegen_ppc64le<T>::calculate_pcrel_branch_patch_offsets(size_t patch_insn_
 }
 
 template <typename T>
-status_code codegen_ppc64le<T>::patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) {
+status_code codegen_ppc64le<T>::patch_translated_access(void *rctx_, uint64_t resolved_haddr) {
+    runtime_context_ppc64le &rctx = *(runtime_context_ppc64le *)rctx_;
     int64_t &nip = rctx.host_translated_context.nip;
 
     switch (rctx.native_function_call_target) {
