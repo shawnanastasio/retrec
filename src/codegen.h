@@ -67,8 +67,8 @@ class codegen {
 public:
     virtual status_code init() = 0;
     virtual status_code translate(const lifted_llir_block& insns, std::optional<translated_code_region> &out) = 0;
-    virtual uint64_t get_last_untranslated_access(runtime_context &rctx) = 0;
-    virtual status_code patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) = 0;
+    virtual uint64_t get_last_untranslated_access(void *rctx) = 0;
+    virtual status_code patch_translated_access(void *rctx, uint64_t resolved_haddr) = 0;
     virtual ~codegen() {}
 };
 

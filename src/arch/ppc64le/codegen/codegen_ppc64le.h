@@ -27,6 +27,7 @@
 #include <arch/ppc64le/codegen/codegen_types.h>
 #include <arch/ppc64le/codegen/register_allocator.h>
 #include <arch/ppc64le/cpu_context_ppc64le.h>
+#include <arch/ppc64le/runtime_context_ppc64le.h>
 #include <arch/x86_64/cpu_context_x86_64.h>
 
 #include <unordered_map>
@@ -438,8 +439,8 @@ public:
 
     status_code init() override;
     status_code translate(const lifted_llir_block& llir, std::optional<translated_code_region> &out) override;
-    uint64_t get_last_untranslated_access(runtime_context &rctx) override;
-    status_code patch_translated_access(runtime_context &rctx, uint64_t resolved_haddr) override;
+    uint64_t get_last_untranslated_access(void *rctx_) override;
+    status_code patch_translated_access(void *rctx_, uint64_t resolved_haddr) override;
 };
 
 template <typename... ArgsT>

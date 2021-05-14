@@ -238,7 +238,7 @@ status_code dynamic_recompiler::translate_referenced_address(uint64_t address, u
  * the access.
  */
 status_code dynamic_recompiler::runtime_handle_untranslated_access() {
-    runtime_context &rctx = econtext.runtime_ctx();
+    void *rctx = (void *)&econtext.runtime_ctx();
     uint64_t referenced_vaddr = gen->get_last_untranslated_access(rctx);
 
     pr_info("Translating access to virtual address 0x%lx\n", referenced_vaddr);
