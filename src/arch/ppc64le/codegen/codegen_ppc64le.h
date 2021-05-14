@@ -443,11 +443,10 @@ public:
     status_code patch_translated_access(void *rctx_, uint64_t resolved_haddr) override;
 };
 
-template <typename... ArgsT>
-auto make_codegen_ppc64le(Architecture target_arch, ArgsT&&... args) {
+static std::unique_ptr<codegen> make_codegen_ppc64le(Architecture target_arch, execution_context &econtext, virtual_address_mapper *vam) {
     switch (target_arch) {
         case Architecture::X86_64:
-            return std::make_unique<codegen_ppc64le<ppc64le::TargetTraitsX86_64>>(target_arch, std::forward<ArgsT>(args)...);
+            return std::unique_ptr<codegen>{ new codegen_ppc64le<ppc64le::TargetTraitsX86_64>(target_arch, econtext, vam) };
         default:
             TODO();
     }

@@ -11,6 +11,8 @@ set(RETREC_SOURCES
     allocators.h
     arch/arch.h
     arch/definitions.h
+    arch/generic/codegen_generic.cpp
+    arch/generic/codegen_generic.h
     arch/generic/runtime_context_generic.cpp
     arch/generic/runtime_context_generic.h
     arch/ppc64le/codegen/abi.h
@@ -34,6 +36,7 @@ set(RETREC_SOURCES
     arch/x86_64/syscalls.h
     arch/x86_64/target_environment.cpp
     arch/x86_64/target_environment.h
+    codegen.cpp
     codegen.h
     disassembler.cpp
     disassembler.h

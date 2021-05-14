@@ -57,7 +57,7 @@ int main(int argc, char **argv, char **envp) {
         .argv = build_argv_vec(1, argc, argv),
         .envp = build_envp_vec(envp)
     };
-    dynamic_recompiler rec(Architecture::ppc64le, std::move(env));
+    dynamic_recompiler rec(std::move(env));
     status_code res = rec.init();
     if (res != status_code::SUCCESS) {
         pr_error("Failed to init dynamic recompiler: %s\n", status_code_str(res));

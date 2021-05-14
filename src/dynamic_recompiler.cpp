@@ -40,13 +40,7 @@ status_code dynamic_recompiler::init() {
 
     // We have to wait until here to initialize the codegen with
     // the correct architecture detected by the elf loader.
-    switch (host) {
-        case Architecture::ppc64le:
-            gen = make_codegen_ppc64le(loader.target_arch(), econtext, &vam);
-            break;
-        default:
-            TODO();
-    }
+    gen = make_codegen(backend, loader.target_arch(), econtext, &vam);
 
     ret = gen->init();
     if (ret != status_code::SUCCESS)
