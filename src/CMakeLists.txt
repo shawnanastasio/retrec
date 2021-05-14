@@ -11,6 +11,8 @@ set(RETREC_SOURCES
     allocators.h
     arch/arch.h
     arch/definitions.h
+    arch/generic/runtime_context_generic.cpp
+    arch/generic/runtime_context_generic.h
     arch/ppc64le/codegen/abi.h
     arch/ppc64le/codegen/assembler.h
     arch/ppc64le/codegen/codegen_ppc64le.h
@@ -21,6 +23,8 @@ set(RETREC_SOURCES
     arch/ppc64le/llir/llir_registers_ppc64le.h
     arch/ppc64le/runtime_context_ppc64le.h
     arch/ppc64le/syscalls.h
+    arch/runtime_context_dispatcher.cpp
+    arch/runtime_context_dispatcher.h
     arch/target_environment.h
     arch/x86_64/cpu_context_x86_64.h
     arch/x86_64/llir/llir_lifter_x86_64.cpp

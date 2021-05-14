@@ -22,7 +22,9 @@
 #include <allocators.h>
 #include <arch/arch.h>
 #include <mapped_file.h>
+#include <platform/syscall_emulator.h>
 #include <process_memory_map.h>
+#include <virtual_address_mapper.h>
 #include <util/util.h>
 
 #include <functional>
@@ -34,7 +36,7 @@ namespace retrec {
 
 // Forward-declare translated_code_region since #including <codegen.h> results in cyclic includes.
 class translated_code_region;
-struct runtime_context;
+class runtime_context_dispatcher;
 
 // Forward-declare elf_loader
 class elf_loader;
@@ -58,7 +60,7 @@ class execution_context {
     elf_loader &loader;
     simple_placement_allocator code_allocator;
 
-    std::unique_ptr<retrec::runtime_context> runtime_context;
+    std::unique_ptr<retrec::runtime_context_dispatcher> runtime_context;
 
     static constexpr size_t CODE_REGION_MAX_SIZE = 0x10000 * 32; // 2M ought to be enough for anybody :)
     static constexpr size_t DEFAULT_STACK_SIZE = 0x10000; // 64K default stack
@@ -83,7 +85,7 @@ public:
     process_memory_map &map() { return vaddr_map; }
     simple_placement_allocator &get_code_allocator() { return code_allocator; }
     void *get_region_ptr(uint64_t ptr);
-    auto &runtime_ctx() { assert(runtime_context); return *runtime_context; }
+    void *runtime_ctx();
 
     //
     // Functions

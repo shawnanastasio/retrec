@@ -18,6 +18,7 @@
  */
 
 #include <execution_context.h>
+#include <arch/runtime_context_dispatcher.h>
 #include <arch/target_environment.h>
 
 #include <unistd.h>
@@ -133,7 +134,7 @@ status_code execution_context::initialize_runtime_context(Architecture target_ar
     void *sp = initialize_target_stack(target_arch, new_stack, target_env.argv, target_env.envp, loader);
 
     // Call host-architecture-specific function to populate the runtime context
-    runtime_context = std::make_unique<retrec::runtime_context>();
+    runtime_context = std::make_unique<runtime_context_dispatcher>(default_codegen_backend);
     res = runtime_context->init(target_arch, entry, sp, vam, syscall_emu);
     if (res != status_code::SUCCESS)
         return res;
@@ -155,4 +156,9 @@ status_code execution_context::protect_region(uint64_t start, uint64_t len, int 
     mapping->prot = prot;
 
     return status_code::SUCCESS;
+}
+
+void *execution_context::runtime_ctx() {
+    assert(runtime_context);
+    return runtime_context->get_data();
 }
