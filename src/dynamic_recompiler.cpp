@@ -52,7 +52,7 @@ status_code dynamic_recompiler::init() {
     if (ret != status_code::SUCCESS)
         return ret;
 
-    syscall_emu = std::make_unique<syscall_emulator>(host, loader.target_arch());
+    syscall_emu = std::make_unique<syscall_emulator>(loader.target_arch());
 
     return status_code::SUCCESS;
 }

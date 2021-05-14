@@ -28,25 +28,24 @@
 
 using namespace retrec;
 
-std::unique_ptr<syscall_rewriter> make_syscall_rewriter(Architecture arch, Architecture target_arch) {
-    switch (arch) {
-        case Architecture::ppc64le:
-            switch (target_arch) {
+std::unique_ptr<syscall_rewriter> make_syscall_rewriter(Architecture target_arch) {
+    if constexpr (HOST_ARCH_PPC64LE) {
+        switch (target_arch) {
 #define declare_case(arch, details) \
-                case arch: return std::make_unique<syscall_rewriter_linux_ppc64le<details>>();
+            case arch: return std::make_unique<syscall_rewriter_linux_ppc64le<details>>();
 
-                ENUMERATE_ALL_LINUX_SYSCALL_DETAILS(declare_case)
+            ENUMERATE_ALL_LINUX_SYSCALL_DETAILS(declare_case)
 #undef declare_case
-                default: UNREACHABLE();
-            }
-        default:
-            TODO();
+            default: UNREACHABLE();
+        }
+    } else {
+        TODO();
     }
 }
 
-syscall_emulator::syscall_emulator(Architecture host_arch_, Architecture target_arch_)
-    : host_arch(host_arch_), target_arch(target_arch_),
-      rewriter(make_syscall_rewriter(host_arch, target_arch)) {}
+syscall_emulator::syscall_emulator(Architecture target_arch_)
+    : target_arch(target_arch_),
+      rewriter(make_syscall_rewriter(target_arch)) {}
 
 
 std::variant<status_code, SyscallRet> syscall_emulator::emulate_syscall(int64_t target_number,
