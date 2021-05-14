@@ -30,12 +30,11 @@ namespace retrec {
 
 class syscall_emulator {
 public:
-    syscall_emulator(Architecture host_arch_, Architecture target_arch_);
+    syscall_emulator(Architecture target_arch_);
 
     std::variant<status_code, SyscallRet> emulate_syscall(int64_t target_number,
                                                           const SyscallParameters &parameters);
 private:
-    Architecture host_arch;
     Architecture target_arch;
     std::unique_ptr<syscall_rewriter> rewriter;
 };
