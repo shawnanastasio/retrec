@@ -73,10 +73,10 @@ public:
 
     enum class VaddrLocation {
         LOW, // 0x1000+
-        HIGH, // 0x7fff+
+        HIGH, // 0x3fff+
     };
 
-    static constexpr process_memory_map::Range HIGH_MEM_RANGE = {0x7fff00000000, 0x7fffffffffff};
+    static constexpr process_memory_map::Range HIGH_MEM_RANGE = {0x3fff00000000, 0x7fffffffffff};
     static constexpr process_memory_map::Range LOW_MEM_RANGE  = {0x10000, 0xfffeffff};
 
     //
