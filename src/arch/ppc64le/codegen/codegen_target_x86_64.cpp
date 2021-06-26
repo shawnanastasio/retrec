@@ -99,7 +99,7 @@ void codegen_ppc64le<TargetTraitsX86_64>::llir$loadstore_float(gen_context &ctx,
     switch (mem_op.width) {
         case llir::Operand::Width::_80BIT:
             if (mem_op_is_x87) {
-                int16_t offset = 16 * ((int16_t)mem_op.memory().x86_64().base.x86_64 - (int16_t)llir::X86_64Register::ST0);
+                int16_t offset = (int16_t)(16 * ((int16_t)mem_op.memory().x86_64().base.x86_64 - (int16_t)llir::X86_64Register::ST0));
                 if (st_op.memory().update == llir::MemOp::Update::PRE)
                     offset += 16;
 

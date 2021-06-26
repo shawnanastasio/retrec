@@ -44,6 +44,7 @@ register_allocator<T>::static_allocation_set::static_allocation_set() {
 template <typename T>
 size_t register_allocator<T>::static_allocation_set::reserved_index(const llir::Register &) {
     static_assert(!std::is_same_v<T, T>, "Unimplemented static_allocation_set for this target");
+    return 0;
 }
 
 template <>
