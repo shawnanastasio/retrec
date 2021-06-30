@@ -539,7 +539,8 @@ void codegen_ppc64le<T>::dispatch(gen_context &ctx, const llir::Insn &insn) {
             }
 
             case llir::Qualification::Type::MEMORY_ATTRIBUTE:
-                TODO();
+                pr_info("Ignoring LOCK predicate for instruction: %s\n", llir::to_string(insn).c_str());
+                break;
         }
     }
 
