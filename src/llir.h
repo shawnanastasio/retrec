@@ -605,7 +605,8 @@ inline std::string to_string(const Qualification &qual) {
 template<>
 inline std::string to_string(const Insn &insn) {
     std::string ret = "(";
-    ret += "Class=" + to_string(insn.iclass());
+    ret += "Addr=0x" + to_hex_string(insn.address);
+    ret += ", Class=" + to_string(insn.iclass());
     switch (insn.iclass()) {
         case Insn::Class::LOADSTORE:
             ret += " Op=" + to_string(insn.loadstore()); break;
@@ -627,7 +628,7 @@ inline std::string to_string(const Insn &insn) {
     for (size_t i=0; i<insn.src_cnt; i++)
         ret += " Source" + std::to_string(i) + "(" + to_string(insn.src[i]) + ")";
     for (size_t i=0; i<insn.qualification_count; i++)
-        ret += "Qualification(" + to_string(insn.qualifications[i]) + ")";
+        ret += " Qualification(" + to_string(insn.qualifications[i]) + ")";
     return ret + ")";
 }
 

@@ -20,6 +20,8 @@
 #pragma once
 
 #include <algorithm>
+#include <string>
+#include <sstream>
 #include <type_traits>
 #include <cstdint>
 #include <cassert>
@@ -150,6 +152,13 @@ template <>
 inline uint32_t clz<unsigned int>(unsigned int val) { return __builtin_clz(val); }
 template <>
 inline uint32_t clz<unsigned long>(unsigned long val) { return __builtin_clzl(val); }
+
+template <typename T>
+std::enable_if_t<std::is_integral_v<T>, std::string> to_hex_string(T number) {
+    std::stringstream ss;
+    ss << std::hex << number;
+    return ss.str();
+}
 
 //
 // Logging
