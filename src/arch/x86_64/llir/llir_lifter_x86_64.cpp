@@ -680,6 +680,13 @@ status_code llir_lifter_x86_64::lift(cs_insn *insn, std::vector<llir::Insn> &out
             llinsn.interrupt().op = llir::Interrupt::Op::ILLEGAL;
             break;
 
+        //
+        // Unsupported extensions
+        //
+
+        case X86_INS_XGETBV:
+            llinsn.interrupt().op = llir::Interrupt::Op::ILLEGAL;
+            break;
 
         default:
             return status_code::UNIMPL_INSN;
