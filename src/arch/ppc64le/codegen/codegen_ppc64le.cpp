@@ -1594,11 +1594,11 @@ void codegen_ppc64le<T>::llir$alu$setclrflag(gen_context &ctx, const llir::Insn 
     llir::Alu::Flag modified = insn.alu().flags_modified[0];
     switch (modified) {
         case llir::Alu::Flag::CARRY:
-            ctx.assembler->crset(CR_LAZY_FIELD_CARRY);
+            ctx.assembler->crset(CR_LAZYVALID_CARRY);
             setclr(CR_LAZY_FIELD_CARRY);
             break;
         case llir::Alu::Flag::OVERFLOW:
-            ctx.assembler->crset(CR_LAZY_FIELD_OVERFLOW);
+            ctx.assembler->crset(CR_LAZYVALID_OVERFLOW);
             setclr(CR_LAZY_FIELD_OVERFLOW);
             break;
         case llir::Alu::Flag::SIGN:

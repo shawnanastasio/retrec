@@ -556,6 +556,10 @@ ALU_TESTS = [
 ]
 
 CARRY_TESTS = [
+    # STC/CLC
+    FlagTestCase(64, "rax", "", "1", "", "stc#", "jc", "jnc"),
+    FlagTestCase(64, "rax", "", "1", "", "clc#", "jnc", "jc"),
+
     # SUB (cmp)
     FlagTestCase(64, "rax", "rbx", "0", "-1", "cmp", "jc", "jnc"),
     FlagTestCase(64, "rax", "rbx", "-1", "-1", "cmp", "jnc", "jc"),
